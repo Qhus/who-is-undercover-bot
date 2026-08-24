@@ -2,6 +2,14 @@ export type Role = 'civilian' | 'undercover';
 export type Winner = Role | null;
 export type GameStatus = 'lobby' | 'cards' | 'discussion' | 'voting' | 'result' | 'finished';
 
+export const MIN_PLAYERS = 3;
+export const MAX_PLAYERS = 10;
+export const PLAYER_LIMIT_OPTIONS = Array.from({ length: MAX_PLAYERS - MIN_PLAYERS + 1 }, (_, index) => MIN_PLAYERS + index);
+
+export function undercoverOptions(playerLimit: number): number[] {
+  return playerLimit >= 5 ? [1, 2] : [1];
+}
+
 export interface Player {
   id: string;
   name: string;
@@ -82,7 +90,7 @@ export function assignCards(
   random: RandomSource = Math.random,
 ): Record<string, Assignment> {
   if (players.length < 3) throw new Error('至少需要 3 名玩家');
-  if (undercoverCount < 1 || undercoverCount >= players.length) throw new Error('卧底人数不合法');
+  if (undercoverCount < 1 || undercoverCount * 2 >= players.length) throw new Error('卧底人数不合法');
   const undercoverIds = new Set(shuffle(players.map((player) => player.id), random).slice(0, undercoverCount));
   return Object.fromEntries(players.map((player) => [
     player.id,
@@ -212,6 +220,12 @@ export function createRoom(input: {
   civilianWord: string;
   undercoverWord: string;
 }): GameRoom {
+  if (!Number.isInteger(input.playerLimit) || input.playerLimit < MIN_PLAYERS || input.playerLimit > MAX_PLAYERS) {
+    throw new Error(`玩家人数必须为 ${MIN_PLAYERS}–${MAX_PLAYERS} 人`);
+  }
+  if (!Number.isInteger(input.undercoverCount) || input.undercoverCount < 1 || input.undercoverCount * 2 >= input.playerLimit) {
+    throw new Error('卧底人数不合法');
+  }
   const now = Date.now();
   return {
     code: input.code ?? makeRoomCode(),

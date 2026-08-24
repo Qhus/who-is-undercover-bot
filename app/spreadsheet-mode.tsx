@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { eligibleCandidates, eligibleVoters, type GameRoom, type Player } from '@/lib/game';
+import { eligibleCandidates, eligibleVoters, PLAYER_LIMIT_OPTIONS, undercoverOptions, type GameRoom, type Player } from '@/lib/game';
 import { neutralizeGameCopy } from '@/lib/neutral-copy';
 import { createPrivacyGuard, PRIVATE_REVEAL_MS, PRIVACY_IDLE_MS, type PrivacyGuard } from '@/lib/privacy';
 
@@ -275,7 +275,7 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
   const rows: ReactNode[][] = props.screen === 'home'
     ? [
         ['操作', '称呼', '协作表编号', '状态', '执行', '备注'],
-        ['新建协作表', props.ownerName, '自动生成', '可用', <button key="create" className="sheet-action" onClick={props.onOpenSetup} aria-label="创建谁是卧底游戏房间">打开配置</button>, '① 点击这里'],
+        ['新建协作表', props.ownerName, '自动生成', '可用', <button key="create" className="sheet-action" onClick={props.onOpenSetup} aria-label="创建谁是卧底游戏房间">打开配置</button>, '3–10 人 · ① 点击这里'],
         ['加入现有表', <input key="join-name" value={props.joinName} onChange={(event) => props.onJoinName(event.target.value.slice(0, 12))} placeholder="① 填写你的称呼" aria-label="加入游戏时使用的玩家称呼" />, <input key="join-code" value={props.joinCode} onChange={(event) => props.onJoinCode(event.target.value.toUpperCase().replace(/[^A-Z2-9]/g, ''))} maxLength={6} placeholder="② 填写六位编号" aria-label="谁是卧底游戏房间码" />, props.cloudReady ? '联机可用' : '本机可用', <button key="join" className="sheet-action" disabled={props.busy} onClick={props.onJoin} aria-label="加入谁是卧底游戏房间">③ 加入</button>, '按 B → C → E'],
         ['', '', '', '', '', ''],
         ['说明', '低干扰显示', '不规避审计', '默认静音', '本地保存', '按 Esc 遮挡'],
@@ -284,8 +284,8 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
       ? [
           ['配置项', '当前值', '可选值', '说明', '状态', ''],
           ['负责人称呼', <input key="owner" value={props.ownerName} onChange={(event) => props.onOwnerName(event.target.value.slice(0, 12))} placeholder="填写负责人称呼" aria-label="谁是卧底游戏房主称呼" />, '', '创建后可修改成员名', props.ownerName.trim() ? '已完成' : '待提交', ''],
-          ['成员数量', <select key="player-limit" value={props.playerLimit} onChange={(event) => props.onPlayerLimit(Number(event.target.value))} aria-label="谁是卧底玩家人数">{[6, 8, 10, 12].map((value) => <option key={value}>{value}</option>)}</select>, '6 / 8 / 10 / 12', '建议 8 人', '已完成', ''],
-          ['特殊成员数量', <select key="undercover-count" value={props.undercoverCount} onChange={(event) => props.onUndercoverCount(Number(event.target.value))} aria-label="谁是卧底游戏卧底人数">{[1, 2].map((value) => <option key={value}>{value}</option>)}</select>, '1 / 2', '按人数自动建议', '已完成', ''],
+          ['成员数量', <select key="player-limit" value={props.playerLimit} onChange={(event) => props.onPlayerLimit(Number(event.target.value))} aria-label="谁是卧底玩家人数">{PLAYER_LIMIT_OPTIONS.map((value) => <option key={value}>{value}</option>)}</select>, '3–10（每个整数）', '建议 8 人', '已完成', ''],
+          ['特殊成员数量', <select key="undercover-count" value={props.undercoverCount} onChange={(event) => props.onUndercoverCount(Number(event.target.value))} aria-label="谁是卧底游戏卧底人数">{undercoverOptions(props.playerLimit).map((value) => <option key={value}>{value}</option>)}</select>, undercoverOptions(props.playerLimit).join(' / '), '按人数自动建议', '已完成', ''],
           ['字段来源', <div key="word-source" className="sheet-inline"><button className={!props.customWords ? 'is-selected' : ''} onClick={props.onRandomWords} aria-label="随机生成谁是卧底词语">自动</button><button className={props.customWords ? 'is-selected' : ''} onClick={props.onCustomWords} aria-label="自定义谁是卧底词语">手动</button></div>, '', '两项内容需相近', '已完成', ''],
           ['字段 A', <input key="civilian-word" value={props.civilianWord} onChange={(event) => props.onCivilianWord(event.target.value)} placeholder="填写普通成员内容" aria-label="平民词语" />, '', '普通成员内容', props.civilianWord ? '已完成' : '待提交', ''],
           ['字段 B', <input key="undercover-word" value={props.undercoverWord} onChange={(event) => props.onUndercoverWord(event.target.value)} placeholder="填写特殊成员内容" aria-label="卧底词语" />, '', '特殊成员内容', props.undercoverWord ? '已完成' : '待提交', ''],

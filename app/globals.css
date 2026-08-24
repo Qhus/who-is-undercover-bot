@@ -64,6 +64,10 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgb(200 77 49 / 3
 .segmented button { min-width:74px; border:0; border-right:1px solid var(--line); background:transparent; padding:11px 13px; font-size:12px; font-weight:800; }
 .segmented button:last-child { border-right:0; }
 .segmented button.is-selected { background:var(--ink); color:#fff; }
+.segmented--many { width:min(330px,100%); display:grid; grid-template-columns:repeat(4,minmax(54px,1fr)); }
+.segmented--many button { min-width:0; border-bottom:1px solid var(--line); }
+.segmented--many button:nth-child(4n) { border-right:0; }
+.segmented--many button:nth-last-child(-n+4) { border-bottom:0; }
 .word-grid { display:grid; grid-template-columns:1fr 1fr; gap:24px; margin:0 0 32px; }
 .word-grid label { display:flex; flex-direction:column; gap:5px; }
 .word-grid input { width:100%; }
