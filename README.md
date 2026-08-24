@@ -35,7 +35,7 @@ npm run dev -- --hostname localhost --port 43210
 
 只允许将 Publishable Key 暴露到浏览器。不要把 CloudBase API Key、SecretId 或 SecretKey 写入环境文件或 GitHub。
 
-当前开发机已经配置浏览器 Publishable Key；它不会被 Git 跟踪。联机前仍需在 CloudBase SQL 编辑器执行 RLS 脚本，不能将匿名角色开放为全库读写。
+当前开发机已经配置浏览器 Publishable Key；它不会被 Git 跟踪。2026-08-24 已在真实 CloudBase 环境成功执行完整 RLS schema；仍需执行 [`cloudbase/verify.sql`](cloudbase/verify.sql)，确认两张表、三个函数、两表 RLS 和三条策略均存在，不能将匿名角色开放为全库读写。
 
 本环境的 `auth.uid()` 返回 `text`，因此 `owner_uid` 和 `user_uid` 必须保持为 `text`；不要改成 `uuid`。如果旧脚本在第一条 `CREATE TABLE` 就报类型错误，说明初始化尚未发生，直接重新执行修正后的完整脚本即可。
 
