@@ -187,9 +187,22 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgb(200 77 49 / 3
 .sheet-namebox { justify-content:center; color:#555; }
 .sheet-fx { justify-content:center; color:#777; font-style:italic; font-family:Georgia,serif; }
 .sheet-formula output { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.sheet-flow-guide { min-height:76px; display:grid; grid-template-columns:minmax(420px,1fr) minmax(430px,1.25fr); align-items:stretch; border-bottom:1px solid #c9c9c9; background:#fff; }
+.sheet-flow-guide ol { display:flex; align-items:stretch; margin:0; padding:0 10px; list-style:none; border-right:1px solid #d7d7d7; overflow-x:auto; }
+.sheet-flow-guide li { min-width:78px; display:flex; align-items:center; justify-content:center; gap:5px; padding:0 9px; color:#888; border-bottom:3px solid transparent; white-space:nowrap; font-size:11px; }
+.sheet-flow-guide li span { width:18px; height:18px; display:grid; place-items:center; color:#666; border:1px solid #bdbdbd; border-radius:50%; font-size:9px; }
+.sheet-flow-guide li.is-complete { color:#527762; }
+.sheet-flow-guide li.is-complete span { color:#fff; border-color:var(--sheet-green); background:var(--sheet-green); }
+.sheet-flow-guide li.is-current { color:#111; border-bottom-color:var(--sheet-green); background:#f3faf6; font-weight:700; }
+.sheet-flow-guide li.is-current span { color:#fff; border-color:var(--sheet-green); background:var(--sheet-green); }
+.sheet-flow-guide>div { min-width:0; display:grid; grid-template-columns:auto 1fr; grid-template-rows:auto auto auto; column-gap:9px; align-content:center; padding:8px 14px; }
+.sheet-flow-guide>div>span { grid-row:1/4; align-self:start; margin-top:2px; padding:3px 6px; color:#fff; background:var(--sheet-green); font-size:9px; white-space:nowrap; }
+.sheet-flow-guide strong { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; }
+.sheet-flow-guide p { min-width:0; margin:2px 0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#444; font-size:11px; }
+.sheet-flow-guide b { color:var(--sheet-green); font-size:10px; font-weight:700; }
 .sheet-commandbar { min-height:42px; display:flex; align-items:center; gap:7px; padding:5px 10px; border-bottom:1px solid #d7d7d7; background:#f7f7f7; }
 .sheet-commandbar button,.sheet-action,.sheet-select-wrap button,.sheet-inline button { min-height:28px; padding:0 12px; border:1px solid #bdbdbd; color:#222; background:#fff; }
-.sheet-commandbar button:first-of-type:not(:only-of-type),.sheet-action,.sheet-select-wrap button { color:#fff; border-color:var(--sheet-green); background:var(--sheet-green); }
+.sheet-commandbar .sheet-primary-action,.sheet-action,.sheet-select-wrap button { color:#fff; border-color:var(--sheet-green); background:var(--sheet-green); font-weight:700; }
 .sheet-commandbar button:disabled,.sheet-action:disabled,.sheet-select-wrap button:disabled { opacity:.45; cursor:not-allowed; }
 .sheet-commandbar span { margin-left:auto; color:#666; font-size:11px; }
 .sheet-grid-scroll { min-height:0; flex:1; overflow:auto; background:#fff; }
@@ -207,6 +220,10 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgb(200 77 49 / 3
 .sheet-grid td { position:relative; background:#fff; }
 .sheet-grid td.is-active-cell { overflow:visible; box-shadow:inset 0 0 0 2px var(--sheet-green); z-index:3; }
 .sheet-grid td.is-active-cell:after { content:""; position:absolute; right:-3px; bottom:-3px; width:6px; height:6px; background:var(--sheet-green); }
+.sheet-grid td.is-guided-cell { background:#f2fbf5; box-shadow:inset 0 0 0 1px #78a98d; }
+.sheet-grid td.is-guided-cell.is-active-cell { background:#e9f7ee; box-shadow:inset 0 0 0 2px var(--sheet-green); }
+.sheet-grid td.is-guided-cell:before { content:"当前"; position:absolute; z-index:2; top:1px; right:3px; color:var(--sheet-green); font-size:8px; font-weight:700; pointer-events:none; }
+.sheet-grid td.is-guided-cell input,.sheet-grid td.is-guided-cell select { padding-right:30px; }
 .sheet-grid input,.sheet-grid select { width:100%; min-height:25px; padding:2px 5px; border:0; background:transparent; }
 .sheet-grid input:focus,.sheet-grid select:focus { outline:0; }
 .sheet-secret { min-width:94px; min-height:26px; padding:0 10px; border:0; letter-spacing:.14em; color:#333; background:#f1f1f1; }
@@ -236,6 +253,9 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgb(200 77 49 / 3
   .discussion-card { grid-template-columns:1fr; }
   .talk-mark { font-size:70px; }
   .candidate-grid { grid-template-columns:repeat(2,1fr); }
+  .sheet-flow-guide { grid-template-columns:1fr; }
+  .sheet-flow-guide ol { min-height:38px; border-right:0; border-bottom:1px solid #ddd; }
+  .sheet-flow-guide>div { min-height:58px; }
 }
 @media (max-width:600px) {
   .topbar { padding:0 16px; }
@@ -256,6 +276,8 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgb(200 77 49 / 3
   .sheet-ribbon button:nth-child(2),.sheet-ribbon button:nth-child(3),.sheet-toolbar { display:none; }
   .sheet-ribbon { min-height:34px; }
   .sheet-formula { grid-template-columns:56px 32px 1fr; }
+  .sheet-flow-guide li { min-width:72px; }
+  .sheet-flow-guide p { white-space:normal; line-height:1.35; }
   .sheet-commandbar { overflow-x:auto; }
   .sheet-commandbar span { white-space:nowrap; }
   .sheet-grid { min-width:760px; }
