@@ -3,7 +3,7 @@
 
 create table if not exists public.games (
   code text primary key check (code ~ '^[A-Z2-9]{6}$'),
-  owner_uid uuid not null default auth.uid(),
+  owner_uid text not null default auth.uid(),
   owner_player_id text not null,
   state jsonb not null,
   version bigint not null default 1,
@@ -14,7 +14,7 @@ create table if not exists public.games (
 
 create table if not exists public.game_members (
   game_code text not null references public.games(code) on delete cascade,
-  user_uid uuid not null default auth.uid(),
+  user_uid text not null default auth.uid(),
   player_id text not null,
   joined_at timestamptz not null default now(),
   primary key (game_code, user_uid),

@@ -37,6 +37,8 @@ npm run dev -- --hostname localhost --port 43210
 
 当前开发机已经配置浏览器 Publishable Key；它不会被 Git 跟踪。联机前仍需在 CloudBase SQL 编辑器执行 RLS 脚本，不能将匿名角色开放为全库读写。
 
+本环境的 `auth.uid()` 返回 `text`，因此 `owner_uid` 和 `user_uid` 必须保持为 `text`；不要改成 `uuid`。如果旧脚本在第一条 `CREATE TABLE` 就报类型错误，说明初始化尚未发生，直接重新执行修正后的完整脚本即可。
+
 ## 验证
 
 ```bash
