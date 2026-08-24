@@ -1,0 +1,240 @@
+'use client';
+
+import { useEffect, useMemo, useState } from 'react';
+import { applyBallotResult, createRoom, dealRoom, eligibleCandidates, eligibleVoters, makeId, resolveBallot, startNextRound, type GameRoom, type Player } from '@/lib/game';
+import { getCloudStore } from '@/lib/cloudbase-store';
+import { randomWordPair } from '@/lib/words';
+
+type Screen = 'home' | 'setup' | 'game';
+type Notice = { kind: 'info' | 'error'; text: string } | null;
+const cloudReady = Boolean(process.env.NEXT_PUBLIC_CLOUDBASE_ENV_ID && process.env.NEXT_PUBLIC_CLOUDBASE_ACCESS_KEY);
+const steps = [['01', '建房', '选人数和词语'], ['02', '发牌', '轮流查看私牌'], ['03', '投票', '匿名提交选择'], ['04', '判定', '自动处理胜负']] as const;
+
+function playerName(room: GameRoom, id: string | null | undefined): string {
+  return room.players.find((player) => player.id === id)?.name ?? '无人';
+}
+
+function statusCopy(room: GameRoom): string {
+  if (room.status === 'lobby') return '等待玩家';
+  if (room.status === 'cards') return '私密发牌';
+  if (room.status === 'discussion') return `第 ${room.round} 轮讨论`;
+  if (room.status === 'voting') return room.ballot === 2 ? '平票复投' : `第 ${room.round} 轮投票`;
+  if (room.status === 'result') return '本轮结果';
+  return '游戏结束';
+}
+
+function Progress({ room }: { room: GameRoom }) {
+  const index = room.status === 'lobby' ? 0 : room.status === 'cards' || room.status === 'discussion' ? 1 : room.status === 'voting' ? 2 : 3;
+  return <div className="progress" aria-label="游戏进度">{steps.map(([number, label], stepIndex) => <div className={`progress__item ${stepIndex <= index ? 'is-active' : ''}`} key={number}><span>{number}</span><b>{label}</b></div>)}</div>;
+}
+
+function Seat({ player }: { player: Player }) {
+  return <div className={`seat ${!player.alive ? 'is-out' : ''}`}><span className="seat__number">{String(player.seat).padStart(2, '0')}</span><span className="seat__avatar">{player.name.slice(0, 1)}</span><span className="seat__name">{player.name}</span><span className="seat__status">{player.alive ? (player.cardReady ? '已确认' : '在场') : '已出局'}</span></div>;
+}
+
+export default function GameApp() {
+  const [screen, setScreen] = useState<Screen>('home');
+  const [room, setRoom] = useState<GameRoom | null>(null);
+  const [notice, setNotice] = useState<Notice>(null);
+  const [ownerName, setOwnerName] = useState('房主');
+  const [playerLimit, setPlayerLimit] = useState(8);
+  const [undercoverCount, setUndercoverCount] = useState(1);
+  const [civilianWord, setCivilianWord] = useState('');
+  const [undercoverWord, setUndercoverWord] = useState('');
+  const [customWords, setCustomWords] = useState(false);
+  const [joinCode, setJoinCode] = useState('');
+  const [joinName, setJoinName] = useState('');
+  const [remoteMode, setRemoteMode] = useState(false);
+  const [currentPlayerId, setCurrentPlayerId] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [revealPlayerId, setRevealPlayerId] = useState<string | null>(null);
+  const [revealed, setRevealed] = useState(false);
+  const [votePlayerId, setVotePlayerId] = useState<string | null>(null);
+  const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
+  const [privacyGate, setPrivacyGate] = useState(true);
+
+  useEffect(() => {
+    if (!notice) return;
+    const timeout = window.setTimeout(() => setNotice(null), 3600);
+    return () => window.clearTimeout(timeout);
+  }, [notice]);
+
+  useEffect(() => {
+    const hideCard = () => setRevealed(false);
+    const onVisibility = () => { if (document.hidden) hideCard(); };
+    window.addEventListener('blur', hideCard);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => { window.removeEventListener('blur', hideCard); document.removeEventListener('visibilitychange', onVisibility); };
+  }, []);
+
+  useEffect(() => {
+    const activeRemote = window.localStorage.getItem('undercover-active-remote');
+    if (activeRemote && cloudReady) {
+      try {
+        const { code, playerId } = JSON.parse(activeRemote) as { code: string; playerId: string };
+        getCloudStore().getRoom(code).then((restored) => {
+          if (restored) { setRoom(restored); setCurrentPlayerId(playerId); setRemoteMode(true); setScreen('game'); }
+        }).catch(() => window.localStorage.removeItem('undercover-active-remote'));
+        return;
+      } catch { window.localStorage.removeItem('undercover-active-remote'); }
+    }
+    const saved = window.localStorage.getItem('undercover-demo-room');
+    if (!saved) return;
+    try {
+      const restored = JSON.parse(saved) as GameRoom;
+      if (restored?.code && Date.now() - restored.updatedAt < 24 * 60 * 60 * 1000) {
+        window.queueMicrotask(() => { setRoom(restored); setScreen('game'); setRemoteMode(false); });
+      }
+    } catch { window.localStorage.removeItem('undercover-demo-room'); }
+  }, []);
+
+  useEffect(() => {
+    if (room && !remoteMode) window.localStorage.setItem('undercover-demo-room', JSON.stringify(room));
+  }, [room, remoteMode]);
+
+  const roomCode = room?.code;
+  useEffect(() => {
+    if (!roomCode || !remoteMode) return;
+    let close: (() => void) | undefined;
+    let cancelled = false;
+    getCloudStore().connect().then(() => {
+      if (!cancelled) close = getCloudStore().watchRoom(roomCode, setRoom, () => setNotice({ kind: 'error', text: '实时连接已中断，请刷新重试' }));
+    }).catch((error) => setNotice({ kind: 'error', text: error instanceof Error ? error.message : 'CloudBase 连接失败' }));
+    return () => { cancelled = true; close?.(); };
+  }, [remoteMode, roomCode]);
+
+  const activeCardPlayer = useMemo(() => {
+    if (!room || room.status !== 'cards') return null;
+    if (remoteMode) return room.players.find((player) => player.id === currentPlayerId && !player.cardReady) ?? null;
+    return room.players.find((player) => player.id === revealPlayerId) ?? room.players.find((player) => !player.cardReady) ?? null;
+  }, [room, revealPlayerId, remoteMode, currentPlayerId]);
+
+  const activeVoter = useMemo(() => {
+    if (!room || room.status !== 'voting') return null;
+    if (remoteMode) return room.players.find((player) => player.id === currentPlayerId && player.alive && !room.votes[player.id]) ?? null;
+    return room.players.find((player) => player.id === votePlayerId && player.alive && !room.votes[player.id]) ?? room.players.find((player) => player.alive && !room.votes[player.id]) ?? null;
+  }, [room, votePlayerId, remoteMode, currentPlayerId]);
+
+  function commitRoom(next: GameRoom) {
+    setRoom(next);
+    if (remoteMode) void getCloudStore().saveRoom(next).catch((error) => setNotice({ kind: 'error', text: error instanceof Error ? error.message : '同步失败' }));
+  }
+
+  function choosePlayerLimit(limit: number) { setPlayerLimit(limit); setUndercoverCount(limit >= 9 ? 2 : 1); }
+  function openSetup() { const [civilian, undercover] = randomWordPair(); setCivilianWord(civilian); setUndercoverWord(undercover); setScreen('setup'); }
+
+  function createDemo() {
+    if (!ownerName.trim()) return setNotice({ kind: 'error', text: '先给房主起个名字' });
+    if (!civilianWord.trim() || !undercoverWord.trim()) return setNotice({ kind: 'error', text: '两组词语都需要填写' });
+    if (civilianWord.trim() === undercoverWord.trim()) return setNotice({ kind: 'error', text: '两组词语不能相同' });
+    const ownerId = makeId('player');
+    const base = createRoom({ ownerId, ownerName, playerLimit, undercoverCount, civilianWord, undercoverWord });
+    const players: Player[] = Array.from({ length: playerLimit }, (_, index) => index === 0 ? base.players[0] : { id: makeId('player'), name: `玩家 ${index + 1}`, seat: index + 1, alive: true, cardReady: false });
+    window.localStorage.removeItem('undercover-active-remote');
+    setRemoteMode(false); setCurrentPlayerId(ownerId); setRoom({ ...base, players }); setScreen('game'); setPrivacyGate(true);
+    setNotice({ kind: 'info', text: '演示局已创建：这台电脑会依次交给每位玩家操作' });
+  }
+
+  async function createRemote() {
+    if (!cloudReady) return setNotice({ kind: 'info', text: '请先填写 CloudBase 环境 ID 和 Publishable Key' });
+    if (!ownerName.trim() || !civilianWord.trim() || !undercoverWord.trim()) return setNotice({ kind: 'error', text: '请先填写完整的开局信息' });
+    setBusy(true);
+    try {
+      const ownerId = makeId('player');
+      const next = createRoom({ ownerId, ownerName, playerLimit, undercoverCount, civilianWord, undercoverWord });
+      await getCloudStore().createRoom(next);
+      window.localStorage.setItem(`undercover-player-${next.code}`, ownerId);
+      window.localStorage.setItem('undercover-active-remote', JSON.stringify({ code: next.code, playerId: ownerId }));
+      window.localStorage.removeItem('undercover-demo-room');
+      setRemoteMode(true); setCurrentPlayerId(ownerId); setRoom(next); setScreen('game');
+    } catch (error) { setNotice({ kind: 'error', text: error instanceof Error ? error.message : '创建联机房间失败' }); }
+    finally { setBusy(false); }
+  }
+
+  async function tryRemoteJoin() {
+    if (!joinCode.trim()) return setNotice({ kind: 'error', text: '请输入房间码' });
+    if (!joinName.trim()) return setNotice({ kind: 'error', text: '请输入你的称呼' });
+    if (!cloudReady) return setNotice({ kind: 'info', text: '联机入口已做好；填入 CloudBase 参数后即可启用' });
+    setBusy(true);
+    try {
+      const code = joinCode.trim().toUpperCase();
+      const rememberedId = window.localStorage.getItem(`undercover-player-${code}`);
+      const requestedId = rememberedId ?? makeId('player');
+      const joined = await getCloudStore().joinRoom(code, requestedId, joinName.trim());
+      window.localStorage.setItem(`undercover-player-${code}`, joined.playerId);
+      window.localStorage.setItem('undercover-active-remote', JSON.stringify({ code, playerId: joined.playerId }));
+      window.localStorage.removeItem('undercover-demo-room');
+      setRemoteMode(true); setCurrentPlayerId(joined.playerId); setRoom(joined.room); setScreen('game'); setPrivacyGate(true);
+    } catch (error) { setNotice({ kind: 'error', text: error instanceof Error ? error.message : '加入房间失败' }); }
+    finally { setBusy(false); }
+  }
+
+  function renamePlayer(id: string, name: string) {
+    if (room) setRoom({ ...room, players: room.players.map((player) => player.id === id ? { ...player, name: name.slice(0, 12) } : player) });
+  }
+
+  function startDealing() {
+    if (!room) return;
+    if (room.players.some((player) => !player.name.trim())) return setNotice({ kind: 'error', text: '每个座位都需要一个名字' });
+    try { const next = dealRoom(room); commitRoom(next); setRevealPlayerId(next.players[0].id); setPrivacyGate(true); }
+    catch (error) { setNotice({ kind: 'error', text: error instanceof Error ? error.message : '发牌失败' }); }
+  }
+
+  function confirmCard() {
+    if (!room || !activeCardPlayer) return;
+    const players = room.players.map((player) => player.id === activeCardPlayer.id ? { ...player, cardReady: true } : player);
+    const nextPlayer = players.find((player) => !player.cardReady);
+    const everybodyReady = players.every((player) => player.cardReady);
+    if (remoteMode) {
+      commitRoom({ ...room, players, status: everybodyReady ? 'discussion' : 'cards', version: room.version + 1, updatedAt: Date.now() });
+      setPrivacyGate(true); return;
+    }
+    if (!nextPlayer) { commitRoom({ ...room, players, status: 'discussion', version: room.version + 1, updatedAt: Date.now() }); setRevealPlayerId(null); setPrivacyGate(true); return; }
+    commitRoom({ ...room, players }); setRevealPlayerId(nextPlayer.id); setRevealed(false); setPrivacyGate(true);
+  }
+
+  function beginVoting() {
+    if (!room) return;
+    const first = eligibleVoters(room)[0];
+    commitRoom({ ...room, status: 'voting', ballot: 1, votes: {}, runoffCandidateIds: [], version: room.version + 1, updatedAt: Date.now() });
+    setVotePlayerId(first?.id ?? null); setSelectedCandidateId(null); setPrivacyGate(true);
+  }
+
+  function submitVote() {
+    if (!room || !activeVoter || !selectedCandidateId) return;
+    const votes = { ...room.votes, [activeVoter.id]: selectedCandidateId };
+    const withVote = { ...room, votes, version: room.version + 1, updatedAt: Date.now() };
+    const remaining = eligibleVoters(withVote).find((player) => !votes[player.id]);
+    setSelectedCandidateId(null); setPrivacyGate(true);
+    if (remaining) { commitRoom(withVote); setVotePlayerId(remaining.id); return; }
+    try {
+      const resolved = applyBallotResult(withVote, resolveBallot(withVote)); commitRoom(resolved);
+      if (resolved.status === 'voting') { setVotePlayerId(eligibleVoters(resolved)[0]?.id ?? null); setNotice({ kind: 'info', text: '最高票并列，马上进行一次复投' }); }
+      else setVotePlayerId(null);
+    } catch (error) { setNotice({ kind: 'error', text: error instanceof Error ? error.message : '计票失败' }); }
+  }
+
+  function continueGame() { if (room) commitRoom(startNextRound(room)); }
+  function rematch() { if (room) { const fresh = dealRoom({ ...room, status: 'lobby', players: room.players.map((player) => ({ ...player, alive: true, cardReady: false })) }); commitRoom(fresh); setRevealPlayerId(fresh.players[0]?.id ?? null); setPrivacyGate(true); } }
+  async function copyRoomCode() { if (!room) return; try { await navigator.clipboard.writeText(room.code); } catch { /* clipboard may be unavailable */ } setNotice({ kind: 'info', text: `房间码 ${room.code} 已复制` }); }
+  function reset() { setScreen('home'); setRoom(null); setRemoteMode(false); setCurrentPlayerId(null); setRevealPlayerId(null); setVotePlayerId(null); setPrivacyGate(true); window.localStorage.removeItem('undercover-demo-room'); window.localStorage.removeItem('undercover-active-remote'); }
+
+  return <main className="app-shell">
+    <header className="topbar"><button className="brand" onClick={reset} aria-label="返回首页"><span className="brand__mark">卧</span><span>卧底裁判局</span></button><div className="topbar__right"><span className={`connection ${cloudReady ? 'is-online' : ''}`}><i />{cloudReady ? '联机已就绪' : '本机演示模式'}</span>{room && <button className="room-code" onClick={copyRoomCode}>房间 {room.code} · 复制</button>}</div></header>
+
+    {screen === 'home' && <div className="home"><section className="hero"><div className="hero__copy"><p className="eyebrow">WHO IS THE UNDERCOVER · DESKTOP</p><h1>偷偷发牌，<br /><em>认真数票。</em></h1><p className="lede">不需要主持人。群里或线下照常聊，裁判器只在该出手的时候出现。</p><div className="hero__actions"><button className="button button--primary" onClick={openSetup}>创建一局 <span>→</span></button><span className="microcopy">6–12 人 · 匿名投票 · 自动判胜</span></div></div><div className="join-panel"><span className="panel-kicker">已有房间</span><h2>加入朋友的牌局</h2><label htmlFor="join-name">你的称呼</label><input className="plain-input" id="join-name" value={joinName} onChange={(event) => setJoinName(event.target.value.slice(0, 12))} placeholder="例如：小王" /><label htmlFor="room-code">输入 6 位房间码</label><div className="code-input"><input id="room-code" maxLength={6} value={joinCode} onChange={(event) => setJoinCode(event.target.value.toUpperCase().replace(/[^A-Z2-9]/g, ''))} placeholder="Q7K2P8" /><button disabled={busy} onClick={tryRemoteJoin}>{busy ? '连接中' : '加入'}</button></div><p>{cloudReady ? '连接到 CloudBase 实时房间' : '联机功能等待 CloudBase 参数，本机演示可立即使用。'}</p></div></section><section className="feature-strip">{steps.slice(1).map(([number, label, description]) => <div key={number}><span>{number}</span><b>{label}</b><p>{description}</p></div>)}</section></div>}
+
+    {screen === 'setup' && <div className="workspace setup-page"><div className="page-heading"><button className="back-link" onClick={() => setScreen('home')}>← 返回</button><p className="eyebrow">创建牌局</p><h1>先把规则说清楚。</h1><p>可创建多电脑联机房间，也可先在这一台电脑上完整演示。</p></div><div className="setup-grid"><section className="paper-card"><div className="field-row"><div><label htmlFor="owner-name">你的称呼</label><p>你会成为这局的房主</p></div><input id="owner-name" value={ownerName} onChange={(event) => setOwnerName(event.target.value.slice(0, 12))} /></div><div className="field-row field-row--stack"><div><label>玩家人数</label><p>重点优化 8 人局</p></div><div className="segmented">{[6, 8, 10, 12].map((limit) => <button className={playerLimit === limit ? 'is-selected' : ''} onClick={() => choosePlayerLimit(limit)} key={limit}>{limit} 人</button>)}</div></div><div className="field-row field-row--stack"><div><label>卧底人数</label><p>6–8 人默认 1 名，9–12 人默认 2 名</p></div><div className="segmented">{[1, 2].map((count) => <button className={undercoverCount === count ? 'is-selected' : ''} onClick={() => setUndercoverCount(count)} key={count}>{count} 名</button>)}</div></div><div className="field-row field-row--stack"><div><label>词语来源</label><p>开局后普通界面不会同时展示两组词</p></div><div className="segmented"><button className={!customWords ? 'is-selected' : ''} onClick={() => { const [a, b] = randomWordPair(); setCivilianWord(a); setUndercoverWord(b); setCustomWords(false); }}>系统随机</button><button className={customWords ? 'is-selected' : ''} onClick={() => { setCustomWords(true); setCivilianWord(''); setUndercoverWord(''); }}>自定义</button></div></div><div className="word-grid"><label>平民词<input value={civilianWord} onChange={(event) => { setCivilianWord(event.target.value); setCustomWords(true); }} placeholder="输入词语" /></label><label>卧底词<input value={undercoverWord} onChange={(event) => { setUndercoverWord(event.target.value); setCustomWords(true); }} placeholder="输入相近词语" /></label></div><div className="create-actions"><button className="button button--primary button--wide" disabled={busy || !cloudReady} onClick={createRemote}>{busy ? '正在创建…' : '创建多电脑联机房间'} <span>→</span></button><button className="button button--outline button--wide" onClick={createDemo}>先在本机演示完整流程</button></div>{!cloudReady && <p className="setup-hint">联机按钮会在填入 CloudBase 参数后自动启用。</p>}</section><aside className="rules-card"><span className="stamp">默认规则</span><h2>{playerLimit} 人 / {undercoverCount} 名卧底</h2><ol><li>全员依次查看私牌</li><li>存活玩家匿名投票</li><li>首次平票仅对并列者复投</li><li>再次平票则本轮无人出局</li><li>卧底人数不低于平民时获胜</li></ol><p>这是熟人娱乐模式，不防开发者工具查看牌局数据。</p></aside></div></div>}
+
+    {screen === 'game' && room && <div className="workspace game-page"><Progress room={room} /><div className="game-heading"><div><p className="eyebrow">{statusCopy(room)}</p><h1>{room.status === 'lobby' ? '确认玩家名单' : room.status === 'cards' ? '把电脑交给指定玩家' : room.status === 'discussion' ? '回去聊，聊完再来。' : room.status === 'voting' ? (room.ballot === 2 ? '平票了，只投并列者。' : '请依次秘密投票。') : room.status === 'finished' ? '胜负已定。' : '这一轮，有结果了。'}</h1></div><div className="round-badge"><span>ROUND</span><b>{String(room.round).padStart(2, '0')}</b></div></div>
+      {room.status === 'lobby' && <section className="game-card lobby-card"><div className="section-title"><div><span className="panel-kicker">座位表</span><h2>{room.players.length}/{room.playerLimit} 人已就位</h2></div><span>{remoteMode ? '分享房间码邀请朋友' : '可直接改名'}</span></div><div className="lobby-list">{room.players.map((player) => <label className="lobby-player" key={player.id}><span>{String(player.seat).padStart(2, '0')}</span><input disabled={remoteMode} value={player.name} onChange={(event) => renamePlayer(player.id, event.target.value)} /><i>{player.id === room.ownerId ? '房主' : '玩家'}</i></label>)}</div>{!remoteMode || currentPlayerId === room.ownerId ? <button className="button button--primary button--wide" disabled={room.players.length !== room.playerLimit} onClick={startDealing}>{room.players.length === room.playerLimit ? '锁定名单并随机发牌' : `还差 ${room.playerLimit - room.players.length} 人`} <span>→</span></button> : <div className="waiting-line">等待房主在玩家到齐后发牌…</div>}</section>}
+      {room.status === 'cards' && activeCardPlayer && <section className="private-stage"><aside className="player-queue"><span className="panel-kicker">发牌进度</span><h2>{room.players.filter((player) => player.cardReady).length}/{room.players.length} 已确认</h2>{room.players.map((player) => <Seat player={player} key={player.id} />)}</aside><div className="private-card-wrap">{privacyGate ? <div className="privacy-gate"><span className="seat__avatar seat__avatar--large">{activeCardPlayer.name.slice(0, 1)}</span><p>下一位</p><h2>{activeCardPlayer.name}</h2><span>请确认身边没有人偷看屏幕</span><button className="button button--dark" onClick={() => setPrivacyGate(false)}>我就是本人</button></div> : <div className={`identity-card ${revealed ? 'is-revealed' : ''}`}><div className="identity-card__cover" aria-hidden={revealed}><span>按住鼠标或空格键</span><b>查看我的私牌</b><i>松手立即遮挡</i></div><div className="identity-card__secret" aria-hidden={!revealed}><span>你的身份</span><b>{room.assignments[activeCardPlayer.id].role === 'undercover' ? '卧底' : '平民'}</b><p>你的词语</p><strong>{room.assignments[activeCardPlayer.id].word}</strong></div><button aria-label="按住查看私牌" onPointerDown={() => setRevealed(true)} onPointerUp={() => setRevealed(false)} onPointerLeave={() => setRevealed(false)} onKeyDown={(event) => { if (event.code === 'Space') { event.preventDefault(); setRevealed(true); } }} onKeyUp={(event) => { if (event.code === 'Space') setRevealed(false); }} /></div>}{!privacyGate && <button className="button button--primary button--wide" onClick={confirmCard} disabled={revealed}>我记住了，交给下一位 <span>→</span></button>}</div></section>}
+      {room.status === 'cards' && remoteMode && !activeCardPlayer && <section className="waiting-panel"><span className="stamp">私牌已确认</span><h2>请把注意力放回桌边。</h2><p>还有 {room.players.filter((player) => !player.cardReady).length} 位玩家没有确认私牌；全员完成后会自动进入讨论。</p></section>}
+      {room.status === 'discussion' && <section className="discussion-card"><div className="talk-mark">聊</div><div><span className="panel-kicker">裁判暂时退场</span><h2>回到群聊或桌边，自由讨论。</h2><p>觉得可以投票了，就回到这个页面。裁判器不会计时、监听或提醒发言顺序。</p><div className="alive-row">{room.players.filter((player) => player.alive).map((player) => <span key={player.id}>{player.name}</span>)}</div>{!remoteMode || currentPlayerId === room.ownerId ? <button className="button button--primary" onClick={beginVoting}>开始第 {room.round} 轮投票 <span>→</span></button> : <div className="waiting-line">等待房主开启下一轮投票…</div>}</div></section>}
+      {room.status === 'voting' && activeVoter && <section className="vote-layout"><aside className="vote-progress"><span className="panel-kicker">匿名投票</span><h2>{Object.keys(room.votes).length}/{eligibleVoters(room).length} 已提交</h2><p>实时票型不会展示。当前玩家提交后，请把电脑交给下一位。</p><div className="meter"><i style={{ width: `${Object.keys(room.votes).length / eligibleVoters(room).length * 100}%` }} /></div></aside><div className="vote-card">{privacyGate ? <div className="privacy-gate privacy-gate--vote"><span className="seat__avatar seat__avatar--large">{activeVoter.name.slice(0, 1)}</span><p>轮到</p><h2>{activeVoter.name}</h2><span>其他人请暂时移开视线</span><button className="button button--dark" onClick={() => setPrivacyGate(false)}>开始秘密投票</button></div> : <><div className="section-title"><div><span className="panel-kicker">{room.ballot === 2 ? '复投候选人' : '选出你认为的卧底'}</span><h2>{activeVoter.name}，请投一票</h2></div><span>不能投自己</span></div><div className="candidate-grid">{eligibleCandidates(room).filter((candidate) => candidate.id !== activeVoter.id).map((candidate) => <button className={selectedCandidateId === candidate.id ? 'is-selected' : ''} onClick={() => setSelectedCandidateId(candidate.id)} key={candidate.id}><span>{candidate.name.slice(0, 1)}</span><b>{candidate.name}</b><i>{selectedCandidateId === candidate.id ? '已选择' : '选择'}</i></button>)}</div><button className="button button--primary button--wide" disabled={!selectedCandidateId} onClick={submitVote}>确认提交（之后不可查看） <span>→</span></button></>}</div></section>}
+      {room.status === 'voting' && remoteMode && !activeVoter && <section className="waiting-panel"><span className="stamp">投票已提交</span><h2>{Object.keys(room.votes).length}/{eligibleVoters(room).length} 人已经投票</h2><p>提交内容已隐藏。等最后一票完成，所有人的页面会同时看到公开票数和裁判结果。</p><div className="meter"><i style={{ width: `${Object.keys(room.votes).length / eligibleVoters(room).length * 100}%` }} /></div></section>}
+      {(room.status === 'result' || room.status === 'finished') && room.lastResult && <section className="result-layout"><div className={`verdict ${room.status === 'finished' ? 'is-final' : ''}`}><span className="stamp">裁判结果</span>{room.status === 'finished' ? <><p>本局胜方</p><h2>{room.winner === 'civilian' ? '平民阵营' : '卧底阵营'}</h2><strong>{room.winner === 'civilian' ? '所有卧底已经出局' : '卧底人数已不低于平民'}</strong></> : room.lastResult.noElimination ? <><p>第二次仍然平票</p><h2>本轮无人出局</h2><strong>游戏继续</strong></> : <><p>最高票玩家</p><h2>{playerName(room, room.lastResult.eliminatedId)}</h2><strong>已出局 · 游戏继续</strong></>}</div><div className="tally"><div className="section-title"><div><span className="panel-kicker">公开票数</span><h2>第 {room.lastResult.round} 轮{room.lastResult.ballot === 2 ? '复投' : ''}</h2></div><span>不公开谁投了谁</span></div>{Object.entries(room.lastResult.counts).sort((a, b) => b[1] - a[1]).map(([id, count]) => <div className="tally-row" key={id}><span>{playerName(room, id)}</span><i><b style={{ width: `${count / eligibleVoters(room).length * 100}%` }} /></i><strong>{count} 票</strong></div>)}{room.status === 'finished' && <div className="reveal-list"><h3>身份公开</h3>{room.players.map((player) => <div key={player.id}><span>{player.name}</span><b>{room.assignments[player.id].role === 'undercover' ? '卧底' : '平民'} · {room.assignments[player.id].word}</b></div>)}</div>}{!remoteMode || currentPlayerId === room.ownerId ? <button className="button button--primary button--wide" onClick={room.status === 'finished' ? rematch : continueGame}>{room.status === 'finished' ? '原班人马再来一局' : `进入第 ${room.round + 1} 轮`} <span>→</span></button> : <div className="waiting-line">等待房主推进游戏…</div>}</div></section>}
+    </div>}
+    {notice && <div className={`toast toast--${notice.kind}`} role="status">{notice.text}</div>}
+  </main>;
+}
