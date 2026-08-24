@@ -4,8 +4,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { applyBallotResult, createRoom, dealRoom, eligibleCandidates, eligibleVoters, makeId, resolveBallot, startNextRound, type GameRoom, type Player } from '@/lib/game';
 import { getCloudStore } from '@/lib/cloudbase-store';
 import { randomWordPair } from '@/lib/words';
+import SpreadsheetMode from './spreadsheet-mode';
 
 type Screen = 'home' | 'setup' | 'game';
+type DisplayMode = 'spreadsheet' | 'immersive';
 type Notice = { kind: 'info' | 'error'; text: string } | null;
 const cloudReady = Boolean(process.env.NEXT_PUBLIC_CLOUDBASE_ENV_ID && process.env.NEXT_PUBLIC_CLOUDBASE_ACCESS_KEY);
 const steps = [['01', '建房', '选人数和词语'], ['02', '发牌', '轮流查看私牌'], ['03', '投票', '匿名提交选择'], ['04', '判定', '自动处理胜负']] as const;
@@ -33,6 +35,7 @@ function Seat({ player }: { player: Player }) {
 }
 
 export default function GameApp() {
+  const [displayMode, setDisplayMode] = useState<DisplayMode>('spreadsheet');
   const [screen, setScreen] = useState<Screen>('home');
   const [room, setRoom] = useState<GameRoom | null>(null);
   const [notice, setNotice] = useState<Notice>(null);
@@ -54,6 +57,15 @@ export default function GameApp() {
   const [privacyGate, setPrivacyGate] = useState(true);
 
   useEffect(() => {
+    const savedMode = window.localStorage.getItem('undercover-display-mode');
+    if (savedMode === 'immersive') window.queueMicrotask(() => setDisplayMode('immersive'));
+  }, []);
+
+  useEffect(() => {
+    document.title = displayMode === 'spreadsheet' ? '协作数据表' : '卧底裁判局';
+  }, [displayMode]);
+
+  useEffect(() => {
     if (!notice) return;
     const timeout = window.setTimeout(() => setNotice(null), 3600);
     return () => window.clearTimeout(timeout);
@@ -62,9 +74,11 @@ export default function GameApp() {
   useEffect(() => {
     const hideCard = () => setRevealed(false);
     const onVisibility = () => { if (document.hidden) hideCard(); };
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') hideCard(); };
     window.addEventListener('blur', hideCard);
+    window.addEventListener('keydown', onKeyDown);
     document.addEventListener('visibilitychange', onVisibility);
-    return () => { window.removeEventListener('blur', hideCard); document.removeEventListener('visibilitychange', onVisibility); };
+    return () => { window.removeEventListener('blur', hideCard); window.removeEventListener('keydown', onKeyDown); document.removeEventListener('visibilitychange', onVisibility); };
   }, []);
 
   useEffect(() => {
@@ -122,6 +136,12 @@ export default function GameApp() {
 
   function choosePlayerLimit(limit: number) { setPlayerLimit(limit); setUndercoverCount(limit >= 9 ? 2 : 1); }
   function openSetup() { const [civilian, undercover] = randomWordPair(); setCivilianWord(civilian); setUndercoverWord(undercover); setScreen('setup'); }
+  function switchDisplayMode() {
+    const next: DisplayMode = displayMode === 'spreadsheet' ? 'immersive' : 'spreadsheet';
+    setRevealed(false);
+    setDisplayMode(next);
+    window.localStorage.setItem('undercover-display-mode', next);
+  }
 
   function createDemo() {
     if (!ownerName.trim()) return setNotice({ kind: 'error', text: '先给房主起个名字' });
@@ -219,8 +239,22 @@ export default function GameApp() {
   async function copyRoomCode() { if (!room) return; try { await navigator.clipboard.writeText(room.code); } catch { /* clipboard may be unavailable */ } setNotice({ kind: 'info', text: `房间码 ${room.code} 已复制` }); }
   function reset() { setScreen('home'); setRoom(null); setRemoteMode(false); setCurrentPlayerId(null); setRevealPlayerId(null); setVotePlayerId(null); setPrivacyGate(true); window.localStorage.removeItem('undercover-demo-room'); window.localStorage.removeItem('undercover-active-remote'); }
 
+  if (displayMode === 'spreadsheet') return <SpreadsheetMode
+    screen={screen} room={room} notice={notice} cloudReady={cloudReady} busy={busy} remoteMode={remoteMode}
+    currentPlayerId={currentPlayerId} activeCardPlayer={activeCardPlayer} activeVoter={activeVoter} selectedCandidateId={selectedCandidateId}
+    ownerName={ownerName} playerLimit={playerLimit} undercoverCount={undercoverCount} civilianWord={civilianWord} undercoverWord={undercoverWord}
+    customWords={customWords} joinCode={joinCode} joinName={joinName} onSwitchMode={switchDisplayMode} onOpenSetup={openSetup}
+    onBackHome={() => setScreen('home')} onReset={reset} onCopyRoomCode={() => void copyRoomCode()} onJoin={() => void tryRemoteJoin()}
+    onCreateDemo={createDemo} onCreateRemote={() => void createRemote()} onStartDealing={startDealing} onConfirmCard={confirmCard}
+    onBeginVoting={beginVoting} onSubmitVote={submitVote} onContinue={continueGame} onRematch={rematch} onOwnerName={setOwnerName}
+    onPlayerLimit={choosePlayerLimit} onUndercoverCount={setUndercoverCount} onCivilianWord={(value) => { setCivilianWord(value); setCustomWords(true); }}
+    onUndercoverWord={(value) => { setUndercoverWord(value); setCustomWords(true); }} onRandomWords={() => { const [a, b] = randomWordPair(); setCivilianWord(a); setUndercoverWord(b); setCustomWords(false); }}
+    onCustomWords={() => { setCustomWords(true); setCivilianWord(''); setUndercoverWord(''); }} onJoinCode={setJoinCode} onJoinName={setJoinName}
+    onRenamePlayer={renamePlayer} onCandidate={setSelectedCandidateId}
+  />;
+
   return <main className="app-shell">
-    <header className="topbar"><button className="brand" onClick={reset} aria-label="返回首页"><span className="brand__mark">卧</span><span>卧底裁判局</span></button><div className="topbar__right"><span className={`connection ${cloudReady ? 'is-online' : ''}`}><i />{cloudReady ? '联机已就绪' : '本机演示模式'}</span>{room && <button className="room-code" onClick={copyRoomCode}>房间 {room.code} · 复制</button>}</div></header>
+    <header className="topbar"><button className="brand" onClick={reset} aria-label="返回首页"><span className="brand__mark">卧</span><span>卧底裁判局</span></button><div className="topbar__right"><button className="mode-switch" onClick={switchDisplayMode} aria-label="切换到表格低干扰模式">表格模式</button><span className={`connection ${cloudReady ? 'is-online' : ''}`}><i />{cloudReady ? '联机已就绪' : '本机演示模式'}</span>{room && <button className="room-code" onClick={copyRoomCode}>房间 {room.code} · 复制</button>}</div></header>
 
     {screen === 'home' && <div className="home"><section className="hero"><div className="hero__copy"><p className="eyebrow">WHO IS THE UNDERCOVER · DESKTOP</p><h1>偷偷发牌，<br /><em>认真数票。</em></h1><p className="lede">不需要主持人。群里或线下照常聊，裁判器只在该出手的时候出现。</p><div className="hero__actions"><button className="button button--primary" onClick={openSetup}>创建一局 <span>→</span></button><span className="microcopy">6–12 人 · 匿名投票 · 自动判胜</span></div></div><div className="join-panel"><span className="panel-kicker">已有房间</span><h2>加入朋友的牌局</h2><label htmlFor="join-name">你的称呼</label><input className="plain-input" id="join-name" value={joinName} onChange={(event) => setJoinName(event.target.value.slice(0, 12))} placeholder="例如：小王" /><label htmlFor="room-code">输入 6 位房间码</label><div className="code-input"><input id="room-code" maxLength={6} value={joinCode} onChange={(event) => setJoinCode(event.target.value.toUpperCase().replace(/[^A-Z2-9]/g, ''))} placeholder="Q7K2P8" /><button disabled={busy} onClick={tryRemoteJoin}>{busy ? '连接中' : '加入'}</button></div><p>{cloudReady ? '连接到 CloudBase 实时房间' : '联机功能等待 CloudBase 参数，本机演示可立即使用。'}</p></div></section><section className="feature-strip">{steps.slice(1).map(([number, label, description]) => <div key={number}><span>{number}</span><b>{label}</b><p>{description}</p></div>)}</section></div>}
 

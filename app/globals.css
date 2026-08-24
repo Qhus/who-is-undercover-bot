@@ -7,6 +7,7 @@ body { margin: 0; color: var(--ink); background: var(--paper); font-family: Inte
 button, input { color: inherit; font: inherit; }
 button { cursor: pointer; }
 button:focus-visible, input:focus-visible { outline: 3px solid rgb(200 77 49 / 35%); outline-offset: 3px; }
+.mode-switch { border:1px solid var(--line); background:#fffaf0; padding:8px 12px; font-size:12px; font-weight:800; }
 .app-shell { min-height: 100vh; background: radial-gradient(circle at 78% 12%, rgb(255 255 255 / 70%), transparent 28rem), var(--paper); }
 .topbar { height: 76px; border-bottom: 1px solid var(--line); display:flex; align-items:center; justify-content:space-between; padding:0 max(30px,calc((100vw - 1180px)/2)); background:rgb(244 239 229 / 88%); backdrop-filter:blur(14px); position:sticky; top:0; z-index:30; }
 .brand { display:flex; gap:12px; align-items:center; border:0; background:none; padding:0; font-size:17px; font-weight:900; letter-spacing:-.03em; }
@@ -161,6 +162,68 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgb(200 77 49 / 3
 .toast { position:fixed; z-index:50; left:50%; bottom:28px; transform:translateX(-50%); color:#fff; background:var(--ink); padding:13px 20px; box-shadow:5px 5px 0 rgb(200 77 49 / 70%); font-size:12px; font-weight:800; }
 .toast--error { background:#9e3227; }
 
+/* Spreadsheet low-distraction mode: intentionally product-neutral, with no Excel/Microsoft branding. */
+.sheet-app { --sheet-green:#217346; --sheet-grid:#d9d9d9; --sheet-head:#f3f3f3; min-height:100vh; height:100vh; overflow:hidden; display:flex; flex-direction:column; color:#262626; background:#fff; font-family:Arial,"Microsoft YaHei","PingFang SC",sans-serif; font-size:13px; }
+.sheet-app * { animation:none!important; transition:none!important; }
+.sheet-app button,.sheet-app input,.sheet-app select { font:inherit; }
+.sheet-app button:focus-visible,.sheet-app input:focus-visible,.sheet-app select:focus-visible { outline:2px solid var(--sheet-green); outline-offset:1px; }
+.sheet-titlebar { min-height:48px; padding:0 14px; display:flex; align-items:center; gap:12px; color:#fff; background:var(--sheet-green); }
+.sheet-filemark { width:30px; height:30px; border:1px solid rgb(255 255 255 / 45%); color:#fff; background:transparent; font-weight:800; }
+.sheet-titlebar>div:nth-child(2) { min-width:0; display:flex; flex-direction:column; line-height:1.3; }
+.sheet-titlebar strong { max-width:55vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sheet-titlebar span { color:rgb(255 255 255 / 72%); font-size:10px; }
+.sheet-title-actions { margin-left:auto; display:flex; gap:6px; }
+.sheet-title-actions button { min-height:30px; padding:0 12px; color:#fff; border:1px solid rgb(255 255 255 / 38%); background:transparent; }
+.sheet-ribbon { min-height:36px; display:flex; align-items:stretch; gap:3px; padding:0 10px; border-bottom:1px solid #d5d5d5; background:#fafafa; }
+.sheet-ribbon button { border:0; border-bottom:2px solid transparent; background:transparent; padding:0 13px; }
+.sheet-ribbon button.is-current { color:var(--sheet-green); border-bottom-color:var(--sheet-green); font-weight:700; }
+.sheet-ribbon span { flex:1; }
+.sheet-toolbar { min-height:38px; display:flex; align-items:center; gap:13px; padding:0 14px; border-bottom:1px solid #ddd; color:#555; background:#fafafa; white-space:nowrap; overflow:hidden; }
+.sheet-toolbar i { width:1px; height:22px; background:#d7d7d7; }
+.sheet-toolbar b { min-width:44px; padding:4px 7px; border:1px solid #dedede; font-weight:400; }
+.sheet-toolbar strong,.sheet-toolbar em,.sheet-toolbar u { min-width:20px; text-align:center; color:#333; }
+.sheet-formula { min-height:32px; display:grid; grid-template-columns:72px 36px 1fr; align-items:center; border-bottom:1px solid #cfcfcf; background:#fff; }
+.sheet-formula>span,.sheet-formula output { min-height:31px; display:flex; align-items:center; padding:0 9px; border-right:1px solid #ddd; }
+.sheet-namebox { justify-content:center; color:#555; }
+.sheet-fx { justify-content:center; color:#777; font-style:italic; font-family:Georgia,serif; }
+.sheet-formula output { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.sheet-commandbar { min-height:42px; display:flex; align-items:center; gap:7px; padding:5px 10px; border-bottom:1px solid #d7d7d7; background:#f7f7f7; }
+.sheet-commandbar button,.sheet-action,.sheet-select-wrap button,.sheet-inline button { min-height:28px; padding:0 12px; border:1px solid #bdbdbd; color:#222; background:#fff; }
+.sheet-commandbar button:first-of-type:not(:only-of-type),.sheet-action,.sheet-select-wrap button { color:#fff; border-color:var(--sheet-green); background:var(--sheet-green); }
+.sheet-commandbar button:disabled,.sheet-action:disabled,.sheet-select-wrap button:disabled { opacity:.45; cursor:not-allowed; }
+.sheet-commandbar span { margin-left:auto; color:#666; font-size:11px; }
+.sheet-grid-scroll { min-height:0; flex:1; overflow:auto; background:#fff; }
+.sheet-grid { width:100%; min-width:900px; border-collapse:separate; border-spacing:0; table-layout:fixed; }
+.sheet-grid th,.sheet-grid td { height:34px; padding:4px 8px; border-right:1px solid var(--sheet-grid); border-bottom:1px solid var(--sheet-grid); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:400; }
+.sheet-grid thead { position:sticky; top:0; z-index:5; }
+.sheet-grid thead th { height:25px; padding:0; text-align:center; color:#555; background:var(--sheet-head); border-bottom:1px solid #bbb; }
+.sheet-grid thead th:first-child,.sheet-grid tbody th { width:46px; }
+.sheet-grid tbody th { position:sticky; left:0; z-index:4; padding:0; text-align:center; color:#666; background:var(--sheet-head); border-right:1px solid #bbb; }
+.sheet-grid th:nth-child(2),.sheet-grid td:nth-child(2) { width:105px; }
+.sheet-grid th:nth-child(3),.sheet-grid td:nth-child(3) { width:180px; }
+.sheet-grid th:nth-child(4),.sheet-grid td:nth-child(4) { width:130px; }
+.sheet-grid th:nth-child(5),.sheet-grid td:nth-child(5) { width:190px; }
+.sheet-grid th:nth-child(6),.sheet-grid td:nth-child(6) { width:230px; }
+.sheet-grid td { position:relative; background:#fff; }
+.sheet-grid td.is-active-cell { overflow:visible; box-shadow:inset 0 0 0 2px var(--sheet-green); z-index:3; }
+.sheet-grid td.is-active-cell:after { content:""; position:absolute; right:-3px; bottom:-3px; width:6px; height:6px; background:var(--sheet-green); }
+.sheet-grid input,.sheet-grid select { width:100%; min-height:25px; padding:2px 5px; border:0; background:transparent; }
+.sheet-grid input:focus,.sheet-grid select:focus { outline:0; }
+.sheet-secret { min-width:94px; min-height:26px; padding:0 10px; border:0; letter-spacing:.14em; color:#333; background:#f1f1f1; }
+.sheet-secret-value { color:#111; font-weight:700; }
+.sheet-select-wrap { display:flex; gap:4px; align-items:center; }
+.sheet-select-wrap select { min-width:95px; border:1px solid #aaa; background:#fff; }
+.sheet-select-wrap button { flex:0 0 auto; }
+.sheet-inline { display:flex; gap:3px; }
+.sheet-inline button.is-selected { color:#fff; border-color:var(--sheet-green); background:var(--sheet-green); }
+.sheet-tabs { min-height:35px; display:flex; align-items:stretch; gap:0; border-top:1px solid #c9c9c9; background:#f3f3f3; overflow-x:auto; }
+.sheet-tabs button { flex:0 0 auto; min-width:42px; padding:0 15px; border:0; border-right:1px solid #ddd; border-top:2px solid transparent; background:transparent; white-space:nowrap; }
+.sheet-tabs button.is-current { color:var(--sheet-green); border-top-color:var(--sheet-green); background:#fff; font-weight:700; }
+.sheet-tabs>span { flex:1 0 25px; }
+.sheet-tabs small { flex:0 0 auto; align-self:center; padding:0 13px; color:#707070; font-size:10px; white-space:nowrap; }
+.sheet-toast { position:fixed; z-index:40; right:18px; bottom:51px; max-width:min(420px,calc(100vw - 36px)); padding:10px 14px; color:#fff; background:#555; border-left:4px solid var(--sheet-green); box-shadow:0 2px 8px rgb(0 0 0 / 20%); }
+.sheet-toast--error { border-left-color:#b3261e; }
+
 @media (max-width:900px) {
   .home,.workspace { width:min(100% - 34px,720px); }
   .hero { grid-template-columns:1fr; gap:30px; padding:70px 0; }
@@ -188,4 +251,13 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgb(200 77 49 / 3
   .progress__item b { display:none; }
   .game-heading h1,.page-heading h1 { font-size:38px; }
   .identity-card__secret strong { font-size:52px; }
+  .sheet-titlebar { padding:0 8px; }
+  .sheet-title-actions button:first-child { display:none; }
+  .sheet-ribbon button:nth-child(2),.sheet-ribbon button:nth-child(3),.sheet-toolbar { display:none; }
+  .sheet-ribbon { min-height:34px; }
+  .sheet-formula { grid-template-columns:56px 32px 1fr; }
+  .sheet-commandbar { overflow-x:auto; }
+  .sheet-commandbar span { white-space:nowrap; }
+  .sheet-grid { min-width:760px; }
+  .sheet-tabs small { display:none; }
 }
