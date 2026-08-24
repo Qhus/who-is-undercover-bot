@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { applyBallotResult, assignCards, createRoom, determineWinner, PLAYER_LIMIT_OPTIONS, resolveBallot, undercoverOptions, type GameRoom, type Player } from './game.ts';
+import { applyBallotResult, assignCards, canBeginVoting, createRoom, determineWinner, discussionComplete, getRoundContents, PLAYER_LIMIT_OPTIONS, resolveBallot, startDiscussion, submitRoundContent, undercoverOptions, type GameRoom, type Player } from './game.ts';
 
 function players(count = 8): Player[] {
   return Array.from({ length: count }, (_, index) => ({ id: `p${index}`, name: `玩家 ${index + 1}`, seat: index + 1, alive: true, cardReady: true }));
@@ -43,6 +43,30 @@ test('3–4 人仅允许 1 名卧底，5 人起可选择 2 名', () => {
   assert.equal(Object.keys(assignCards(players(3), 1, '牛奶', '豆浆')).length, 3);
   assert.throws(() => assignCards(players(3), 2, '牛奶', '豆浆'), /卧底人数不合法/);
   assert.throws(() => assignCards(players(4), 2, '牛奶', '豆浆'), /卧底人数不合法/);
+});
+
+test('本轮内容可逐人提交，全员完成后开放选择', () => {
+  const roster = players(3);
+  let room = createRoom({ ownerId: 'p0', ownerName: '玩家 1', playerLimit: 3, undercoverCount: 1, civilianWord: '牛奶', undercoverWord: '豆浆' });
+  room = startDiscussion({ ...room, players: roster }, 1_000);
+  assert.equal(room.discussionDeadlineAt, 121_000);
+  assert.equal(canBeginVoting(room, 2_000), false);
+  room = submitRoundContent(room, 'p0', '像是早餐会喝的东西', 2_000);
+  room = submitRoundContent(room, 'p1', '通常装在杯子里', 3_000);
+  assert.equal(discussionComplete(room), false);
+  room = submitRoundContent(room, 'p2', '颜色比较浅', 4_000);
+  assert.equal(getRoundContents(room).p2, '颜色比较浅');
+  assert.equal(discussionComplete(room), true);
+  assert.equal(canBeginVoting(room, 4_000), true);
+});
+
+test('本轮倒计时结束后即使有人未提交也可开放选择', () => {
+  const roster = players(3);
+  const base = createRoom({ ownerId: 'p0', ownerName: '玩家 1', playerLimit: 3, undercoverCount: 1, civilianWord: '牛奶', undercoverWord: '豆浆' });
+  const room = startDiscussion({ ...base, players: roster }, 10_000);
+  assert.equal(canBeginVoting(room, 129_999), false);
+  assert.equal(canBeginVoting(room, 130_000), true);
+  assert.throws(() => submitRoundContent(room, 'p0', 'x'.repeat(81)), /不能超过 80 字/);
 });
 
 test('唯一最高票玩家被淘汰', () => {

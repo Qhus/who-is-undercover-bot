@@ -128,9 +128,14 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgb(200 77 49 / 3
 .identity-card>button { position:absolute; inset:0; width:100%; opacity:0; z-index:4; }
 .identity-card.is-revealed .identity-card__cover { opacity:0; transform:scale(1.05); }
 .discussion-card { min-height:400px; border:1px solid var(--line); display:grid; grid-template-columns:270px 1fr; align-items:center; padding:44px; background:var(--cream); }
-.talk-mark { font:900 130px Georgia,"STSong",serif; color:var(--red); opacity:.9; }
+.talk-mark { display:flex; flex-direction:column; align-items:flex-start; font:900 130px Georgia,"STSong",serif; color:var(--red); opacity:.9; }
+.talk-mark span { font:900 24px/1 Arial,sans-serif; letter-spacing:.08em; }
 .discussion-card h2 { font:900 38px Georgia,"STSong",serif; margin:10px 0; }
 .discussion-card p { max-width:650px; color:var(--muted); line-height:1.8; }
+.round-content-form { max-width:680px; margin:22px 0; padding:16px; border:1px solid var(--line); background:rgb(255 255 255 / 45%); }
+.round-content-form label { display:block; margin-bottom:8px; font-size:11px; font-weight:900; }
+.round-content-form>div { display:flex; gap:8px; }
+.round-content-form input { min-width:0; flex:1; border:0; border-bottom:2px solid var(--ink); background:transparent; padding:10px 4px; outline:0; }
 .alive-row { display:flex; flex-wrap:wrap; gap:7px; margin:26px 0; }
 .alive-row span { border:1px solid var(--line); padding:6px 10px; font-size:10px; font-weight:800; }
 .vote-progress p { color:var(--muted); font-size:12px; line-height:1.8; }
@@ -235,6 +240,10 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgb(200 77 49 / 3
 .sheet-select-wrap { display:flex; gap:4px; align-items:center; }
 .sheet-select-wrap select { min-width:95px; border:1px solid #aaa; background:#fff; }
 .sheet-select-wrap button { flex:0 0 auto; }
+.sheet-content-input { display:flex; align-items:center; gap:4px; }
+.sheet-content-input input { min-width:110px; border:1px solid #aaa; background:#fff; }
+.sheet-content-input button { flex:0 0 auto; min-height:27px; padding:0 9px; color:#fff; border:1px solid var(--sheet-green); background:var(--sheet-green); }
+.sheet-content-input button:disabled { opacity:.45; }
 .sheet-inline { display:flex; gap:3px; }
 .sheet-inline button.is-selected { color:#fff; border-color:var(--sheet-green); background:var(--sheet-green); }
 .sheet-tabs { min-height:35px; display:flex; align-items:stretch; gap:0; border-top:1px solid #c9c9c9; background:#f3f3f3; overflow-x:auto; }

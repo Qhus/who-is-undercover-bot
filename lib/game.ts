@@ -4,6 +4,8 @@ export type GameStatus = 'lobby' | 'cards' | 'discussion' | 'voting' | 'result' 
 
 export const MIN_PLAYERS = 3;
 export const MAX_PLAYERS = 10;
+export const ROUND_CONTENT_MAX_LENGTH = 80;
+export const DISCUSSION_DURATION_MS = 120_000;
 export const PLAYER_LIMIT_OPTIONS = Array.from({ length: MAX_PLAYERS - MIN_PLAYERS + 1 }, (_, index) => MIN_PLAYERS + index);
 
 export function undercoverOptions(playerLimit: number): number[] {
@@ -52,6 +54,8 @@ export interface GameRoom {
   runoffCandidateIds: string[];
   votes: Record<string, string>;
   history: RoundResult[];
+  roundContents?: Record<string, Record<string, string>>;
+  discussionDeadlineAt?: number | null;
   lastResult: RoundResult | null;
   winner: Winner;
   version: number;
@@ -162,6 +166,49 @@ export function determineWinner(room: Pick<GameRoom, 'players' | 'assignments'>)
   return null;
 }
 
+export function getRoundContents(room: GameRoom, round = room.round): Record<string, string> {
+  return room.roundContents?.[String(round)] ?? {};
+}
+
+export function discussionComplete(room: GameRoom): boolean {
+  const contents = getRoundContents(room);
+  return eligibleVoters(room).every((player) => Boolean(contents[player.id]?.trim()));
+}
+
+export function canBeginVoting(room: GameRoom, now = Date.now()): boolean {
+  if (room.status !== 'discussion') return false;
+  return discussionComplete(room) || !room.discussionDeadlineAt || now >= room.discussionDeadlineAt;
+}
+
+export function startDiscussion(room: GameRoom, now = Date.now()): GameRoom {
+  const roundKey = String(room.round);
+  return {
+    ...room,
+    status: 'discussion',
+    roundContents: { ...(room.roundContents ?? {}), [roundKey]: getRoundContents(room) },
+    discussionDeadlineAt: now + DISCUSSION_DURATION_MS,
+    version: room.version + 1,
+    updatedAt: now,
+  };
+}
+
+export function submitRoundContent(room: GameRoom, playerId: string, content: string, now = Date.now()): GameRoom {
+  if (room.status !== 'discussion') throw new Error('当前不能提交本轮内容');
+  if (!eligibleVoters(room).some((player) => player.id === playerId)) throw new Error('当前成员不能提交本轮内容');
+  const normalized = content.trim();
+  if (!normalized) throw new Error('请填写本轮内容');
+  if (normalized.length > ROUND_CONTENT_MAX_LENGTH) throw new Error(`本轮内容不能超过 ${ROUND_CONTENT_MAX_LENGTH} 字`);
+  const roundKey = String(room.round);
+  const current = getRoundContents(room);
+  if (current[playerId]) throw new Error('本轮内容已经提交');
+  return {
+    ...room,
+    roundContents: { ...(room.roundContents ?? {}), [roundKey]: { ...current, [playerId]: normalized } },
+    version: room.version + 1,
+    updatedAt: now,
+  };
+}
+
 export function applyBallotResult(room: GameRoom, result: RoundResult): GameRoom {
   const now = Date.now();
   if (result.tiedIds.length > 1 && result.ballot === 1) {
@@ -196,18 +243,21 @@ export function applyBallotResult(room: GameRoom, result: RoundResult): GameRoom
   };
 }
 
-export function startNextRound(room: GameRoom): GameRoom {
+export function startNextRound(room: GameRoom, now = Date.now()): GameRoom {
   if (room.winner) return room;
+  const nextRound = room.round + 1;
   return {
     ...room,
     status: 'discussion',
-    round: room.round + 1,
+    round: nextRound,
     ballot: 1,
     runoffCandidateIds: [],
     votes: {},
+    roundContents: { ...(room.roundContents ?? {}), [String(nextRound)]: {} },
+    discussionDeadlineAt: now + DISCUSSION_DURATION_MS,
     lastResult: null,
     version: room.version + 1,
-    updatedAt: Date.now(),
+    updatedAt: now,
   };
 }
 
@@ -242,6 +292,8 @@ export function createRoom(input: {
     runoffCandidateIds: [],
     votes: {},
     history: [],
+    roundContents: {},
+    discussionDeadlineAt: null,
     lastResult: null,
     winner: null,
     version: 1,
@@ -262,6 +314,8 @@ export function dealRoom(room: GameRoom, random: RandomSource = Math.random): Ga
     ballot: 1,
     votes: {},
     history: [],
+    roundContents: {},
+    discussionDeadlineAt: null,
     lastResult: null,
     winner: null,
     version: room.version + 1,

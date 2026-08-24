@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { eligibleCandidates, eligibleVoters, PLAYER_LIMIT_OPTIONS, undercoverOptions, type GameRoom, type Player } from '@/lib/game';
+import { eligibleCandidates, eligibleVoters, getRoundContents, PLAYER_LIMIT_OPTIONS, ROUND_CONTENT_MAX_LENGTH, undercoverOptions, type GameRoom, type Player } from '@/lib/game';
 import { neutralizeGameCopy } from '@/lib/neutral-copy';
 import { createPrivacyGuard, PRIVATE_REVEAL_MS, PRIVACY_IDLE_MS, type PrivacyGuard } from '@/lib/privacy';
 
@@ -27,8 +27,12 @@ export interface SpreadsheetModeProps {
   remoteMode: boolean;
   currentPlayerId: string | null;
   activeCardPlayer: Player | null;
+  activeDiscussionPlayer: Player | null;
   activeVoter: Player | null;
   selectedCandidateId: string | null;
+  roundContentDraft: string;
+  discussionRemainingSeconds: number;
+  canOpenVoting: boolean;
   ownerName: string;
   playerLimit: number;
   undercoverCount: number;
@@ -47,6 +51,8 @@ export interface SpreadsheetModeProps {
   onCreateRemote: () => void;
   onStartDealing: () => void;
   onConfirmCard: () => void;
+  onRoundContentDraft: (value: string) => void;
+  onSubmitRoundContent: () => void;
   onBeginVoting: () => void;
   onSubmitVote: () => void;
   onContinue: () => void;
@@ -76,13 +82,18 @@ function tabLabel(tab: SheetTab): string {
   return `Round_${tab.slice(6)}`;
 }
 
-function neutralStatus(room: GameRoom, player: Player, activeCardPlayer: Player | null, activeVoter: Player | null): string {
+function neutralStatus(room: GameRoom, player: Player, activeCardPlayer: Player | null, activeDiscussionPlayer: Player | null, activeVoter: Player | null): string {
   if (!player.alive) return '本轮退出';
   if (room.status === 'lobby') return '等待中';
   if (room.status === 'cards') return player.cardReady ? '已完成' : player.id === activeCardPlayer?.id ? '待提交' : '等待中';
+  if (room.status === 'discussion') return getRoundContents(room)[player.id] ? '已完成' : player.id === activeDiscussionPlayer?.id ? '待提交' : '等待中';
   if (room.status === 'voting') return room.votes[player.id] ? '已完成' : player.id === activeVoter?.id ? '待提交' : '等待中';
   if (room.status === 'finished') return '已完成';
   return '等待中';
+}
+
+function formatCountdown(seconds: number): string {
+  return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
 }
 
 function Grid({ rows, activeCell, emphasizedCells, onActivate }: { rows: ReactNode[][]; activeCell: string; emphasizedCells: string[]; onActivate: (cell: string) => void }) {
@@ -189,12 +200,18 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
       };
     }
     if (room.status === 'discussion') {
+      const row = Math.max(0, room.players.findIndex((player) => player.id === props.activeDiscussionPlayer?.id)) + 2;
+      const cell = `D${row}`;
       return {
         step: 2,
-        title: `填写本轮内容 · Round_${String(room.round).padStart(2, '0')}`,
-        instruction: isOwner ? '本轮内容在群聊或现场完成；准备好后点击表格上方“开放提交选择”。' : '本轮内容在群聊或现场完成，等待负责人开放提交选择。',
-        location: '本阶段无需在单元格输入',
-        focusCell: 'C2', emphasizedCells: [], cellHints: {},
+        title: `填写本轮内容 · ${formatCountdown(props.discussionRemainingSeconds)}`,
+        instruction: props.activeDiscussionPlayer
+          ? `在 ${cell} 输入本轮内容并点击“提交”；全员完成或倒计时结束后，由负责人继续。`
+          : props.canOpenVoting && isOwner ? '本轮已可结束，请点击表格上方“开放提交选择”。' : '你的内容已完成，等待其他成员或倒计时结束。',
+        location: props.activeDiscussionPlayer ? `当前填写位置：${cell}（本轮内容列）` : `剩余时间：${formatCountdown(props.discussionRemainingSeconds)}`,
+        focusCell: props.activeDiscussionPlayer ? cell : 'C2',
+        emphasizedCells: props.activeDiscussionPlayer ? [cell] : [],
+        cellHints: props.activeDiscussionPlayer ? { [cell]: '填写内容后点击同一单元格内的“提交”' } : {},
       };
     }
     if (room.status === 'voting') {
@@ -217,9 +234,9 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
       location: '结果：当前 Round 工作表；历史：操作记录',
       focusCell: 'D2', emphasizedCells: ['D2'], cellHints: { D2: '本轮公开结果' },
     };
-  }, [props.screen, props.room, props.activeCardPlayer, props.activeVoter, isOwner]);
+  }, [props.screen, props.room, props.activeCardPlayer, props.activeDiscussionPlayer, props.activeVoter, props.discussionRemainingSeconds, props.canOpenVoting, isOwner]);
 
-  const flowKey = `${props.screen}|${props.room?.status ?? ''}|${props.room?.round ?? ''}|${props.activeCardPlayer?.id ?? ''}|${props.activeVoter?.id ?? ''}`;
+  const flowKey = `${props.screen}|${props.room?.status ?? ''}|${props.room?.round ?? ''}|${props.activeCardPlayer?.id ?? ''}|${props.activeDiscussionPlayer?.id ?? ''}|${props.activeVoter?.id ?? ''}`;
   const activeCell = cellSelection?.flowKey === flowKey ? cellSelection.cell : workflowGuide.focusCell;
 
   const formulaValue = sensitiveVisible && currentAssignment
@@ -256,18 +273,24 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
       ])];
     }
 
-    const header: ReactNode[] = ['序号', '成员', '本轮状态', '个人信息', '提交选择', '备注'];
+    const header: ReactNode[] = ['序号', '成员', '本轮状态', room.status === 'discussion' ? '本轮内容' : '个人信息', '提交选择', '备注'];
     const rows: ReactNode[][] = [header];
     room.players.forEach((player) => {
       const isCardOwner = room.status === 'cards' && player.id === props.activeCardPlayer?.id;
+      const isContentOwner = room.status === 'discussion' && player.id === props.activeDiscussionPlayer?.id;
       const isVoter = room.status === 'voting' && player.id === props.activeVoter?.id;
       let personal: ReactNode = player.cardReady ? '已完成' : '等待中';
       if (isCardOwner) personal = sensitiveVisible && currentAssignment
         ? <span className="sheet-secret-value">{currentAssignment.role === 'undercover' ? '卧底' : '平民'}｜{currentAssignment.word}</span>
         : <button className="sheet-secret" onClick={() => privacy.current?.reveal()} aria-label="显示个人信息，真实用途是查看你的身份和词语">••••••</button>;
+      if (room.status === 'discussion') {
+        const submittedContent = getRoundContents(room)[player.id];
+        personal = submittedContent || '等待中';
+        if (isContentOwner) personal = <div className="sheet-content-input"><input value={props.roundContentDraft} maxLength={ROUND_CONTENT_MAX_LENGTH} onChange={(event) => props.onRoundContentDraft(event.target.value)} placeholder={`填写本轮内容（最多 ${ROUND_CONTENT_MAX_LENGTH} 字）`} aria-label="填写谁是卧底本轮描述内容" /><button disabled={!props.roundContentDraft.trim()} onClick={props.onSubmitRoundContent} aria-label="提交谁是卧底本轮描述内容">提交</button></div>;
+      }
       let selection: ReactNode = room.votes[player.id] ? '已完成' : '—';
       if (isVoter) selection = <div className="sheet-select-wrap"><select value={props.selectedCandidateId ?? ''} onChange={(event) => props.onCandidate(event.target.value || null)} aria-label="提交选择，真实用途是选择本轮投票对象"><option value="">请选择…</option>{eligibleCandidates(room).filter((candidate) => candidate.id !== player.id).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}</select><button disabled={!props.selectedCandidateId} onClick={props.onSubmitVote} aria-label="确认提交本轮投票选择">提交</button></div>;
-      rows.push([String(player.seat).padStart(2, '0'), player.name, neutralStatus(room, player, props.activeCardPlayer, props.activeVoter), personal, selection, player.id === room.ownerId ? '负责人' : '']);
+      rows.push([String(player.seat).padStart(2, '0'), player.name, neutralStatus(room, player, props.activeCardPlayer, props.activeDiscussionPlayer, props.activeVoter), personal, selection, player.id === room.ownerId ? '负责人' : '']);
     });
     return rows;
   };
@@ -298,9 +321,9 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
       ? <div className="sheet-commandbar">
           {props.room.status === 'lobby' && isOwner && <button className="sheet-primary-action" disabled={props.room.players.length !== props.room.playerLimit} onClick={props.onStartDealing} aria-label="锁定成员并为谁是卧底游戏发牌">{props.room.players.length === props.room.playerLimit ? '生成个人信息' : `等待 ${props.room.playerLimit - props.room.players.length} 人`}</button>}
           {props.room.status === 'cards' && props.activeCardPlayer && <button className="sheet-primary-action" onClick={() => { privacy.current?.mask('sheet-change'); props.onConfirmCard(); }} aria-label="确认已经记住谁是卧底身份和词语">标记已完成</button>}
-          {props.room.status === 'discussion' && isOwner && <button className="sheet-primary-action" onClick={props.onBeginVoting} aria-label="开始谁是卧底本轮投票">开放提交选择</button>}
+          {props.room.status === 'discussion' && isOwner && <button className="sheet-primary-action" disabled={!props.canOpenVoting} onClick={props.onBeginVoting} aria-label="开始谁是卧底本轮投票">{props.canOpenVoting ? '开放提交选择' : `等待本轮内容 ${formatCountdown(props.discussionRemainingSeconds)}`}</button>}
           {(props.room.status === 'result' || props.room.status === 'finished') && isOwner && <button className="sheet-primary-action" onClick={props.room.status === 'finished' ? props.onRematch : props.onContinue} aria-label={props.room.status === 'finished' ? '重新开始谁是卧底游戏' : '继续谁是卧底下一轮'}>{props.room.status === 'finished' ? '新建一轮' : '进入下一轮'}</button>}
-          <span>{props.room.status === 'voting' ? `${Object.keys(props.room.votes).length}/${eligibleVoters(props.room).length} 已完成` : neutralizeGameCopy(props.room.status)}</span>
+          <span>{props.room.status === 'discussion' ? `${Object.keys(getRoundContents(props.room)).length}/${eligibleVoters(props.room).length} 已完成 · ${formatCountdown(props.discussionRemainingSeconds)}` : props.room.status === 'voting' ? `${Object.keys(props.room.votes).length}/${eligibleVoters(props.room).length} 已完成` : neutralizeGameCopy(props.room.status)}</span>
         </div>
       : null;
 
