@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { applyBallotResult, assignCards, autoAdvanceDue, autoVotingDue, canBeginVoting, canTriggerBuzzer, createRoom, determineWinner, discussionComplete, getDescriptionTurnPlayer, getRoundChallenge, getRoundContents, getVotingOpensAt, isRoundContentVisible, PLAYER_LIMIT_OPTIONS, RANDOM_CHALLENGE_RULES, resolveBallot, resolveUndercoverComeback, revealDescriptions, selectChallengeRule, setAutoAdvancePaused, skipDescription, startDiscussion, startNextRound, startVoting, submitRoundContent, triggerBuzzer, undercoverOptions, type GameRoom, type Player } from './game.ts';
+import { randomWordPairExcluding } from './words.ts';
 
 function players(count = 8): Player[] {
   return Array.from({ length: count }, (_, index) => ({ id: `p${index}`, name: `玩家 ${index + 1}`, seat: index + 1, alive: true, cardReady: true }));
@@ -43,6 +44,11 @@ test('3–4 人仅允许 1 名卧底，5 人起可选择 2 名', () => {
   assert.equal(Object.keys(assignCards(players(3), 1, '牛奶', '豆浆')).length, 3);
   assert.throws(() => assignCards(players(3), 2, '牛奶', '豆浆'), /卧底人数不合法/);
   assert.throws(() => assignCards(players(4), 2, '牛奶', '豆浆'), /卧底人数不合法/);
+});
+
+test('再来一局会排除上一局词组，包含正序和反序', () => {
+  assert.deepEqual(randomWordPairExcluding(['牛奶', '豆浆'], () => 0), ['雪碧', '可乐']);
+  assert.deepEqual(randomWordPairExcluding(['豆浆', '牛奶'], () => 0), ['雪碧', '可乐']);
 });
 
 test('本轮内容可逐人提交，全员完成后开放选择', () => {

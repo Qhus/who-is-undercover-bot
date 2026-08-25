@@ -10,3 +10,11 @@ export function randomWordPair(random = Math.random): [string, string] {
   const pair = WORD_PAIRS[Math.floor(random() * WORD_PAIRS.length)];
   return random() > 0.5 ? [pair[0], pair[1]] : [pair[1], pair[0]];
 }
+
+export function randomWordPairExcluding(previous: readonly [string, string], random = Math.random): [string, string] {
+  const alternatives = WORD_PAIRS.filter(([first, second]) => {
+    return !((first === previous[0] && second === previous[1]) || (first === previous[1] && second === previous[0]));
+  });
+  const pair = alternatives[Math.floor(random() * alternatives.length)];
+  return random() > 0.5 ? [pair[0], pair[1]] : [pair[1], pair[0]];
+}

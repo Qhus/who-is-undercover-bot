@@ -302,9 +302,9 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
     return {
       step: 4,
       title: comebackWon ? '流程已完成' : foundUndercover ? `成功找出卧底：${foundUndercover.name}` : room.status === 'finished' ? '流程已完成' : '查看本轮结果',
-      instruction: comebackWon ? '特殊判定已通过，本局结束；负责人可新建一轮。' : foundUndercover
+      instruction: comebackWon ? '特殊判定已通过，本局结束；负责人可换词再来一局。' : foundUndercover
         ? (room.status === 'finished' ? '所有卧底已经找出，本局结束。' : isOwner ? '本轮命中卧底；点击上方“进入下一轮”继续。' : '本轮命中卧底，等待负责人推进。')
-        : isOwner ? (room.status === 'finished' ? '结果已汇总；点击上方“新建一轮”可重新开始。' : (room.autoAdvanceEnabled ?? true) ? `${props.nextRoundRemainingSeconds} 秒后自动进入下一轮，可暂停或立即进入。` : '结果已汇总；点击上方“进入下一轮”继续。') : (room.status === 'result' && (room.autoAdvanceEnabled ?? true) ? `${props.nextRoundRemainingSeconds} 秒后自动进入下一轮。` : '结果已汇总，等待负责人推进。'),
+        : isOwner ? (room.status === 'finished' ? '结果已汇总；点击上方“换词再来一局”重新开始。' : (room.autoAdvanceEnabled ?? true) ? `${props.nextRoundRemainingSeconds} 秒后自动进入下一轮，可暂停或立即进入。` : '结果已汇总；点击上方“进入下一轮”继续。') : (room.status === 'result' && (room.autoAdvanceEnabled ?? true) ? `${props.nextRoundRemainingSeconds} 秒后自动进入下一轮。` : '结果已汇总，等待负责人推进。'),
       location: comebackWon ? '结果提示：特殊判定成功' : foundUndercover ? '结果提示：已成功找出卧底' : '结果：当前 Round 工作表；历史：操作记录',
       focusCell: 'D2', emphasizedCells: ['D2'], cellHints: { D2: comebackWon ? '流程已完成' : foundUndercover ? `成功找出卧底：${foundUndercover.name}` : '查看本轮结果' },
     };
@@ -459,7 +459,7 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
           {props.room.status === 'discussion' && isOwner && <button className="sheet-primary-action" disabled={!props.canOpenVoting} onClick={props.onBeginVoting} aria-label="开始谁是卧底本轮投票">{props.canOpenVoting ? `立即开放投票（${props.votingOpenRemainingSeconds} 秒后自动）` : `等待本轮内容 ${formatCountdown(props.discussionRemainingSeconds)}`}</button>}
           {props.room.status === 'discussion' && isOwner && (props.room.descriptionRevealMode ?? 'all_submitted') === 'sequential' && getDescriptionTurnPlayer(props.room) && <button onClick={props.onSkipDescription}>跳过当前描述</button>}
           {props.room.status === 'result' && isOwner && <><button className="sheet-primary-action" onClick={props.onContinue}>立即进入下一轮</button>{(props.room.autoAdvanceEnabled ?? true) && <button onClick={props.onToggleAutoAdvance}>{props.room.autoAdvancePaused ? '继续自动进入' : '暂停自动进入'}</button>}</>}
-          {props.room.status === 'finished' && isOwner && <button className="sheet-primary-action" onClick={props.onRematch} aria-label="重新开始谁是卧底游戏">新建一轮</button>}
+          {props.room.status === 'finished' && isOwner && <button className="sheet-primary-action" onClick={props.onRematch} aria-label="更换词语并重新开始谁是卧底游戏">换词再来一局</button>}
           <span>{props.room.status === 'discussion' ? `${descriptionModeLabel(props.room.descriptionRevealMode ?? 'all_submitted')} · ${Object.keys(getRoundContents(props.room)).length}/${eligibleVoters(props.room).length} 已完成 · ${descriptionsAreRevealed(props.room) ? `${props.votingOpenRemainingSeconds} 秒后自动开放投票` : formatCountdown(props.discussionRemainingSeconds)}` : props.room.status === 'voting' ? `${Object.keys(props.room.votes).length}/${eligibleVoters(props.room).length} 已完成 · 本轮描述保持可见` : props.room.status === 'guessing' ? `${props.room.pendingGuessingReason === 'buzzer' ? '主动爆灯' : '特殊判定'} · ${formatCountdown(props.comebackRemainingSeconds)}` : props.room.status === 'result' && (props.room.autoAdvanceEnabled ?? true) ? (props.room.autoAdvancePaused ? '自动进入已暂停' : `${props.nextRoundRemainingSeconds} 秒后自动进入下一轮`) : neutralizeGameCopy(props.room.status)}</span>
         </div>
       : null;
