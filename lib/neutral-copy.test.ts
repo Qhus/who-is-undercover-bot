@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { neutralMessageCopy, neutralizeGameCopy } from './neutral-copy.ts';
 
@@ -12,3 +13,11 @@ test('群聊与私聊模板使用中性文案', () => {
   assert.equal(neutralMessageCopy.personalReady(7, 8), '个人信息确认进度：7/8 已完成。');
 });
 
+test('个人词语不标注玩家角色，命中卧底时明确提示', () => {
+  const immersiveSource = readFileSync(new URL('../app/game-app.tsx', import.meta.url), 'utf8');
+  const spreadsheetSource = readFileSync(new URL('../app/spreadsheet-mode.tsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(immersiveSource, /你的身份/);
+  assert.doesNotMatch(spreadsheetSource, /currentAssignment\.role|查看你的身份和词语/);
+  assert.match(immersiveSource, /成功找出卧底/);
+  assert.match(spreadsheetSource, /成功找出卧底/);
+});
