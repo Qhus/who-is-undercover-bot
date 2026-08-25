@@ -287,8 +287,9 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgb(200 77 49 / 3
 .sheet-grid td.is-active-cell:after { content:""; position:absolute; right:-3px; bottom:-3px; width:6px; height:6px; background:var(--sheet-green); }
 .sheet-grid td.is-guided-cell { background:#f2fbf5; box-shadow:inset 0 0 0 1px #78a98d; }
 .sheet-grid td.is-guided-cell.is-active-cell { background:#e9f7ee; box-shadow:inset 0 0 0 2px var(--sheet-green); }
-.sheet-grid td.is-guided-cell:before { content:"当前"; position:absolute; z-index:2; top:1px; right:3px; color:var(--sheet-green); font-size:8px; font-weight:700; pointer-events:none; }
-.sheet-grid td.is-guided-cell input,.sheet-grid td.is-guided-cell select { padding-right:30px; }
+.sheet-app--guide .sheet-grid td { height:auto; min-height:46px; padding:8px 10px; overflow:visible; text-overflow:clip; white-space:normal; line-height:1.5; vertical-align:top; }
+.sheet-app--guide .sheet-grid tr.is-guide-heading td { color:#174c32; background:#e2f0d9; font-weight:700; vertical-align:middle; }
+.sheet-app--guide .sheet-grid tr.is-guide-heading th { color:#174c32; background:#d6e8dc; font-weight:700; }
 .sheet-grid input,.sheet-grid select { width:100%; min-height:25px; padding:2px 5px; border:0; background:transparent; }
 .sheet-grid input:focus,.sheet-grid select:focus { outline:0; }
 .sheet-secret { min-width:94px; min-height:26px; padding:0 10px; border:0; letter-spacing:.14em; color:#333; background:#f1f1f1; }

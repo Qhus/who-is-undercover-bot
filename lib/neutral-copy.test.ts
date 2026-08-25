@@ -38,6 +38,18 @@ test('首页提供游玩步骤和完整规则入口', () => {
   assert.match(spreadsheetSource, /玩法与完整规则/);
 });
 
+test('Excel 玩法说明保持表格界面并可返回原工作表', () => {
+  const spreadsheetSource = readFileSync(new URL('../app/spreadsheet-mode.tsx', import.meta.url), 'utf8');
+  const styles = readFileSync(new URL('../app/globals.css', import.meta.url), 'utf8');
+  assert.match(spreadsheetSource, /sheetTab === 'guide'/);
+  assert.match(spreadsheetSource, /返回之前的工作表/);
+  assert.match(spreadsheetSource, /返回后恢复：\{tabLabel\(returnSheetTab\)\}/);
+  assert.match(spreadsheetSource, /创建房间（房主入口）/);
+  assert.match(spreadsheetSource, /加入房间（玩家入口）/);
+  assert.match(styles, /sheet-app--guide[\s\S]*white-space:normal/);
+  assert.doesNotMatch(styles, /content:\s*"当前"/);
+});
+
 test('卧底获胜的结束标题统一为流程已完成', () => {
   const immersiveSource = readFileSync(new URL('../app/game-app.tsx', import.meta.url), 'utf8');
   const spreadsheetSource = readFileSync(new URL('../app/spreadsheet-mode.tsx', import.meta.url), 'utf8');

@@ -415,12 +415,12 @@ export default function GameApp() {
   async function copyCurrentRule() { if (!room) return; const text = `本局设置：${challengeModeLabel(room.challengeMode ?? 'off')}挑战｜描述方式：${descriptionModeLabel(room.descriptionRevealMode ?? 'all_submitted')}｜猜词翻盘${room.undercoverComebackEnabled ? '开启' : '关闭'}｜主动爆灯${room.buzzerEnabled ? '开启' : '关闭'}｜自动下一轮${(room.autoAdvanceEnabled ?? true) ? '开启' : '关闭'}\nRound_${String(room.round).padStart(2, '0')}：${getRoundChallenge(room, room.round)?.text ?? '无附加规则'}\n挑战规则由玩家自觉遵守。`; try { await navigator.clipboard.writeText(text); } catch { /* clipboard may be unavailable */ } setNotice({ kind: 'info', text: '本轮公共规则已复制' }); }
   function reset() { setScreen('home'); setRoom(null); setRemoteMode(false); setCurrentPlayerId(null); setRevealPlayerId(null); setVotePlayerId(null); setDiscussionPlayerId(null); setRoundContentDraft(''); setComebackDraft(''); setWordReviewPlayerId(null); setPrivacyGate(true); window.localStorage.removeItem('undercover-demo-room'); window.localStorage.removeItem('undercover-active-remote'); }
 
-  if (displayMode === 'spreadsheet') return <><SpreadsheetMode
+  if (displayMode === 'spreadsheet') return <SpreadsheetMode
     screen={screen} room={room} notice={notice} cloudReady={cloudReady} busy={busy} remoteMode={remoteMode}
     currentPlayerId={currentPlayerId} activeCardPlayer={activeCardPlayer} activeDiscussionPlayer={activeDiscussionPlayer} activeVoter={activeVoter} activeComebackPlayer={activeComebackPlayer} wordReviewPlayer={wordReviewPlayer} selectedCandidateId={selectedCandidateId}
     roundContentDraft={roundContentDraft} discussionRemainingSeconds={discussionRemainingSeconds} comebackDraft={comebackDraft} comebackRemainingSeconds={comebackRemainingSeconds} nextRoundRemainingSeconds={nextRoundRemainingSeconds} canOpenVoting={room ? canBeginVoting(room, clockNow) : false}
     ownerName={ownerName} playerLimit={playerLimit} undercoverCount={undercoverCount} civilianWord={civilianWord} undercoverWord={undercoverWord}
-    customWords={customWords} challengeMode={challengeMode} undercoverComebackEnabled={undercoverComebackEnabled} descriptionRevealMode={descriptionRevealMode} buzzerEnabled={buzzerEnabled} autoAdvanceEnabled={autoAdvanceEnabled} joinCode={joinCode} joinName={joinName} onSwitchMode={switchDisplayMode} onOpenSetup={openSetup} onOpenGuide={() => setGuideOpen(true)} onReviewWord={setWordReviewPlayerId}
+    customWords={customWords} challengeMode={challengeMode} undercoverComebackEnabled={undercoverComebackEnabled} descriptionRevealMode={descriptionRevealMode} buzzerEnabled={buzzerEnabled} autoAdvanceEnabled={autoAdvanceEnabled} joinCode={joinCode} joinName={joinName} onSwitchMode={switchDisplayMode} onOpenSetup={openSetup} onReviewWord={setWordReviewPlayerId}
     onBackHome={() => setScreen('home')} onReset={reset} onCopyRoomCode={() => void copyRoomCode()} onCopyCurrentRule={() => void copyCurrentRule()} onJoin={() => void tryRemoteJoin()}
     onCreateDemo={createDemo} onCreateRemote={() => void createRemote()} onStartDealing={startDealing} onConfirmCard={confirmCard}
     onRoundContentDraft={(value) => setRoundContentDraft(value.slice(0, ROUND_CONTENT_MAX_LENGTH))} onSubmitRoundContent={submitCurrentRoundContent}
@@ -429,7 +429,7 @@ export default function GameApp() {
     onUndercoverWord={(value) => { setUndercoverWord(value); setCustomWords(true); }} onRandomWords={() => { const [a, b] = randomWordPair(); setCivilianWord(a); setUndercoverWord(b); setCustomWords(false); }}
     onCustomWords={() => { setCustomWords(true); setCivilianWord(''); setUndercoverWord(''); }} onChallengeMode={setChallengeMode} onUndercoverComebackEnabled={setUndercoverComebackEnabled} onDescriptionRevealMode={setDescriptionRevealMode} onBuzzerEnabled={setBuzzerEnabled} onAutoAdvanceEnabled={setAutoAdvanceEnabled} onJoinCode={setJoinCode} onJoinName={setJoinName}
     onRenamePlayer={renamePlayer} onCandidate={setSelectedCandidateId}
-  />{guideOpen && <RulesGuide onClose={() => setGuideOpen(false)} />}</>;
+  />;
 
   return <main className="app-shell">
     <header className="topbar"><button className="brand" onClick={reset} aria-label="返回首页"><span className="brand__mark">卧</span><span>卧底裁判局</span></button><div className="topbar__right"><button className="mode-switch" onClick={switchDisplayMode} aria-label="切换到表格低干扰模式">表格模式</button><span className={`connection ${cloudReady ? 'is-online' : ''}`}><i />{cloudReady ? '联机已就绪' : '本机演示模式'}</span>{room && <button className="room-code" onClick={copyRoomCode}>房间 {room.code} · 复制</button>}</div></header>
