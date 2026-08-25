@@ -182,6 +182,26 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgb(200 77 49 / 3
 .reveal-list>div { display:flex; justify-content:space-between; padding:5px 0; font-size:10px; }
 .toast { position:fixed; z-index:50; left:50%; bottom:28px; transform:translateX(-50%); color:#fff; background:var(--ink); padding:13px 20px; box-shadow:5px 5px 0 rgb(200 77 49 / 70%); font-size:12px; font-weight:800; }
 .toast--error { background:#9e3227; }
+.rules-guide-backdrop { position:fixed; z-index:100; inset:0; display:grid; place-items:center; padding:28px; background:rgb(20 18 15 / 72%); backdrop-filter:blur(7px); }
+.rules-guide { width:min(1080px,100%); max-height:calc(100vh - 56px); overflow:hidden; display:flex; flex-direction:column; color:var(--ink); background:var(--cream); box-shadow:14px 14px 0 rgb(200 77 49 / 80%); }
+.rules-guide>header { display:flex; justify-content:space-between; gap:28px; padding:30px 34px 24px; border-bottom:1px solid var(--line); }
+.rules-guide>header h2 { margin:12px 0 7px; font:900 38px Georgia,"STSong",serif; }
+.rules-guide>header p { margin:0; color:var(--muted); line-height:1.7; }
+.rules-guide__close { align-self:flex-start; min-width:78px; padding:9px 12px; border:1px solid var(--line); background:transparent; font-weight:900; }
+.rules-guide__body { overflow:auto; display:grid; grid-template-columns:.88fr 1.12fr; gap:36px; padding:30px 34px 36px; }
+.rules-guide__body h3 { margin:8px 0 22px; font:900 27px Georgia,"STSong",serif; }
+.play-steps { margin:0; padding:0; list-style:none; counter-reset:play-step; }
+.play-steps li { position:relative; min-height:66px; padding:0 0 20px 52px; counter-increment:play-step; }
+.play-steps li:before { content:counter(play-step,decimal-leading-zero); position:absolute; left:0; top:0; width:34px; height:34px; display:grid; place-items:center; color:#fff; background:var(--red); font:900 11px Georgia,serif; transform:rotate(-3deg); }
+.play-steps li:not(:last-child):after { content:""; position:absolute; left:16px; top:38px; bottom:4px; border-left:1px solid var(--line); }
+.play-steps b { font-size:14px; }
+.play-steps p { margin:5px 0 0; color:var(--muted); font-size:12px; line-height:1.65; }
+.rule-groups { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.rule-groups article { padding:16px; border:1px solid var(--line); background:rgb(255 255 255 / 38%); }
+.rule-groups h4 { margin:0 0 9px; font-size:13px; }
+.rule-groups ul { margin:0; padding-left:17px; color:var(--muted); font-size:11px; line-height:1.65; }
+.rule-groups li+li { margin-top:5px; }
+.rules-guide>footer { display:flex; justify-content:flex-end; padding:18px 34px; border-top:1px solid var(--line); background:var(--paper); }
 
 /* Spreadsheet low-distraction mode: intentionally product-neutral, with no Excel/Microsoft branding. */
 .sheet-app { --sheet-green:#217346; --sheet-grid:#d9d9d9; --sheet-head:#f3f3f3; min-height:100vh; height:100vh; overflow:hidden; display:flex; flex-direction:column; color:#262626; background:#fff; font-family:Arial,"Microsoft YaHei","PingFang SC",sans-serif; font-size:13px; }
@@ -285,6 +305,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgb(200 77 49 / 3
   .sheet-flow-guide { grid-template-columns:1fr; }
   .sheet-flow-guide ol { min-height:38px; border-right:0; border-bottom:1px solid #ddd; }
   .sheet-flow-guide>div { min-height:58px; }
+  .rules-guide__body { grid-template-columns:1fr; }
 }
 @media (max-width:600px) {
   .topbar { padding:0 16px; }
@@ -292,6 +313,14 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgb(200 77 49 / 3
   .feature-strip { grid-template-columns:1fr; }
   .feature-strip>div { border-right:0; border-bottom:1px solid var(--line); }
   .hero__actions { align-items:flex-start; flex-direction:column; }
+  .rules-guide-backdrop { padding:0; }
+  .rules-guide { width:100%; max-height:100vh; min-height:100vh; box-shadow:none; }
+  .rules-guide>header { padding:22px 20px 18px; }
+  .rules-guide>header h2 { font-size:30px; }
+  .rules-guide>header p { display:none; }
+  .rules-guide__body { padding:24px 20px; gap:26px; }
+  .rule-groups { grid-template-columns:1fr; }
+  .rules-guide>footer { padding:14px 20px; }
   .field-row { align-items:flex-start; flex-direction:column; }
   .field-row>input { width:100%; }
   .segmented { width:100%; }

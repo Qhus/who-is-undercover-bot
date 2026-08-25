@@ -48,6 +48,7 @@ export interface SpreadsheetModeProps {
   joinName: string;
   onSwitchMode: () => void;
   onOpenSetup: () => void;
+  onOpenGuide: () => void;
   onBackHome: () => void;
   onReset: () => void;
   onCopyRoomCode: () => void;
@@ -262,12 +263,12 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
     const comebackWon = room.lastComebackResult?.correct;
     return {
       step: 4,
-      title: comebackWon ? '特殊判定成功：特殊成员方获胜' : foundUndercover ? `成功找出卧底：${foundUndercover.name}` : room.status === 'finished' ? '流程已完成' : '查看本轮结果',
+      title: comebackWon ? '流程已完成' : foundUndercover ? `成功找出卧底：${foundUndercover.name}` : room.status === 'finished' ? '流程已完成' : '查看本轮结果',
       instruction: comebackWon ? '特殊判定已通过，本局结束；负责人可新建一轮。' : foundUndercover
         ? (room.status === 'finished' ? '所有卧底已经找出，本局结束。' : isOwner ? '本轮命中卧底；点击上方“进入下一轮”继续。' : '本轮命中卧底，等待负责人推进。')
         : isOwner ? (room.status === 'finished' ? '结果已汇总；点击上方“新建一轮”可重新开始。' : '结果已汇总；点击上方“进入下一轮”继续。') : '结果已汇总，等待负责人推进。',
       location: comebackWon ? '结果提示：特殊判定成功' : foundUndercover ? '结果提示：已成功找出卧底' : '结果：当前 Round 工作表；历史：操作记录',
-      focusCell: 'D2', emphasizedCells: ['D2'], cellHints: { D2: comebackWon ? '特殊判定成功：特殊成员方获胜' : foundUndercover ? `成功找出卧底：${foundUndercover.name}` : '查看本轮结果' },
+      focusCell: 'D2', emphasizedCells: ['D2'], cellHints: { D2: comebackWon ? '流程已完成' : foundUndercover ? `成功找出卧底：${foundUndercover.name}` : '查看本轮结果' },
     };
   }, [props.screen, props.room, props.activeCardPlayer, props.activeDiscussionPlayer, props.activeVoter, props.activeComebackPlayer, props.discussionRemainingSeconds, props.comebackRemainingSeconds, props.canOpenVoting, isOwner]);
 
@@ -353,6 +354,7 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
     ? [
         ['操作', '称呼', '协作表编号', '状态', '执行', '备注'],
         ['新建协作表', props.ownerName, '自动生成', '可用', <button key="create" className="sheet-action" onClick={props.onOpenSetup} aria-label="创建谁是卧底游戏房间">打开配置</button>, '3–10 人 · ① 点击这里'],
+        ['玩法与完整规则', '新手推荐先读', '六步游玩流程', '完整规则', <button key="guide" className="sheet-action" onClick={props.onOpenGuide} aria-label="查看谁是卧底游玩步骤与完整规则">查看说明</button>, '开局前可随时查看'],
         ['加入现有表', <input key="join-name" value={props.joinName} onChange={(event) => props.onJoinName(event.target.value.slice(0, 12))} placeholder="① 填写你的称呼" aria-label="加入游戏时使用的玩家称呼" />, <input key="join-code" value={props.joinCode} onChange={(event) => props.onJoinCode(event.target.value.toUpperCase().replace(/[^A-Z2-9]/g, ''))} maxLength={6} placeholder="② 填写六位编号" aria-label="谁是卧底游戏房间码" />, props.cloudReady ? '联机可用' : '本机可用', <button key="join" className="sheet-action" disabled={props.busy} onClick={props.onJoin} aria-label="加入谁是卧底游戏房间">③ 加入</button>, '按 B → C → E'],
         ['', '', '', '', '', ''],
         ['说明', '低干扰显示', '不规避审计', '默认静音', '本地保存', '按 Esc 遮挡'],
@@ -387,7 +389,7 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
     <header className="sheet-titlebar">
       <button className="sheet-filemark" onClick={props.onReset} aria-label="返回谁是卧底游戏首页">表</button>
       <div><strong>{props.room ? `协作数据表 · ${props.room.code}` : '协作数据表'}</strong><span>{props.remoteMode ? '已同步' : '已保存到本机'}</span></div>
-      <div className="sheet-title-actions">{props.room && <><button onClick={props.onCopyRoomCode} aria-label="复制谁是卧底游戏房间码">复制编号</button><button onClick={props.onCopyCurrentRule} aria-label="复制谁是卧底本轮公共规则">复制规则</button></>}<button onClick={() => { privacy.current?.mask('mode-change'); props.onSwitchMode(); }} aria-label="切换到沉浸式谁是卧底游戏界面">沉浸模式</button></div>
+      <div className="sheet-title-actions"><button onClick={props.onOpenGuide} aria-label="查看谁是卧底游玩步骤与完整规则">玩法与规则</button>{props.room && <><button onClick={props.onCopyRoomCode} aria-label="复制谁是卧底游戏房间码">复制编号</button><button onClick={props.onCopyCurrentRule} aria-label="复制谁是卧底本轮公共规则">复制规则</button></>}<button onClick={() => { privacy.current?.mask('mode-change'); props.onSwitchMode(); }} aria-label="切换到沉浸式谁是卧底游戏界面">沉浸模式</button></div>
     </header>
     <nav className="sheet-ribbon" aria-label="表格工具栏"><button className="is-current">开始</button><button>数据</button><button>视图</button><span /><button onClick={() => privacy.current?.mask('escape')} aria-label="立即隐藏秘密词语">隐藏敏感内容</button></nav>
     <div className="sheet-toolbar" aria-hidden="true"><span>撤销</span><span>重做</span><i /><b>系统字体</b><b>11</b><i /><strong>B</strong><em>I</em><u>U</u><i /><span>对齐</span><span>筛选</span><span>静音</span></div>

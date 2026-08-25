@@ -29,3 +29,18 @@ test('表格模式在输入框外完整展示公共规则', () => {
   assert.match(spreadsheetSource, /placeholder="在此填写本轮内容"/);
   assert.doesNotMatch(spreadsheetSource, /placeholder=\{`\$\{getRoundChallenge/);
 });
+
+test('首页提供游玩步骤和完整规则入口', () => {
+  const immersiveSource = readFileSync(new URL('../app/game-app.tsx', import.meta.url), 'utf8');
+  const spreadsheetSource = readFileSync(new URL('../app/spreadsheet-mode.tsx', import.meta.url), 'utf8');
+  assert.match(immersiveSource, /怎么玩？查看完整规则/);
+  assert.match(immersiveSource, /游玩步骤与完整规则/);
+  assert.match(spreadsheetSource, /玩法与完整规则/);
+});
+
+test('卧底获胜的结束标题统一为流程已完成', () => {
+  const immersiveSource = readFileSync(new URL('../app/game-app.tsx', import.meta.url), 'utf8');
+  const spreadsheetSource = readFileSync(new URL('../app/spreadsheet-mode.tsx', import.meta.url), 'utf8');
+  assert.match(immersiveSource, /room\.winner === 'undercover'.*流程已完成/);
+  assert.doesNotMatch(spreadsheetSource, /特殊判定成功：特殊成员方获胜/);
+});
