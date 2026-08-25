@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { applyBallotResult, assignCards, canBeginVoting, createRoom, determineWinner, discussionComplete, getRoundChallenge, getRoundContents, PLAYER_LIMIT_OPTIONS, RANDOM_CHALLENGE_RULES, resolveBallot, resolveUndercoverComeback, selectChallengeRule, startDiscussion, startNextRound, submitRoundContent, undercoverOptions, type GameRoom, type Player } from './game.ts';
+import { applyBallotResult, assignCards, autoAdvanceDue, canBeginVoting, canTriggerBuzzer, createRoom, determineWinner, discussionComplete, getDescriptionTurnPlayer, getRoundChallenge, getRoundContents, isRoundContentVisible, PLAYER_LIMIT_OPTIONS, RANDOM_CHALLENGE_RULES, resolveBallot, resolveUndercoverComeback, revealDescriptions, selectChallengeRule, setAutoAdvancePaused, skipDescription, startDiscussion, startNextRound, submitRoundContent, triggerBuzzer, undercoverOptions, type GameRoom, type Player } from './game.ts';
 
 function players(count = 8): Player[] {
   return Array.from({ length: count }, (_, index) => ({ id: `p${index}`, name: `玩家 ${index + 1}`, seat: index + 1, alive: true, cardReady: true }));
@@ -69,6 +69,41 @@ test('本轮倒计时结束后即使有人未提交也可开放选择', () => {
   assert.throws(() => submitRoundContent(room, 'p0', 'x'.repeat(81)), /不能超过 80 字/);
 });
 
+test('全部提交后统一公开描述，提交前只能看到自己的内容', () => {
+  let room = startDiscussion({ ...createRoom({ ownerId: 'p0', ownerName: '玩家 1', playerLimit: 3, undercoverCount: 1, civilianWord: '牛奶', undercoverWord: '豆浆' }), players: players(3) }, 1_000);
+  room = submitRoundContent(room, 'p0', '早餐常见', 2_000);
+  assert.equal(isRoundContentVisible(room, 'p0', 'p0', 2_000), true);
+  assert.equal(isRoundContentVisible(room, 'p0', 'p1', 2_000), false);
+  room = submitRoundContent(room, 'p1', '装在杯子里', 3_000);
+  room = submitRoundContent(room, 'p2', '颜色浅', 4_000);
+  assert.equal(room.descriptionsRevealedAt, 4_000);
+  assert.equal(isRoundContentVisible(room, 'p0', 'p1', 4_000), true);
+  assert.equal(canBeginVoting(room, 4_000), true);
+});
+
+test('描述超时后统一公开已有内容并标记未提交成员', () => {
+  let room = startDiscussion({ ...createRoom({ ownerId: 'p0', ownerName: '玩家 1', playerLimit: 3, undercoverCount: 1, civilianWord: '牛奶', undercoverWord: '豆浆' }), players: players(3) }, 1_000);
+  room = submitRoundContent(room, 'p0', '早餐常见', 2_000);
+  room = revealDescriptions(room, 121_000);
+  assert.deepEqual(room.skippedDescriptionPlayerIds, ['p1', 'p2']);
+  assert.equal(canBeginVoting(room, 121_000), true);
+});
+
+test('按座位顺序提交描述并允许房主跳过当前成员', () => {
+  const base = createRoom({ ownerId: 'p0', ownerName: '玩家 1', playerLimit: 3, undercoverCount: 1, civilianWord: '牛奶', undercoverWord: '豆浆', descriptionRevealMode: 'sequential' });
+  let room = startDiscussion({ ...base, players: players(3) }, 1_000);
+  assert.equal(getDescriptionTurnPlayer(room)?.id, 'p0');
+  assert.throws(() => submitRoundContent(room, 'p1', '不能抢先'), /还没有轮到/);
+  room = submitRoundContent(room, 'p0', '早餐常见', 2_000);
+  assert.equal(getDescriptionTurnPlayer(room)?.id, 'p1');
+  assert.equal(isRoundContentVisible(room, 'p0', 'p2'), true);
+  room = skipDescription(room, 'p1', 3_000);
+  assert.equal(getDescriptionTurnPlayer(room)?.id, 'p2');
+  room = submitRoundContent(room, 'p2', '颜色浅', 4_000);
+  assert.equal(room.descriptionsRevealedAt, 4_000);
+  assert.equal(canBeginVoting(room, 4_000), true);
+});
+
 test('随机挑战包含确认的 9 条规则且连续两轮不重复', () => {
   assert.equal(RANDOM_CHALLENGE_RULES.length, 9);
   assert.deepEqual(RANDOM_CHALLENGE_RULES.map((rule) => rule.text), [
@@ -127,6 +162,36 @@ test('卧底猜中另一组词立即获胜，猜错则正常退出', () => {
   assert.equal(timedOut.winner, 'civilian');
 });
 
+test('主动爆灯只在描述公开后可触发且整局一次', () => {
+  const roster = players(6);
+  const base = createRoom({ ownerId: 'p0', ownerName: '玩家 1', playerLimit: 6, undercoverCount: 1, civilianWord: '牛奶', undercoverWord: '豆浆', buzzerEnabled: true });
+  let room = startDiscussion({ ...base, players: roster, assignments: votingRoom().assignments }, 1_000);
+  assert.equal(canTriggerBuzzer(room, 'p0', 2_000), false);
+  for (const [index, player] of roster.entries()) room = submitRoundContent(room, player.id, `描述${index}`, 2_000 + index);
+  assert.equal(canTriggerBuzzer(room, 'p0', 3_000), true);
+  const guessing = triggerBuzzer(room, 'p0', 4_000);
+  assert.equal(guessing.pendingGuessingReason, 'buzzer');
+  assert.equal(guessing.comebackDeadlineAt, 24_000);
+  const won = resolveUndercoverComeback(guessing, 'p0', '牛奶', 5_000);
+  assert.equal(won.winner, 'undercover');
+  assert.equal(won.buzzerStatus, 'success');
+});
+
+test('平民误爆灯或卧底猜错会退出并恢复原阶段', () => {
+  const roster = players(6);
+  const base = createRoom({ ownerId: 'p0', ownerName: '玩家 1', playerLimit: 6, undercoverCount: 1, civilianWord: '牛奶', undercoverWord: '豆浆', buzzerEnabled: true });
+  let room = startDiscussion({ ...base, players: roster, assignments: votingRoom().assignments }, 1_000);
+  for (const [index, player] of roster.entries()) room = submitRoundContent(room, player.id, `描述${index}`, 2_000 + index);
+  const civilianFailed = resolveUndercoverComeback(triggerBuzzer(room, 'p1', 4_000), 'p1', '牛奶', 5_000);
+  assert.equal(civilianFailed.status, 'discussion');
+  assert.equal(civilianFailed.players.find((player) => player.id === 'p1')?.alive, false);
+  assert.equal(civilianFailed.undercoverComebackUsed, false);
+
+  const undercoverFailed = resolveUndercoverComeback(triggerBuzzer(room, 'p0', 4_000), 'p0', '咖啡', 5_000);
+  assert.equal(undercoverFailed.winner, 'civilian');
+  assert.equal(undercoverFailed.undercoverComebackUsed, true);
+});
+
 test('首次平票进入只包含并列者的复投', () => {
   const room = votingRoom();
   room.votes = { p0: 'p1', p1: 'p0', p2: 'p0', p3: 'p1', p4: 'p0', p5: 'p1' };
@@ -146,6 +211,24 @@ test('第二次仍平票时本轮无人出局', () => {
   const next = applyBallotResult(room, result);
   assert.equal(next.players.every((player) => player.alive), true);
   assert.equal(next.status, 'result');
+  assert.equal(next.nextRoundAt !== null, true);
+});
+
+test('结果页十秒后自动进入且暂停时不会推进', () => {
+  const room = { ...votingRoom(), ballot: 2, runoffCandidateIds: ['p0', 'p1'], autoAdvanceEnabled: true };
+  room.votes = { p0: 'p1', p1: 'p0', p2: 'p0', p3: 'p1', p4: 'p0', p5: 'p1' };
+  const resultRoom = applyBallotResult(room, resolveBallot(room), 10_000);
+  assert.equal(resultRoom.nextRoundAt, 20_000);
+  assert.equal(autoAdvanceDue(resultRoom, 19_999), false);
+  assert.equal(autoAdvanceDue(resultRoom, 20_000), true);
+  const paused = setAutoAdvancePaused(resultRoom, true, 12_000);
+  assert.equal(paused.nextRoundAt, null);
+  assert.equal(autoAdvanceDue(paused, 30_000), false);
+  const resumed = setAutoAdvancePaused(paused, false, 30_000);
+  assert.equal(resumed.nextRoundAt, 40_000);
+  const next = startNextRound(resumed, 40_000);
+  assert.equal(next.round, 2);
+  assert.equal(startNextRound(next, 40_001).round, 2);
 });
 
 test('卧底人数达到平民人数时卧底获胜', () => {

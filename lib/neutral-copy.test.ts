@@ -44,3 +44,13 @@ test('卧底获胜的结束标题统一为流程已完成', () => {
   assert.match(immersiveSource, /room\.winner === 'undercover'.*流程已完成/);
   assert.doesNotMatch(spreadsheetSource, /特殊判定成功：特殊成员方获胜/);
 });
+
+test('补充体验需求在 Excel 与沉浸模式都有操作入口', () => {
+  const immersiveSource = readFileSync(new URL('../app/game-app.tsx', import.meta.url), 'utf8');
+  const spreadsheetSource = readFileSync(new URL('../app/spreadsheet-mode.tsx', import.meta.url), 'utf8');
+  for (const copy of ['已确认自己的词语', '再次查看自己的词语', '全部提交后公开', '我要爆灯', '暂停自动进入']) {
+    assert.match(`${immersiveSource}\n${spreadsheetSource}`, new RegExp(copy));
+  }
+  assert.match(spreadsheetSource, /本轮描述保持可见/);
+  assert.match(spreadsheetSource, /room\.status === 'voting'.*getRoundContents/);
+});

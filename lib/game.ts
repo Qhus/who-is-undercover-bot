@@ -2,6 +2,9 @@ export type Role = 'civilian' | 'undercover';
 export type Winner = Role | null;
 export type GameStatus = 'lobby' | 'cards' | 'discussion' | 'voting' | 'guessing' | 'result' | 'finished';
 export type ChallengeMode = 'off' | 'light' | 'random';
+export type DescriptionRevealMode = 'sequential' | 'all_submitted';
+export type GuessingReason = 'elimination' | 'buzzer';
+export type BuzzerStatus = 'idle' | 'guessing' | 'success' | 'failed';
 
 export interface ChallengeRule {
   id: string;
@@ -31,6 +34,8 @@ export const MIN_PLAYERS = 3;
 export const MAX_PLAYERS = 10;
 export const ROUND_CONTENT_MAX_LENGTH = 80;
 export const DISCUSSION_DURATION_MS = 120_000;
+export const COMEBACK_DURATION_MS = 20_000;
+export const AUTO_ADVANCE_DELAY_MS = 10_000;
 export const PLAYER_LIMIT_OPTIONS = Array.from({ length: MAX_PLAYERS - MIN_PLAYERS + 1 }, (_, index) => MIN_PLAYERS + index);
 
 export function undercoverOptions(playerLimit: number): number[] {
@@ -70,6 +75,7 @@ export interface ComebackResult {
   guess: string;
   correct: boolean;
   timedOut: boolean;
+  reason?: GuessingReason;
 }
 
 export interface GameRoom {
@@ -81,12 +87,22 @@ export interface GameRoom {
   civilianWord: string;
   undercoverWord: string;
   challengeMode: ChallengeMode;
+  descriptionRevealMode?: DescriptionRevealMode;
+  descriptionOrder?: string[];
+  descriptionTurnPlayerId?: string | null;
+  descriptionsRevealedAt?: number | null;
+  skippedDescriptionPlayerIds?: string[];
   roundChallenges?: Record<string, string>;
   undercoverComebackEnabled: boolean;
   undercoverComebackUsed: boolean;
   pendingComebackPlayerId?: string | null;
   comebackDeadlineAt?: number | null;
   lastComebackResult?: ComebackResult | null;
+  pendingGuessingReason?: GuessingReason | null;
+  buzzerEnabled?: boolean;
+  buzzerUsedBy?: string | null;
+  buzzerStatus?: BuzzerStatus;
+  pausedStatus?: 'discussion' | 'voting' | null;
   players: Player[];
   assignments: Record<string, Assignment>;
   round: number;
@@ -96,6 +112,10 @@ export interface GameRoom {
   history: RoundResult[];
   roundContents?: Record<string, Record<string, string>>;
   discussionDeadlineAt?: number | null;
+  autoAdvanceEnabled?: boolean;
+  autoAdvanceDelaySeconds?: number;
+  nextRoundAt?: number | null;
+  autoAdvancePaused?: boolean;
   lastResult: RoundResult | null;
   winner: Winner;
   version: number;
@@ -109,6 +129,10 @@ export function challengeModeLabel(mode: ChallengeMode): string {
   if (mode === 'light') return '轻度';
   if (mode === 'random') return '随机';
   return '关闭';
+}
+
+export function descriptionModeLabel(mode: DescriptionRevealMode): string {
+  return mode === 'sequential' ? '按座位顺序公开' : '全部提交后公开';
 }
 
 export function selectChallengeRule(mode: ChallengeMode, previousId?: string | null, random: RandomSource = Math.random): ChallengeRule | null {
@@ -230,14 +254,40 @@ export function getRoundContents(room: GameRoom, round = room.round): Record<str
   return room.roundContents?.[String(round)] ?? {};
 }
 
+export function descriptionOrder(room: GameRoom): string[] {
+  const livingIds = new Set(eligibleVoters(room).map((player) => player.id));
+  const stored = (room.descriptionOrder ?? []).filter((id) => livingIds.has(id));
+  return stored.length ? stored : eligibleVoters(room).sort((a, b) => a.seat - b.seat).map((player) => player.id);
+}
+
+export function descriptionCompleteForPlayer(room: GameRoom, playerId: string): boolean {
+  return Boolean(getRoundContents(room)[playerId]?.trim()) || (room.skippedDescriptionPlayerIds ?? []).includes(playerId);
+}
+
+export function getDescriptionTurnPlayer(room: GameRoom): Player | null {
+  if ((room.descriptionRevealMode ?? 'all_submitted') !== 'sequential' || room.status !== 'discussion') return null;
+  const nextId = room.descriptionTurnPlayerId ?? descriptionOrder(room).find((id) => !descriptionCompleteForPlayer(room, id));
+  return room.players.find((player) => player.id === nextId && player.alive) ?? null;
+}
+
+export function descriptionsAreRevealed(room: GameRoom, now = Date.now()): boolean {
+  if (room.descriptionsRevealedAt) return true;
+  if ((room.descriptionRevealMode ?? 'all_submitted') === 'sequential') return discussionComplete(room);
+  return Boolean(room.discussionDeadlineAt && now >= room.discussionDeadlineAt);
+}
+
+export function isRoundContentVisible(room: GameRoom, playerId: string, viewerId?: string | null, now = Date.now()): boolean {
+  if ((room.descriptionRevealMode ?? 'all_submitted') === 'sequential') return Boolean(getRoundContents(room)[playerId]);
+  return descriptionsAreRevealed(room, now) || playerId === viewerId;
+}
+
 export function discussionComplete(room: GameRoom): boolean {
-  const contents = getRoundContents(room);
-  return eligibleVoters(room).every((player) => Boolean(contents[player.id]?.trim()));
+  return eligibleVoters(room).every((player) => descriptionCompleteForPlayer(room, player.id));
 }
 
 export function canBeginVoting(room: GameRoom, now = Date.now()): boolean {
   if (room.status !== 'discussion') return false;
-  return discussionComplete(room) || !room.discussionDeadlineAt || now >= room.discussionDeadlineAt;
+  return descriptionsAreRevealed(room, now) && (discussionComplete(room) || !room.discussionDeadlineAt || now >= room.discussionDeadlineAt);
 }
 
 export function startDiscussion(room: GameRoom, now = Date.now(), random: RandomSource = Math.random): GameRoom {
@@ -246,6 +296,7 @@ export function startDiscussion(room: GameRoom, now = Date.now(), random: Random
   const selectedRule = room.roundChallenges?.[roundKey]
     ? null
     : selectChallengeRule(room.challengeMode ?? 'off', previousId, random);
+  const order = eligibleVoters(room).sort((a, b) => a.seat - b.seat).map((player) => player.id);
   return {
     ...room,
     status: 'discussion',
@@ -254,6 +305,12 @@ export function startDiscussion(room: GameRoom, now = Date.now(), random: Random
       ? { ...(room.roundChallenges ?? {}), [roundKey]: selectedRule.id }
       : (room.roundChallenges ?? {}),
     discussionDeadlineAt: now + DISCUSSION_DURATION_MS,
+    descriptionOrder: order,
+    descriptionTurnPlayerId: (room.descriptionRevealMode ?? 'all_submitted') === 'sequential' ? order[0] ?? null : null,
+    descriptionsRevealedAt: null,
+    skippedDescriptionPlayerIds: [],
+    nextRoundAt: null,
+    autoAdvancePaused: false,
     version: room.version + 1,
     updatedAt: now,
   };
@@ -264,11 +321,14 @@ function finalizeBallotResult(room: GameRoom, result: RoundResult, now: number):
     ? room.players.map((player) => player.id === result.eliminatedId ? { ...player, alive: false } : player)
     : room.players;
   const winner = determineWinner({ players, assignments: room.assignments });
+  const autoAdvanceEnabled = room.autoAdvanceEnabled ?? true;
   return {
     ...room,
     players,
     winner,
     status: winner ? 'finished' : 'result',
+    nextRoundAt: !winner && autoAdvanceEnabled ? now + (room.autoAdvanceDelaySeconds ?? 10) * 1000 : null,
+    autoAdvancePaused: false,
     votes: {},
     runoffCandidateIds: [],
     pendingComebackPlayerId: null,
@@ -288,9 +348,52 @@ export function submitRoundContent(room: GameRoom, playerId: string, content: st
   const roundKey = String(room.round);
   const current = getRoundContents(room);
   if (current[playerId]) throw new Error('本轮内容已经提交');
+  const mode = room.descriptionRevealMode ?? 'all_submitted';
+  if (mode === 'sequential' && getDescriptionTurnPlayer(room)?.id !== playerId) throw new Error('还没有轮到当前成员');
+  const nextContents = { ...current, [playerId]: normalized };
+  const completedIds = new Set([...Object.keys(nextContents), ...(room.skippedDescriptionPlayerIds ?? [])]);
+  const nextTurnId = mode === 'sequential' ? descriptionOrder(room).find((id) => !completedIds.has(id)) ?? null : null;
+  const allComplete = eligibleVoters(room).every((player) => completedIds.has(player.id));
   return {
     ...room,
-    roundContents: { ...(room.roundContents ?? {}), [roundKey]: { ...current, [playerId]: normalized } },
+    roundContents: { ...(room.roundContents ?? {}), [roundKey]: nextContents },
+    descriptionTurnPlayerId: nextTurnId,
+    descriptionsRevealedAt: allComplete ? now : room.descriptionsRevealedAt ?? null,
+    version: room.version + 1,
+    updatedAt: now,
+  };
+}
+
+export function revealDescriptions(room: GameRoom, now = Date.now()): GameRoom {
+  if (room.status !== 'discussion') return room;
+  if (room.descriptionsRevealedAt) return room;
+  const timedOut = Boolean(room.discussionDeadlineAt && now >= room.discussionDeadlineAt);
+  if (!discussionComplete(room) && !timedOut) throw new Error('本轮描述尚未完成');
+  const skipped = timedOut
+    ? eligibleVoters(room).filter((player) => !getRoundContents(room)[player.id]).map((player) => player.id)
+    : (room.skippedDescriptionPlayerIds ?? []);
+  return {
+    ...room,
+    skippedDescriptionPlayerIds: Array.from(new Set([...(room.skippedDescriptionPlayerIds ?? []), ...skipped])),
+    descriptionTurnPlayerId: null,
+    descriptionsRevealedAt: now,
+    version: room.version + 1,
+    updatedAt: now,
+  };
+}
+
+export function skipDescription(room: GameRoom, playerId: string, now = Date.now()): GameRoom {
+  if (room.status !== 'discussion' || (room.descriptionRevealMode ?? 'all_submitted') !== 'sequential') throw new Error('当前不能跳过描述');
+  if (getDescriptionTurnPlayer(room)?.id !== playerId) throw new Error('只能跳过当前轮到的成员');
+  const skipped = [...(room.skippedDescriptionPlayerIds ?? []), playerId];
+  const completedIds = new Set([...Object.keys(getRoundContents(room)), ...skipped]);
+  const nextTurnId = descriptionOrder(room).find((id) => !completedIds.has(id)) ?? null;
+  const allComplete = eligibleVoters(room).every((player) => completedIds.has(player.id));
+  return {
+    ...room,
+    skippedDescriptionPlayerIds: skipped,
+    descriptionTurnPlayerId: nextTurnId,
+    descriptionsRevealedAt: allComplete ? now : room.descriptionsRevealedAt ?? null,
     version: room.version + 1,
     updatedAt: now,
   };
@@ -325,8 +428,9 @@ export function applyBallotResult(room: GameRoom, result: RoundResult, now = Dat
       votes: {},
       runoffCandidateIds: [],
       pendingComebackPlayerId: result.eliminatedId,
-      comebackDeadlineAt: now + 20_000,
+      comebackDeadlineAt: now + COMEBACK_DURATION_MS,
       undercoverComebackUsed: true,
+      pendingGuessingReason: 'elimination',
       lastResult: result,
       version: room.version + 1,
       updatedAt: now,
@@ -339,30 +443,97 @@ function normalizeGuess(value: string): string {
   return value.trim().toLocaleLowerCase().replace(/[\s\p{P}\p{S}]/gu, '');
 }
 
+export function canTriggerBuzzer(room: GameRoom, playerId: string, now = Date.now()): boolean {
+  return Boolean(
+    room.buzzerEnabled
+    && !room.buzzerUsedBy
+    && !room.undercoverComebackUsed
+    && (room.status === 'discussion' || room.status === 'voting')
+    && descriptionsAreRevealed(room, now)
+    && room.players.some((player) => player.id === playerId && player.alive),
+  );
+}
+
+export function triggerBuzzer(room: GameRoom, playerId: string, now = Date.now()): GameRoom {
+  if (!canTriggerBuzzer(room, playerId, now)) throw new Error('当前不能爆灯');
+  return {
+    ...room,
+    status: 'guessing',
+    buzzerUsedBy: playerId,
+    buzzerStatus: 'guessing',
+    pausedStatus: room.status as 'discussion' | 'voting',
+    pendingGuessingReason: 'buzzer',
+    pendingComebackPlayerId: playerId,
+    comebackDeadlineAt: now + COMEBACK_DURATION_MS,
+    lastComebackResult: null,
+    version: room.version + 1,
+    updatedAt: now,
+  };
+}
+
 export function resolveUndercoverComeback(room: GameRoom, playerId: string, guess: string, now = Date.now()): GameRoom {
-  if (room.status !== 'guessing' || !room.lastResult || room.pendingComebackPlayerId !== playerId) throw new Error('当前没有可提交的翻盘机会');
+  const reason = room.pendingGuessingReason ?? 'elimination';
+  if (room.status !== 'guessing' || room.pendingComebackPlayerId !== playerId || (reason === 'elimination' && !room.lastResult)) throw new Error('当前没有可提交的翻盘机会');
   const timedOut = !room.comebackDeadlineAt || now >= room.comebackDeadlineAt;
   const normalizedGuess = normalizeGuess(guess);
   if (!timedOut && !normalizedGuess) throw new Error('请填写另一组词语');
   const correct = !timedOut && normalizedGuess === normalizeGuess(room.civilianWord);
-  const lastComebackResult: ComebackResult = { playerId, round: room.round, guess: guess.trim(), correct, timedOut };
-  if (correct) {
+  const isUndercover = room.assignments[playerId]?.role === 'undercover';
+  const validBuzzerWin = reason === 'buzzer' ? correct && isUndercover : correct;
+  const lastComebackResult: ComebackResult = { playerId, round: room.round, guess: guess.trim(), correct: validBuzzerWin, timedOut, reason };
+  if (validBuzzerWin) {
     return {
       ...room,
       status: 'finished',
       winner: 'undercover',
+      buzzerStatus: reason === 'buzzer' ? 'success' : room.buzzerStatus,
+      undercoverComebackUsed: true,
       pendingComebackPlayerId: null,
       comebackDeadlineAt: null,
+      pendingGuessingReason: null,
       lastComebackResult,
       version: room.version + 1,
       updatedAt: now,
     };
   }
-  return finalizeBallotResult({ ...room, lastComebackResult }, room.lastResult, now);
+  if (reason === 'buzzer') {
+    const players = room.players.map((player) => player.id === playerId ? { ...player, alive: false } : player);
+    const winner = determineWinner({ players, assignments: room.assignments });
+    const pausedStatus = room.pausedStatus ?? 'discussion';
+    const survivingIds = new Set(players.filter((player) => player.alive).map((player) => player.id));
+    const roundContents = getRoundContents(room);
+    const currentTurnWasBomber = room.descriptionTurnPlayerId === playerId;
+    const skipped = currentTurnWasBomber ? [...(room.skippedDescriptionPlayerIds ?? []), playerId] : (room.skippedDescriptionPlayerIds ?? []);
+    const completedIds = new Set([...Object.keys(roundContents), ...skipped]);
+    const nextTurnId = pausedStatus === 'discussion' && (room.descriptionRevealMode ?? 'all_submitted') === 'sequential'
+      ? descriptionOrder({ ...room, players }).find((id) => !completedIds.has(id)) ?? null
+      : room.descriptionTurnPlayerId ?? null;
+    return {
+      ...room,
+      players,
+      status: winner ? 'finished' : pausedStatus,
+      winner,
+      votes: pausedStatus === 'voting' ? {} : room.votes,
+      ballot: pausedStatus === 'voting' ? 1 : room.ballot,
+      runoffCandidateIds: pausedStatus === 'voting' ? [] : room.runoffCandidateIds.filter((id) => survivingIds.has(id)),
+      skippedDescriptionPlayerIds: skipped,
+      descriptionTurnPlayerId: nextTurnId,
+      buzzerStatus: 'failed',
+      undercoverComebackUsed: room.undercoverComebackUsed || isUndercover,
+      pendingComebackPlayerId: null,
+      comebackDeadlineAt: null,
+      pendingGuessingReason: null,
+      pausedStatus: null,
+      lastComebackResult,
+      version: room.version + 1,
+      updatedAt: now,
+    };
+  }
+  return finalizeBallotResult({ ...room, lastComebackResult }, room.lastResult!, now);
 }
 
 export function startNextRound(room: GameRoom, now = Date.now(), random: RandomSource = Math.random): GameRoom {
-  if (room.winner) return room;
+  if (room.winner || room.status !== 'result') return room;
   const nextRound = room.round + 1;
   return startDiscussion({
     ...room,
@@ -374,9 +545,29 @@ export function startNextRound(room: GameRoom, now = Date.now(), random: RandomS
     discussionDeadlineAt: null,
     lastResult: null,
     lastComebackResult: null,
+    nextRoundAt: null,
+    autoAdvancePaused: false,
     version: room.version,
     updatedAt: now,
   }, now, random);
+}
+
+export function autoAdvanceDue(room: GameRoom, now = Date.now()): boolean {
+  return room.status === 'result'
+    && (room.autoAdvanceEnabled ?? true)
+    && !room.autoAdvancePaused
+    && Boolean(room.nextRoundAt && now >= room.nextRoundAt);
+}
+
+export function setAutoAdvancePaused(room: GameRoom, paused: boolean, now = Date.now()): GameRoom {
+  if (room.status !== 'result' || !(room.autoAdvanceEnabled ?? true)) return room;
+  return {
+    ...room,
+    autoAdvancePaused: paused,
+    nextRoundAt: paused ? null : now + (room.autoAdvanceDelaySeconds ?? 10) * 1000,
+    version: room.version + 1,
+    updatedAt: now,
+  };
 }
 
 export function createRoom(input: {
@@ -389,6 +580,9 @@ export function createRoom(input: {
   undercoverWord: string;
   challengeMode?: ChallengeMode;
   undercoverComebackEnabled?: boolean;
+  descriptionRevealMode?: DescriptionRevealMode;
+  buzzerEnabled?: boolean;
+  autoAdvanceEnabled?: boolean;
 }): GameRoom {
   if (!Number.isInteger(input.playerLimit) || input.playerLimit < MIN_PLAYERS || input.playerLimit > MAX_PLAYERS) {
     throw new Error(`玩家人数必须为 ${MIN_PLAYERS}–${MAX_PLAYERS} 人`);
@@ -406,12 +600,22 @@ export function createRoom(input: {
     civilianWord: input.civilianWord.trim(),
     undercoverWord: input.undercoverWord.trim(),
     challengeMode: input.challengeMode ?? 'off',
+    descriptionRevealMode: input.descriptionRevealMode ?? 'all_submitted',
+    descriptionOrder: [],
+    descriptionTurnPlayerId: null,
+    descriptionsRevealedAt: null,
+    skippedDescriptionPlayerIds: [],
     roundChallenges: {},
     undercoverComebackEnabled: input.undercoverComebackEnabled ?? false,
     undercoverComebackUsed: false,
     pendingComebackPlayerId: null,
     comebackDeadlineAt: null,
     lastComebackResult: null,
+    pendingGuessingReason: null,
+    buzzerEnabled: input.buzzerEnabled ?? false,
+    buzzerUsedBy: null,
+    buzzerStatus: 'idle',
+    pausedStatus: null,
     players: [{ id: input.ownerId, name: input.ownerName.trim(), seat: 1, alive: true, cardReady: false }],
     assignments: {},
     round: 1,
@@ -421,6 +625,10 @@ export function createRoom(input: {
     history: [],
     roundContents: {},
     discussionDeadlineAt: null,
+    autoAdvanceEnabled: input.autoAdvanceEnabled ?? true,
+    autoAdvanceDelaySeconds: AUTO_ADVANCE_DELAY_MS / 1000,
+    nextRoundAt: null,
+    autoAdvancePaused: false,
     lastResult: null,
     winner: null,
     version: 1,
@@ -444,10 +652,20 @@ export function dealRoom(room: GameRoom, random: RandomSource = Math.random): Ga
     roundContents: {},
     roundChallenges: {},
     discussionDeadlineAt: null,
+    descriptionOrder: [],
+    descriptionTurnPlayerId: null,
+    descriptionsRevealedAt: null,
+    skippedDescriptionPlayerIds: [],
     undercoverComebackUsed: false,
     pendingComebackPlayerId: null,
     comebackDeadlineAt: null,
     lastComebackResult: null,
+    pendingGuessingReason: null,
+    buzzerUsedBy: null,
+    buzzerStatus: 'idle',
+    pausedStatus: null,
+    nextRoundAt: null,
+    autoAdvancePaused: false,
     lastResult: null,
     winner: null,
     version: room.version + 1,
