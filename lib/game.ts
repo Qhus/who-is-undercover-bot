@@ -36,6 +36,7 @@ export const ROUND_CONTENT_MAX_LENGTH = 80;
 export const DISCUSSION_DURATION_MS = 120_000;
 export const COMEBACK_DURATION_MS = 20_000;
 export const AUTO_ADVANCE_DELAY_MS = 10_000;
+export const AUTO_VOTING_DELAY_MS = 5_000;
 export const PLAYER_LIMIT_OPTIONS = Array.from({ length: MAX_PLAYERS - MIN_PLAYERS + 1 }, (_, index) => MIN_PLAYERS + index);
 
 export function undercoverOptions(playerLimit: number): number[] {
@@ -91,6 +92,7 @@ export interface GameRoom {
   descriptionOrder?: string[];
   descriptionTurnPlayerId?: string | null;
   descriptionsRevealedAt?: number | null;
+  votingOpensAt?: number | null;
   skippedDescriptionPlayerIds?: string[];
   roundChallenges?: Record<string, string>;
   undercoverComebackEnabled: boolean;
@@ -290,6 +292,15 @@ export function canBeginVoting(room: GameRoom, now = Date.now()): boolean {
   return descriptionsAreRevealed(room, now) && (discussionComplete(room) || !room.discussionDeadlineAt || now >= room.discussionDeadlineAt);
 }
 
+export function getVotingOpensAt(room: GameRoom): number | null {
+  return room.votingOpensAt ?? (room.descriptionsRevealedAt ? room.descriptionsRevealedAt + AUTO_VOTING_DELAY_MS : null);
+}
+
+export function autoVotingDue(room: GameRoom, now = Date.now()): boolean {
+  const opensAt = getVotingOpensAt(room);
+  return room.status === 'discussion' && canBeginVoting(room, now) && Boolean(opensAt && now >= opensAt);
+}
+
 export function startDiscussion(room: GameRoom, now = Date.now(), random: RandomSource = Math.random): GameRoom {
   const roundKey = String(room.round);
   const previousId = room.roundChallenges?.[String(room.round - 1)] ?? null;
@@ -308,6 +319,7 @@ export function startDiscussion(room: GameRoom, now = Date.now(), random: Random
     descriptionOrder: order,
     descriptionTurnPlayerId: (room.descriptionRevealMode ?? 'all_submitted') === 'sequential' ? order[0] ?? null : null,
     descriptionsRevealedAt: null,
+    votingOpensAt: null,
     skippedDescriptionPlayerIds: [],
     nextRoundAt: null,
     autoAdvancePaused: false,
@@ -359,6 +371,7 @@ export function submitRoundContent(room: GameRoom, playerId: string, content: st
     roundContents: { ...(room.roundContents ?? {}), [roundKey]: nextContents },
     descriptionTurnPlayerId: nextTurnId,
     descriptionsRevealedAt: allComplete ? now : room.descriptionsRevealedAt ?? null,
+    votingOpensAt: allComplete ? now + AUTO_VOTING_DELAY_MS : room.votingOpensAt ?? null,
     version: room.version + 1,
     updatedAt: now,
   };
@@ -377,6 +390,7 @@ export function revealDescriptions(room: GameRoom, now = Date.now()): GameRoom {
     skippedDescriptionPlayerIds: Array.from(new Set([...(room.skippedDescriptionPlayerIds ?? []), ...skipped])),
     descriptionTurnPlayerId: null,
     descriptionsRevealedAt: now,
+    votingOpensAt: now + AUTO_VOTING_DELAY_MS,
     version: room.version + 1,
     updatedAt: now,
   };
@@ -394,7 +408,25 @@ export function skipDescription(room: GameRoom, playerId: string, now = Date.now
     skippedDescriptionPlayerIds: skipped,
     descriptionTurnPlayerId: nextTurnId,
     descriptionsRevealedAt: allComplete ? now : room.descriptionsRevealedAt ?? null,
+    votingOpensAt: allComplete ? now + AUTO_VOTING_DELAY_MS : room.votingOpensAt ?? null,
     version: room.version + 1,
+    updatedAt: now,
+  };
+}
+
+export function startVoting(room: GameRoom, now = Date.now()): GameRoom {
+  if (room.status === 'voting') return room;
+  if (!canBeginVoting(room, now)) throw new Error('本轮描述尚未公开');
+  const revealedRoom = room.descriptionsRevealedAt ? room : revealDescriptions(room, now);
+  return {
+    ...revealedRoom,
+    status: 'voting',
+    ballot: 1,
+    votes: {},
+    runoffCandidateIds: [],
+    discussionDeadlineAt: null,
+    votingOpensAt: null,
+    version: revealedRoom.version + 1,
     updatedAt: now,
   };
 }
@@ -604,6 +636,7 @@ export function createRoom(input: {
     descriptionOrder: [],
     descriptionTurnPlayerId: null,
     descriptionsRevealedAt: null,
+    votingOpensAt: null,
     skippedDescriptionPlayerIds: [],
     roundChallenges: {},
     undercoverComebackEnabled: input.undercoverComebackEnabled ?? false,
@@ -655,6 +688,7 @@ export function dealRoom(room: GameRoom, random: RandomSource = Math.random): Ga
     descriptionOrder: [],
     descriptionTurnPlayerId: null,
     descriptionsRevealedAt: null,
+    votingOpensAt: null,
     skippedDescriptionPlayerIds: [],
     undercoverComebackUsed: false,
     pendingComebackPlayerId: null,

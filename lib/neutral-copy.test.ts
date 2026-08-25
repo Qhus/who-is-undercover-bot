@@ -65,4 +65,6 @@ test('补充体验需求在 Excel 与沉浸模式都有操作入口', () => {
   }
   assert.match(spreadsheetSource, /本轮描述保持可见/);
   assert.match(spreadsheetSource, /room\.status === 'voting'.*getRoundContents/);
+  assert.match(`${immersiveSource}\n${spreadsheetSource}`, /秒后自动开放投票/);
+  assert.match(spreadsheetSource, /player\.alive \? getRoundContents\(room\)\[player\.id\].*'无需提交'/);
 });

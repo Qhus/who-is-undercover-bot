@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { applyBallotResult, autoAdvanceDue, canBeginVoting, canTriggerBuzzer, challengeModeLabel, createRoom, dealRoom, descriptionModeLabel, descriptionsAreRevealed, eligibleCandidates, eligibleVoters, getDescriptionTurnPlayer, getRoundChallenge, getRoundContents, isRoundContentVisible, makeId, PLAYER_LIMIT_OPTIONS, revealDescriptions, resolveBallot, resolveUndercoverComeback, ROUND_CONTENT_MAX_LENGTH, setAutoAdvancePaused, skipDescription as skipRoundDescription, startDiscussion, startNextRound, submitRoundContent as recordRoundContent, triggerBuzzer, undercoverOptions, type ChallengeMode, type DescriptionRevealMode, type GameRoom, type Player } from '@/lib/game';
+import { applyBallotResult, autoAdvanceDue, autoVotingDue, canBeginVoting, canTriggerBuzzer, challengeModeLabel, createRoom, dealRoom, descriptionModeLabel, descriptionsAreRevealed, eligibleCandidates, eligibleVoters, getDescriptionTurnPlayer, getRoundChallenge, getRoundContents, getVotingOpensAt, isRoundContentVisible, makeId, PLAYER_LIMIT_OPTIONS, revealDescriptions, resolveBallot, resolveUndercoverComeback, ROUND_CONTENT_MAX_LENGTH, setAutoAdvancePaused, skipDescription as skipRoundDescription, startDiscussion, startNextRound, startVoting, submitRoundContent as recordRoundContent, triggerBuzzer, undercoverOptions, type ChallengeMode, type DescriptionRevealMode, type GameRoom, type Player } from '@/lib/game';
 import { getCloudStore } from '@/lib/cloudbase-store';
 import { randomWordPair } from '@/lib/words';
 import SpreadsheetMode from './spreadsheet-mode';
@@ -61,7 +61,7 @@ function RulesGuide({ onClose }: { onClose: () => void }) {
         </ol></section>
         <section className="complete-rules"><span className="panel-kicker">FULL RULES</span><h3>完整规则</h3><div className="rule-groups">
           <article><h4>角色与词语</h4><ul><li>3–8 人默认 1 名卧底，9–10 人默认 2 名；3–4 人只允许 1 名。</li><li>平民拿到同一个词，卧底拿到相近但不同的词；本版本没有白板。</li><li>查看个人信息时只显示词语，不标注角色，身份在本局结束后统一公开。</li></ul></article>
-          <article><h4>描述与公共挑战</h4><ul><li>每轮 120 秒，每位存活玩家提交一次 1–80 字描述；全员完成可提前进入投票。</li><li>挑战可选关闭、轻度或随机；公共规则每轮同步展示，并尽量避免连续重复。</li><li>挑战规则目前由玩家自觉遵守，系统只提示和计字，不自动判违规。</li></ul></article>
+          <article><h4>描述与公共挑战</h4><ul><li>每轮 120 秒，每位存活玩家提交一次 1–80 字描述；描述公开后倒计时 5 秒自动开放投票。</li><li>挑战可选关闭、轻度或随机；公共规则每轮同步展示，并尽量避免连续重复。</li><li>挑战规则目前由玩家自觉遵守，系统只提示和计字，不自动判违规。</li></ul></article>
           <article><h4>投票与平票</h4><ul><li>只有存活玩家可投票，每轮一票，不得投自己或已经退出的玩家。</li><li>系统不展示实时票型，只在全部提交后公布每位候选人的总票数，不公开谁投了谁。</li><li>唯一最高票者退出；首次平票对并列者复投，第二次仍平票则无人退出并进入下一轮。</li></ul></article>
           <article><h4>胜负条件</h4><ul><li>所有卧底均退出，平民阵营获胜。</li><li>存活卧底人数大于或等于存活平民人数，卧底阵营获胜。</li><li>两项条件都未满足时继续下一轮；结束后可由房主原班人马再开一局。</li></ul></article>
           <article><h4>卧底猜词翻盘（可选）</h4><ul><li>开启后，首名被成功投出的卧底有 20 秒私密机会猜平民词，全卧底阵营每局只有一次。</li><li>完全猜中立即结束本局；猜错、空提交或超时则该玩家正常退出。</li><li>比对忽略首尾空格、常见标点和英文字母大小写，不接受近义词。</li></ul></article>
@@ -167,13 +167,14 @@ export default function GameApp() {
   }, [room, remoteMode]);
 
   const discussionDeadline = room?.status === 'discussion' ? room.discussionDeadlineAt : null;
+  const votingOpenDeadline = room?.status === 'discussion' ? getVotingOpensAt(room) : null;
   const comebackDeadline = room?.status === 'guessing' ? room.comebackDeadlineAt : null;
   const nextRoundDeadline = room?.status === 'result' ? room.nextRoundAt : null;
   useEffect(() => {
-    if (!discussionDeadline && !comebackDeadline && !nextRoundDeadline) return;
+    if (!discussionDeadline && !votingOpenDeadline && !comebackDeadline && !nextRoundDeadline) return;
     const timer = window.setInterval(() => setClockNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
-  }, [discussionDeadline, comebackDeadline, nextRoundDeadline]);
+  }, [discussionDeadline, votingOpenDeadline, comebackDeadline, nextRoundDeadline]);
 
   const roomCode = room?.code;
   useEffect(() => {
@@ -219,6 +220,7 @@ export default function GameApp() {
   }, [room, remoteMode, currentPlayerId]);
 
   const discussionRemainingSeconds = discussionDeadline ? Math.max(0, Math.ceil((discussionDeadline - clockNow) / 1000)) : 0;
+  const votingOpenRemainingSeconds = votingOpenDeadline ? Math.max(0, Math.ceil((votingOpenDeadline - clockNow) / 1000)) : 0;
   const comebackRemainingSeconds = comebackDeadline ? Math.max(0, Math.ceil((comebackDeadline - clockNow) / 1000)) : 0;
   const nextRoundRemainingSeconds = nextRoundDeadline ? Math.max(0, Math.ceil((nextRoundDeadline - clockNow) / 1000)) : 0;
   const wordReviewPlayer = useMemo(() => {
@@ -259,6 +261,19 @@ export default function GameApp() {
       const next = startNextRound(room, Date.now());
       setRoom(next);
       setRoundContentDraft('');
+      if (remoteMode) void getCloudStore().saveRoom(next).catch(() => undefined);
+    }, 0);
+    return () => window.clearTimeout(timeout);
+  }, [room, clockNow, remoteMode]);
+
+  useEffect(() => {
+    if (!room || !autoVotingDue(room, clockNow)) return;
+    const timeout = window.setTimeout(() => {
+      const next = startVoting(room, clockNow);
+      setRoom(next);
+      setVotePlayerId(eligibleVoters(next)[0]?.id ?? null);
+      setSelectedCandidateId(null);
+      setPrivacyGate(true);
       if (remoteMode) void getCloudStore().saveRoom(next).catch(() => undefined);
     }, 0);
     return () => window.clearTimeout(timeout);
@@ -358,10 +373,10 @@ export default function GameApp() {
 
   function beginVoting() {
     if (!room) return;
-    if (!canBeginVoting(room, Date.now())) return setNotice({ kind: 'info', text: '请等待全员提交本轮内容或倒计时结束' });
-    const revealedRoom = room.descriptionsRevealedAt ? room : revealDescriptions(room, Date.now());
-    const first = eligibleVoters(revealedRoom)[0];
-    commitRoom({ ...revealedRoom, status: 'voting', ballot: 1, votes: {}, runoffCandidateIds: [], discussionDeadlineAt: null, version: revealedRoom.version + 1, updatedAt: Date.now() });
+    if (!canBeginVoting(room, clockNow)) return setNotice({ kind: 'info', text: '请等待本轮描述公开' });
+    const next = startVoting(room, clockNow);
+    const first = eligibleVoters(next)[0];
+    commitRoom(next);
     setVotePlayerId(first?.id ?? null); setSelectedCandidateId(null); setPrivacyGate(true);
   }
 
@@ -418,7 +433,7 @@ export default function GameApp() {
   if (displayMode === 'spreadsheet') return <SpreadsheetMode
     screen={screen} room={room} notice={notice} cloudReady={cloudReady} busy={busy} remoteMode={remoteMode}
     currentPlayerId={currentPlayerId} activeCardPlayer={activeCardPlayer} activeDiscussionPlayer={activeDiscussionPlayer} activeVoter={activeVoter} activeComebackPlayer={activeComebackPlayer} wordReviewPlayer={wordReviewPlayer} selectedCandidateId={selectedCandidateId}
-    roundContentDraft={roundContentDraft} discussionRemainingSeconds={discussionRemainingSeconds} comebackDraft={comebackDraft} comebackRemainingSeconds={comebackRemainingSeconds} nextRoundRemainingSeconds={nextRoundRemainingSeconds} canOpenVoting={room ? canBeginVoting(room, clockNow) : false}
+    roundContentDraft={roundContentDraft} discussionRemainingSeconds={discussionRemainingSeconds} votingOpenRemainingSeconds={votingOpenRemainingSeconds} comebackDraft={comebackDraft} comebackRemainingSeconds={comebackRemainingSeconds} nextRoundRemainingSeconds={nextRoundRemainingSeconds} canOpenVoting={room ? canBeginVoting(room, clockNow) : false}
     ownerName={ownerName} playerLimit={playerLimit} undercoverCount={undercoverCount} civilianWord={civilianWord} undercoverWord={undercoverWord}
     customWords={customWords} challengeMode={challengeMode} undercoverComebackEnabled={undercoverComebackEnabled} descriptionRevealMode={descriptionRevealMode} buzzerEnabled={buzzerEnabled} autoAdvanceEnabled={autoAdvanceEnabled} joinCode={joinCode} joinName={joinName} onSwitchMode={switchDisplayMode} onOpenSetup={openSetup} onReviewWord={setWordReviewPlayerId}
     onBackHome={() => setScreen('home')} onReset={reset} onCopyRoomCode={() => void copyRoomCode()} onCopyCurrentRule={() => void copyCurrentRule()} onJoin={() => void tryRemoteJoin()}
@@ -460,7 +475,22 @@ export default function GameApp() {
       {room.status === 'lobby' && <section className="game-card lobby-card"><div className="section-title"><div><span className="panel-kicker">座位表</span><h2>{room.players.length}/{room.playerLimit} 人已就位</h2></div><span>{remoteMode ? '分享房间码邀请朋友' : '可直接改名'}</span></div><div className="lobby-list">{room.players.map((player) => <label className="lobby-player" key={player.id}><span>{String(player.seat).padStart(2, '0')}</span><input disabled={remoteMode} value={player.name} onChange={(event) => renamePlayer(player.id, event.target.value)} /><i>{player.id === room.ownerId ? '房主' : '玩家'}</i></label>)}</div>{!remoteMode || currentPlayerId === room.ownerId ? <button className="button button--primary button--wide" disabled={room.players.length !== room.playerLimit} onClick={startDealing}>{room.players.length === room.playerLimit ? '锁定名单并随机发牌' : `还差 ${room.playerLimit - room.players.length} 人`} <span>→</span></button> : <div className="waiting-line">等待房主在玩家到齐后发牌…</div>}</section>}
       {room.status === 'cards' && activeCardPlayer && <section className="private-stage"><aside className="player-queue"><span className="panel-kicker">个人信息进度</span><h2>{room.players.filter((player) => player.cardReady).length}/{room.players.length} 已确认</h2>{room.players.map((player) => <Seat player={player} key={player.id} />)}</aside><div className="private-card-wrap">{privacyGate ? <div className="privacy-gate"><span className="seat__avatar seat__avatar--large">{activeCardPlayer.name.slice(0, 1)}</span><p>下一位</p><h2>{activeCardPlayer.name}</h2><span>请确认身边没有人偷看屏幕</span><button className="button button--dark" onClick={() => setPrivacyGate(false)}>我就是本人</button></div> : <div className={`identity-card ${revealed ? 'is-revealed' : ''}`}><div className="identity-card__cover" aria-hidden={revealed}><span>按住鼠标或空格键</span><b>查看我的词语</b><i>松手立即遮挡</i></div><div className="identity-card__secret" aria-hidden={!revealed}><span>仅你可见</span><p>你的词语</p><strong>{room.assignments[activeCardPlayer.id].word}</strong></div><button aria-label="按住查看自己的秘密词语，不显示角色" onPointerDown={() => setRevealed(true)} onPointerUp={() => setRevealed(false)} onPointerLeave={() => setRevealed(false)} onKeyDown={(event) => { if (event.code === 'Space') { event.preventDefault(); setRevealed(true); } }} onKeyUp={(event) => { if (event.code === 'Space') setRevealed(false); }} /></div>}{!privacyGate && <button className="button button--primary button--wide" onClick={confirmCard} disabled={revealed}>已确认自己的词语 <span>→</span></button>}</div></section>}
       {room.status === 'cards' && remoteMode && !activeCardPlayer && <section className="waiting-panel"><span className="stamp">私牌已确认</span><h2>请把注意力放回桌边。</h2><p>还有 {room.players.filter((player) => !player.cardReady).length} 位玩家没有确认私牌；全员完成后会自动进入讨论。</p></section>}
-      {room.status === 'discussion' && <section className="discussion-card"><div className="talk-mark"><span>{formatCountdown(discussionRemainingSeconds)}</span>填</div><div><span className="panel-kicker">第 {room.round} 轮本轮内容 · {descriptionModeLabel(room.descriptionRevealMode ?? 'all_submitted')}</span><h2>{getRoundChallenge(room, room.round)?.text ?? '本轮自由表达'}</h2><p>{(room.descriptionRevealMode ?? 'all_submitted') === 'sequential' ? '系统按座位顺序开放输入，每人提交后立即公开。' : '每个人先独立提交；全员完成或倒计时结束后，所有描述一次公开。'} 挑战规则只提示、不拦截提交。</p>{activeDiscussionPlayer && !descriptionsAreRevealed(room, clockNow) && <div className="round-content-form"><label htmlFor="round-content">{activeDiscussionPlayer.name} 的本轮内容 · {roundContentDraft.length} 字</label><div><input id="round-content" maxLength={ROUND_CONTENT_MAX_LENGTH} value={roundContentDraft} onChange={(event) => setRoundContentDraft(event.target.value)} placeholder="在此填写本轮内容" /><button className="button button--dark" disabled={!roundContentDraft.trim()} onClick={submitCurrentRoundContent}>提交本轮内容</button></div></div>}<div className="alive-row">{room.players.filter((player) => player.alive).map((player) => <span key={player.id}>{player.name} · {getRoundContents(room)[player.id] ? isRoundContentVisible(room, player.id, remoteMode ? currentPlayerId : activeDiscussionPlayer?.id, clockNow) ? '已公开' : '已提交，等待公开' : (room.skippedDescriptionPlayerIds ?? []).includes(player.id) ? '本轮未提交' : getDescriptionTurnPlayer(room)?.id === player.id ? '当前填写' : '待提交'}</span>)}</div>{descriptionsAreRevealed(room, clockNow) && <div className="description-review"><h3>本轮描述已公开</h3>{room.players.filter((player) => player.alive || getRoundContents(room)[player.id]).map((player) => <div key={player.id}><b>{player.name}</b><span>{getRoundContents(room)[player.id] ?? '本轮未提交'}</span></div>)}</div>}{(!remoteMode || currentPlayerId === room.ownerId) && (room.descriptionRevealMode ?? 'all_submitted') === 'sequential' && getDescriptionTurnPlayer(room) && <button className="button button--outline" onClick={skipCurrentDescription}>跳过 {getDescriptionTurnPlayer(room)?.name} 的本轮描述</button>}{!remoteMode || currentPlayerId === room.ownerId ? <button className="button button--primary" disabled={!canBeginVoting(room, clockNow)} onClick={beginVoting}>{canBeginVoting(room, clockNow) ? `开放第 ${room.round} 轮提交选择` : `等待描述公开 · ${formatCountdown(discussionRemainingSeconds)}`} <span>→</span></button> : <div className="waiting-line">{canBeginVoting(room, clockNow) ? '描述已公开，等待负责人开放提交选择…' : `本轮剩余 ${formatCountdown(discussionRemainingSeconds)}`}</div>}{descriptionsAreRevealed(room, clockNow) && room.buzzerEnabled && !room.buzzerUsedBy && <div className="buzzer-actions"><span>觉得自己可能是卧底？</span>{(remoteMode ? room.players.filter((player) => player.id === currentPlayerId && player.alive) : room.players.filter((player) => player.alive)).map((player) => <button key={player.id} onClick={() => startBuzzer(player.id)}>{remoteMode ? '我要爆灯' : `${player.name} 爆灯`}</button>)}</div>}</div></section>}
+      {room.status === 'discussion' && <section className="discussion-card">
+        <div className="talk-mark"><span>{descriptionsAreRevealed(room, clockNow) ? formatCountdown(votingOpenRemainingSeconds) : formatCountdown(discussionRemainingSeconds)}</span>{descriptionsAreRevealed(room, clockNow) ? '投' : '填'}</div>
+        <div>
+          <span className="panel-kicker">第 {room.round} 轮本轮内容 · {descriptionModeLabel(room.descriptionRevealMode ?? 'all_submitted')}</span>
+          <h2>{getRoundChallenge(room, room.round)?.text ?? '本轮自由表达'}</h2>
+          <p>{(room.descriptionRevealMode ?? 'all_submitted') === 'sequential' ? '系统按座位顺序开放输入，每人提交后立即公开。' : '每个人先独立提交；全员完成或倒计时结束后，所有描述一次公开。'} 挑战规则只提示、不拦截提交。</p>
+          {activeDiscussionPlayer && !descriptionsAreRevealed(room, clockNow) && <div className="round-content-form"><label htmlFor="round-content">{activeDiscussionPlayer.name} 的本轮内容 · {roundContentDraft.length} 字</label><div><input id="round-content" maxLength={ROUND_CONTENT_MAX_LENGTH} value={roundContentDraft} onChange={(event) => setRoundContentDraft(event.target.value)} placeholder="在此填写本轮内容" /><button className="button button--dark" disabled={!roundContentDraft.trim()} onClick={submitCurrentRoundContent}>提交本轮内容</button></div></div>}
+          <div className="alive-row">{room.players.filter((player) => player.alive).map((player) => <span key={player.id}>{player.name} · {getRoundContents(room)[player.id] ? isRoundContentVisible(room, player.id, remoteMode ? currentPlayerId : activeDiscussionPlayer?.id, clockNow) ? '已公开' : '已提交，等待公开' : (room.skippedDescriptionPlayerIds ?? []).includes(player.id) ? '本轮未提交' : getDescriptionTurnPlayer(room)?.id === player.id ? '当前填写' : '待提交'}</span>)}</div>
+          {descriptionsAreRevealed(room, clockNow) && <div className="description-review"><h3>本轮描述已公开 · {votingOpenRemainingSeconds} 秒后自动开放投票</h3>{room.players.filter((player) => player.alive || getRoundContents(room)[player.id]).map((player) => <div key={player.id}><b>{player.name}</b><span>{getRoundContents(room)[player.id] ?? '本轮未提交'}</span></div>)}</div>}
+          {(!remoteMode || currentPlayerId === room.ownerId) && (room.descriptionRevealMode ?? 'all_submitted') === 'sequential' && getDescriptionTurnPlayer(room) && <button className="button button--outline" onClick={skipCurrentDescription}>跳过 {getDescriptionTurnPlayer(room)?.name} 的本轮描述</button>}
+          {!remoteMode || currentPlayerId === room.ownerId
+            ? <button className="button button--primary" disabled={!canBeginVoting(room, clockNow)} onClick={beginVoting}>{canBeginVoting(room, clockNow) ? `立即开放投票（${votingOpenRemainingSeconds} 秒后自动）` : `等待描述公开 · ${formatCountdown(discussionRemainingSeconds)}`} <span>→</span></button>
+            : <div className="waiting-line">{canBeginVoting(room, clockNow) ? `${votingOpenRemainingSeconds} 秒后自动开放投票…` : `本轮剩余 ${formatCountdown(discussionRemainingSeconds)}`}</div>}
+          {descriptionsAreRevealed(room, clockNow) && room.buzzerEnabled && !room.buzzerUsedBy && <div className="buzzer-actions"><span>觉得自己可能是卧底？</span>{(remoteMode ? room.players.filter((player) => player.id === currentPlayerId && player.alive) : room.players.filter((player) => player.alive)).map((player) => <button key={player.id} onClick={() => startBuzzer(player.id)}>{remoteMode ? '我要爆灯' : `${player.name} 爆灯`}</button>)}</div>}
+        </div>
+      </section>}
       {room.status === 'voting' && <section className="voting-descriptions"><div><span className="panel-kicker">投票参考</span><h2>本轮所有公开描述</h2></div><div className="description-review">{room.players.filter((player) => player.alive || getRoundContents(room)[player.id]).map((player) => <div key={player.id}><b>{player.name}</b><span>{getRoundContents(room)[player.id] ?? '本轮未提交'}</span></div>)}</div>{room.buzzerEnabled && !room.buzzerUsedBy && <div className="buzzer-actions">{(remoteMode ? room.players.filter((player) => player.id === currentPlayerId && player.alive) : room.players.filter((player) => player.alive)).map((player) => <button key={player.id} onClick={() => startBuzzer(player.id)}>{remoteMode ? '我要爆灯' : `${player.name} 爆灯`}</button>)}</div>}</section>}
       {room.status === 'voting' && activeVoter && <section className="vote-layout"><aside className="vote-progress"><span className="panel-kicker">匿名投票</span><h2>{Object.keys(room.votes).length}/{eligibleVoters(room).length} 已提交</h2><p>本轮描述保留在上方供参考。实时票型不会展示，当前玩家提交后请把电脑交给下一位。</p><div className="meter"><i style={{ width: `${Object.keys(room.votes).length / eligibleVoters(room).length * 100}%` }} /></div></aside><div className="vote-card">{privacyGate ? <div className="privacy-gate privacy-gate--vote"><span className="seat__avatar seat__avatar--large">{activeVoter.name.slice(0, 1)}</span><p>轮到</p><h2>{activeVoter.name}</h2><span>其他人请暂时移开视线</span><button className="button button--dark" onClick={() => setPrivacyGate(false)}>开始秘密投票</button></div> : <><div className="section-title"><div><span className="panel-kicker">{room.ballot === 2 ? '复投候选人' : '选出你认为的卧底'}</span><h2>{activeVoter.name}，请投一票</h2></div><span>不能投自己</span></div><div className="candidate-grid">{eligibleCandidates(room).filter((candidate) => candidate.id !== activeVoter.id).map((candidate) => <button className={selectedCandidateId === candidate.id ? 'is-selected' : ''} onClick={() => setSelectedCandidateId(candidate.id)} key={candidate.id}><span>{candidate.name.slice(0, 1)}</span><b>{candidate.name}</b><i>{selectedCandidateId === candidate.id ? '已选择' : '选择'}</i></button>)}</div><button className="button button--primary button--wide" disabled={!selectedCandidateId} onClick={submitVote}>确认提交（之后不可查看） <span>→</span></button></>}</div></section>}
       {room.status === 'voting' && remoteMode && !activeVoter && <section className="waiting-panel"><span className="stamp">投票已提交</span><h2>{Object.keys(room.votes).length}/{eligibleVoters(room).length} 人已经投票</h2><p>提交内容已隐藏。等最后一票完成，所有人的页面会同时看到公开票数和裁判结果。</p><div className="meter"><i style={{ width: `${Object.keys(room.votes).length / eligibleVoters(room).length * 100}%` }} /></div></section>}

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { applyBallotResult, assignCards, autoAdvanceDue, canBeginVoting, canTriggerBuzzer, createRoom, determineWinner, discussionComplete, getDescriptionTurnPlayer, getRoundChallenge, getRoundContents, isRoundContentVisible, PLAYER_LIMIT_OPTIONS, RANDOM_CHALLENGE_RULES, resolveBallot, resolveUndercoverComeback, revealDescriptions, selectChallengeRule, setAutoAdvancePaused, skipDescription, startDiscussion, startNextRound, submitRoundContent, triggerBuzzer, undercoverOptions, type GameRoom, type Player } from './game.ts';
+import { applyBallotResult, assignCards, autoAdvanceDue, autoVotingDue, canBeginVoting, canTriggerBuzzer, createRoom, determineWinner, discussionComplete, getDescriptionTurnPlayer, getRoundChallenge, getRoundContents, getVotingOpensAt, isRoundContentVisible, PLAYER_LIMIT_OPTIONS, RANDOM_CHALLENGE_RULES, resolveBallot, resolveUndercoverComeback, revealDescriptions, selectChallengeRule, setAutoAdvancePaused, skipDescription, startDiscussion, startNextRound, startVoting, submitRoundContent, triggerBuzzer, undercoverOptions, type GameRoom, type Player } from './game.ts';
 
 function players(count = 8): Player[] {
   return Array.from({ length: count }, (_, index) => ({ id: `p${index}`, name: `玩家 ${index + 1}`, seat: index + 1, alive: true, cardReady: true }));
@@ -77,8 +77,23 @@ test('全部提交后统一公开描述，提交前只能看到自己的内容',
   room = submitRoundContent(room, 'p1', '装在杯子里', 3_000);
   room = submitRoundContent(room, 'p2', '颜色浅', 4_000);
   assert.equal(room.descriptionsRevealedAt, 4_000);
+  assert.equal(room.votingOpensAt, 9_000);
   assert.equal(isRoundContentVisible(room, 'p0', 'p1', 4_000), true);
   assert.equal(canBeginVoting(room, 4_000), true);
+});
+
+test('描述公开 5 秒后自动开放投票且重复推进幂等', () => {
+  let room = startDiscussion({ ...createRoom({ ownerId: 'p0', ownerName: '玩家 1', playerLimit: 3, undercoverCount: 1, civilianWord: '牛奶', undercoverWord: '豆浆' }), players: players(3) }, 1_000);
+  room = submitRoundContent(room, 'p0', '早餐常见', 2_000);
+  room = submitRoundContent(room, 'p1', '装在杯子里', 3_000);
+  room = submitRoundContent(room, 'p2', '颜色浅', 4_000);
+  assert.equal(getVotingOpensAt(room), 9_000);
+  assert.equal(autoVotingDue(room, 8_999), false);
+  assert.equal(autoVotingDue(room, 9_000), true);
+  const voting = startVoting(room, 9_000);
+  assert.equal(voting.status, 'voting');
+  assert.equal(voting.votingOpensAt, null);
+  assert.equal(startVoting(voting, 10_000), voting);
 });
 
 test('描述超时后统一公开已有内容并标记未提交成员', () => {

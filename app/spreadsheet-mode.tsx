@@ -34,6 +34,7 @@ export interface SpreadsheetModeProps {
   selectedCandidateId: string | null;
   roundContentDraft: string;
   discussionRemainingSeconds: number;
+  votingOpenRemainingSeconds: number;
   comebackDraft: string;
   comebackRemainingSeconds: number;
   nextRoundRemainingSeconds: number;
@@ -263,8 +264,8 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
         title: `填写本轮内容 · ${formatCountdown(props.discussionRemainingSeconds)}`,
         instruction: props.activeDiscussionPlayer
           ? `在 ${cell} 输入本轮内容并点击“提交”；全员完成或倒计时结束后，由负责人继续。`
-          : props.canOpenVoting && isOwner ? '描述已经公开，请阅读讨论后点击“开放提交选择”。' : '你的内容已完成，等待其他成员或倒计时结束后统一公开。',
-        location: props.activeDiscussionPlayer ? `当前填写位置：${cell}（本轮内容列）` : `剩余时间：${formatCountdown(props.discussionRemainingSeconds)}`,
+          : props.canOpenVoting ? `描述已经公开，${props.votingOpenRemainingSeconds} 秒后自动开放投票；房主也可提前开放。` : '你的内容已完成，等待其他成员或倒计时结束后统一公开。',
+        location: props.activeDiscussionPlayer ? `当前填写位置：${cell}（本轮内容列）` : props.canOpenVoting ? `自动开放投票：${props.votingOpenRemainingSeconds} 秒` : `剩余时间：${formatCountdown(props.discussionRemainingSeconds)}`,
         focusCell: props.activeDiscussionPlayer ? cell : 'C2',
         emphasizedCells: props.activeDiscussionPlayer ? [cell] : [],
         cellHints: props.activeDiscussionPlayer ? { [cell]: '填写内容后点击同一单元格内的“提交”' } : {},
@@ -307,7 +308,7 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
       location: comebackWon ? '结果提示：特殊判定成功' : foundUndercover ? '结果提示：已成功找出卧底' : '结果：当前 Round 工作表；历史：操作记录',
       focusCell: 'D2', emphasizedCells: ['D2'], cellHints: { D2: comebackWon ? '流程已完成' : foundUndercover ? `成功找出卧底：${foundUndercover.name}` : '查看本轮结果' },
     };
-  }, [sheetTab, props.screen, props.room, props.activeCardPlayer, props.activeDiscussionPlayer, props.activeVoter, props.activeComebackPlayer, props.discussionRemainingSeconds, props.comebackRemainingSeconds, props.nextRoundRemainingSeconds, props.canOpenVoting, isOwner]);
+  }, [sheetTab, props.screen, props.room, props.activeCardPlayer, props.activeDiscussionPlayer, props.activeVoter, props.activeComebackPlayer, props.discussionRemainingSeconds, props.votingOpenRemainingSeconds, props.comebackRemainingSeconds, props.nextRoundRemainingSeconds, props.canOpenVoting, isOwner]);
 
   const flowKey = `${sheetTab}|${props.screen}|${props.room?.status ?? ''}|${props.room?.round ?? ''}|${props.activeCardPlayer?.id ?? ''}|${props.activeDiscussionPlayer?.id ?? ''}|${props.activeVoter?.id ?? ''}`;
   const activeCell = cellSelection?.flowKey === flowKey ? cellSelection.cell : workflowGuide.focusCell;
@@ -372,14 +373,17 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
       if (isCardOwner) personal = sensitiveVisible && currentAssignment
         ? <span className="sheet-secret-value">{currentAssignment.word}</span>
         : <button className="sheet-secret" onClick={() => privacy.current?.reveal()} aria-label="显示个人信息，真实用途是查看自己的秘密词语，不显示角色">••••••</button>;
-      if (room.status === 'discussion') {
+    if (room.status === 'discussion') {
+      if (!player.alive) personal = '无需提交';
+      else {
         const submittedContent = getRoundContents(room)[player.id];
         personal = submittedContent
           ? isRoundContentVisible(room, player.id, props.currentPlayerId) ? submittedContent : '已提交，等待公开'
           : (room.skippedDescriptionPlayerIds ?? []).includes(player.id) ? '本轮未提交' : '等待中';
         if (isContentOwner) personal = <div className="sheet-content-input"><input value={props.roundContentDraft} maxLength={ROUND_CONTENT_MAX_LENGTH} onChange={(event) => props.onRoundContentDraft(event.target.value)} placeholder="在此填写本轮内容" aria-label="填写谁是卧底本轮描述内容" /><button disabled={!props.roundContentDraft.trim()} onClick={props.onSubmitRoundContent} aria-label="提交谁是卧底本轮描述内容">提交</button></div>;
       }
-      if (room.status === 'voting') personal = getRoundContents(room)[player.id] ?? '本轮未提交';
+    }
+      if (room.status === 'voting') personal = player.alive ? getRoundContents(room)[player.id] ?? '本轮未提交' : '无需提交';
       if (room.status === 'guessing') personal = isComebackPlayer
         ? <div className="sheet-content-input"><input value={props.comebackDraft} onChange={(event) => props.onComebackDraft(event.target.value.slice(0, 30))} placeholder={`私密输入另一组词语 · ${formatCountdown(props.comebackRemainingSeconds)}`} aria-label="卧底猜词翻盘答案" /><button disabled={!props.comebackDraft.trim()} onClick={props.onSubmitComeback} aria-label="提交卧底猜词翻盘答案">提交</button></div>
         : '特殊判定中';
@@ -402,7 +406,7 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
     ['游玩步骤', '序号', '要做什么', '操作说明', '关键提醒', ''],
     ['开始这里', '01', '创建或加入房间', '房主创建房间并分享六位编号；其他玩家填写称呼和编号加入。', '所有人进入同一个房间', ''],
     ['下一步', '02', '私密查看词语', '每人只查看自己的词语，记住后点击“已确认自己的词语”。', '不要让旁边的人看到', ''],
-    ['然后', '03', '提交一条描述', '根据自己的词语写一条描述；按房间设置依次公开或全员提交后公开。', '不要直接说出词语', ''],
+    ['然后', '03', '提交一条描述', '根据自己的词语写一条描述；描述公开 5 秒后自动进入投票。', '退出玩家显示“无需提交”', ''],
     ['接着', '04', '匿名投票', '阅读所有人的描述，选择最像卧底的人；不能选择自己。', '只公开总票数', ''],
     ['查看', '05', '处理本轮结果', '最高票玩家退出；首次平票会复投，复投仍平票则本轮无人退出。', '系统自动判断胜负', ''],
     ['继续', '06', '进入下一轮', '未结束时结果页等待 10 秒自动进入下一轮，房主也可暂停或立即进入。', '结束后公开身份和词语', ''],
@@ -452,11 +456,11 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
       ? <div className="sheet-commandbar">
           {props.room.status === 'lobby' && isOwner && <button className="sheet-primary-action" disabled={props.room.players.length !== props.room.playerLimit} onClick={props.onStartDealing} aria-label="锁定成员并为谁是卧底游戏发牌">{props.room.players.length === props.room.playerLimit ? '生成个人信息' : `等待 ${props.room.playerLimit - props.room.players.length} 人`}</button>}
           {props.room.status === 'cards' && props.activeCardPlayer && <button className="sheet-primary-action" onClick={() => { privacy.current?.mask('sheet-change'); props.onConfirmCard(); }} aria-label="已确认自己的词语">已确认自己的词语</button>}
-          {props.room.status === 'discussion' && isOwner && <button className="sheet-primary-action" disabled={!props.canOpenVoting} onClick={props.onBeginVoting} aria-label="开始谁是卧底本轮投票">{props.canOpenVoting ? '开放提交选择' : `等待本轮内容 ${formatCountdown(props.discussionRemainingSeconds)}`}</button>}
+          {props.room.status === 'discussion' && isOwner && <button className="sheet-primary-action" disabled={!props.canOpenVoting} onClick={props.onBeginVoting} aria-label="开始谁是卧底本轮投票">{props.canOpenVoting ? `立即开放投票（${props.votingOpenRemainingSeconds} 秒后自动）` : `等待本轮内容 ${formatCountdown(props.discussionRemainingSeconds)}`}</button>}
           {props.room.status === 'discussion' && isOwner && (props.room.descriptionRevealMode ?? 'all_submitted') === 'sequential' && getDescriptionTurnPlayer(props.room) && <button onClick={props.onSkipDescription}>跳过当前描述</button>}
           {props.room.status === 'result' && isOwner && <><button className="sheet-primary-action" onClick={props.onContinue}>立即进入下一轮</button>{(props.room.autoAdvanceEnabled ?? true) && <button onClick={props.onToggleAutoAdvance}>{props.room.autoAdvancePaused ? '继续自动进入' : '暂停自动进入'}</button>}</>}
           {props.room.status === 'finished' && isOwner && <button className="sheet-primary-action" onClick={props.onRematch} aria-label="重新开始谁是卧底游戏">新建一轮</button>}
-          <span>{props.room.status === 'discussion' ? `${descriptionModeLabel(props.room.descriptionRevealMode ?? 'all_submitted')} · ${Object.keys(getRoundContents(props.room)).length}/${eligibleVoters(props.room).length} 已完成 · ${descriptionsAreRevealed(props.room) ? '描述已公开' : formatCountdown(props.discussionRemainingSeconds)}` : props.room.status === 'voting' ? `${Object.keys(props.room.votes).length}/${eligibleVoters(props.room).length} 已完成 · 本轮描述保持可见` : props.room.status === 'guessing' ? `${props.room.pendingGuessingReason === 'buzzer' ? '主动爆灯' : '特殊判定'} · ${formatCountdown(props.comebackRemainingSeconds)}` : props.room.status === 'result' && (props.room.autoAdvanceEnabled ?? true) ? (props.room.autoAdvancePaused ? '自动进入已暂停' : `${props.nextRoundRemainingSeconds} 秒后自动进入下一轮`) : neutralizeGameCopy(props.room.status)}</span>
+          <span>{props.room.status === 'discussion' ? `${descriptionModeLabel(props.room.descriptionRevealMode ?? 'all_submitted')} · ${Object.keys(getRoundContents(props.room)).length}/${eligibleVoters(props.room).length} 已完成 · ${descriptionsAreRevealed(props.room) ? `${props.votingOpenRemainingSeconds} 秒后自动开放投票` : formatCountdown(props.discussionRemainingSeconds)}` : props.room.status === 'voting' ? `${Object.keys(props.room.votes).length}/${eligibleVoters(props.room).length} 已完成 · 本轮描述保持可见` : props.room.status === 'guessing' ? `${props.room.pendingGuessingReason === 'buzzer' ? '主动爆灯' : '特殊判定'} · ${formatCountdown(props.comebackRemainingSeconds)}` : props.room.status === 'result' && (props.room.autoAdvanceEnabled ?? true) ? (props.room.autoAdvancePaused ? '自动进入已暂停' : `${props.nextRoundRemainingSeconds} 秒后自动进入下一轮`) : neutralizeGameCopy(props.room.status)}</span>
         </div>
       : null;
 
