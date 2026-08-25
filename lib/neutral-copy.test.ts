@@ -21,3 +21,11 @@ test('个人词语不标注玩家角色，命中卧底时明确提示', () => {
   assert.match(immersiveSource, /成功找出卧底/);
   assert.match(spreadsheetSource, /成功找出卧底/);
 });
+
+test('表格模式在输入框外完整展示公共规则', () => {
+  const spreadsheetSource = readFileSync(new URL('../app/spreadsheet-mode.tsx', import.meta.url), 'utf8');
+  assert.match(spreadsheetSource, /sheet-rule-banner/);
+  assert.match(spreadsheetSource, /Round_.*公共规则/);
+  assert.match(spreadsheetSource, /placeholder="在此填写本轮内容"/);
+  assert.doesNotMatch(spreadsheetSource, /placeholder=\{`\$\{getRoundChallenge/);
+});

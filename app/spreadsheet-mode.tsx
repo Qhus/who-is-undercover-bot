@@ -332,7 +332,7 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
       if (room.status === 'discussion') {
         const submittedContent = getRoundContents(room)[player.id];
         personal = submittedContent || '等待中';
-        if (isContentOwner) personal = <div className="sheet-content-input"><input value={props.roundContentDraft} maxLength={ROUND_CONTENT_MAX_LENGTH} onChange={(event) => props.onRoundContentDraft(event.target.value)} placeholder={`${getRoundChallenge(room, room.round)?.text ?? '自由表达'} · ${props.roundContentDraft.length} 字`} aria-label="填写谁是卧底本轮描述内容" /><button disabled={!props.roundContentDraft.trim()} onClick={props.onSubmitRoundContent} aria-label="提交谁是卧底本轮描述内容">提交</button></div>;
+        if (isContentOwner) personal = <div className="sheet-content-input"><input value={props.roundContentDraft} maxLength={ROUND_CONTENT_MAX_LENGTH} onChange={(event) => props.onRoundContentDraft(event.target.value)} placeholder="在此填写本轮内容" aria-label="填写谁是卧底本轮描述内容" /><button disabled={!props.roundContentDraft.trim()} onClick={props.onSubmitRoundContent} aria-label="提交谁是卧底本轮描述内容">提交</button></div>;
       }
       if (room.status === 'guessing') personal = isComebackPlayer
         ? <div className="sheet-content-input"><input value={props.comebackDraft} onChange={(event) => props.onComebackDraft(event.target.value.slice(0, 30))} placeholder={`私密输入另一组词语 · ${formatCountdown(props.comebackRemainingSeconds)}`} aria-label="卧底猜词翻盘答案" /><button disabled={!props.comebackDraft.trim()} onClick={props.onSubmitComeback} aria-label="提交卧底猜词翻盘答案">提交</button></div>
@@ -397,6 +397,11 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
       <div><span>当前操作</span><strong id="sheet-current-guide">{workflowGuide.title}</strong><p>{workflowGuide.instruction}</p><b>{workflowGuide.location}</b></div>
     </section>
     {action}
+    {props.screen === 'game' && props.room?.status === 'discussion' && <aside className="sheet-rule-banner" aria-label="谁是卧底本轮公共表达规则">
+      <span>Round_{String(props.room.round).padStart(2, '0')} 公共规则</span>
+      <strong>{getRoundChallenge(props.room, props.room.round)?.text ?? '本轮自由表达'}</strong>
+      <small>当前输入 {props.roundContentDraft.length} 字 · 玩家自觉遵守 · 不影响提交</small>
+    </aside>}
     <Grid rows={rows} activeCell={activeCell} emphasizedCells={workflowGuide.emphasizedCells} onActivate={(cell) => setCellSelection({ flowKey, cell })} />
     <footer className="sheet-tabs"><button aria-label="新增工作表">＋</button>{sheetTabs.map((tab) => <button className={sheetTab === tab ? 'is-current' : ''} onClick={() => setSheetTab(tab)} key={tab}>{tabLabel(tab)}</button>)}<span /><small>低干扰显示不规避企业网络审计、终端监控或管理制度 · 闲置 {PRIVACY_IDLE_MS / 1000} 秒自动遮挡 · 显示 {PRIVATE_REVEAL_MS / 1000} 秒</small></footer>
     {props.notice && <div className={`sheet-toast sheet-toast--${props.notice.kind}`} role="status">{neutralizeGameCopy(props.notice.text)}</div>}
