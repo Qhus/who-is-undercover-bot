@@ -89,6 +89,11 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgb(200 77 49 / 3
 .round-badge { display:flex; flex-direction:column; text-align:right; }
 .round-badge span { letter-spacing:.16em; font-size:9px; font-weight:900; color:var(--muted); }
 .round-badge b { font:900 42px Georgia,serif; color:var(--red); line-height:1; }
+.public-rules { margin:-16px 0 26px; border:1px solid var(--line); background:rgb(255 250 240 / 70%); }
+.public-rules summary { padding:13px 16px; font-size:12px; font-weight:900; cursor:pointer; }
+.public-rules>div { display:flex; flex-wrap:wrap; gap:8px 18px; padding:0 16px 14px; color:var(--muted); font-size:11px; }
+.public-rules b { color:var(--red); }
+.public-rules button { margin-left:auto; padding:4px 9px; border:1px solid var(--line); background:transparent; font-size:10px; font-weight:800; }
 .section-title { display:flex; align-items:start; justify-content:space-between; }
 .section-title h2 { margin:8px 0 22px; }
 .section-title>span { color:var(--muted); font-size:11px; }
@@ -146,6 +151,13 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgb(200 77 49 / 3
 .waiting-panel h2 { font:900 38px Georgia,"STSong",serif; margin:24px 0 8px; }
 .waiting-panel p { max-width:580px; color:var(--muted); line-height:1.8; }
 .waiting-panel .meter { width:min(430px,80%); }
+.comeback-panel { width:min(720px,100%); margin:0 auto; }
+.comeback-form { min-height:480px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:42px; border:1px solid var(--line); background:var(--cream); text-align:center; }
+.comeback-form h2 { margin:24px 0 4px; font:900 42px Georgia,"STSong",serif; }
+.comeback-form>strong { color:var(--red); font:900 54px Georgia,serif; }
+.comeback-form p { max-width:520px; color:var(--muted); line-height:1.8; }
+.comeback-form input { width:min(430px,100%); margin:18px 0; padding:14px 4px; border:0; border-bottom:2px solid var(--ink); background:transparent; text-align:center; font-size:24px; font-weight:900; outline:0; }
+.comeback-form .button { width:min(430px,100%); }
 .privacy-gate--vote { min-height:520px; }
 .candidate-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:24px; }
 .candidate-grid button { border:1px solid var(--line); background:transparent; min-height:112px; display:grid; grid-template-columns:38px 1fr; grid-template-rows:1fr 1fr; align-items:center; text-align:left; padding:15px; }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { applyBallotResult, assignCards, canBeginVoting, createRoom, determineWinner, discussionComplete, getRoundContents, PLAYER_LIMIT_OPTIONS, resolveBallot, startDiscussion, submitRoundContent, undercoverOptions, type GameRoom, type Player } from './game.ts';
+import { applyBallotResult, assignCards, canBeginVoting, createRoom, determineWinner, discussionComplete, getRoundChallenge, getRoundContents, PLAYER_LIMIT_OPTIONS, RANDOM_CHALLENGE_RULES, resolveBallot, resolveUndercoverComeback, selectChallengeRule, startDiscussion, startNextRound, submitRoundContent, undercoverOptions, type GameRoom, type Player } from './game.ts';
 
 function players(count = 8): Player[] {
   return Array.from({ length: count }, (_, index) => ({ id: `p${index}`, name: `玩家 ${index + 1}`, seat: index + 1, alive: true, cardReady: true }));
@@ -69,6 +69,25 @@ test('本轮倒计时结束后即使有人未提交也可开放选择', () => {
   assert.throws(() => submitRoundContent(room, 'p0', 'x'.repeat(81)), /不能超过 80 字/);
 });
 
+test('随机挑战包含确认的 9 条规则且连续两轮不重复', () => {
+  assert.equal(RANDOM_CHALLENGE_RULES.length, 9);
+  assert.deepEqual(RANDOM_CHALLENGE_RULES.map((rule) => rule.text), [
+    '最多 3 个字', '恰好 7 个字', '恰好 8 个字', '只能描述使用场景', '只能描述外观或感受',
+    '必须使用一个比喻', '必须使用问句', '用一句个人经历表达', '本轮自由表达',
+  ]);
+  const first = selectChallengeRule('random', null, () => 0);
+  const second = selectChallengeRule('random', first?.id, () => 0);
+  assert.notEqual(first?.id, second?.id);
+});
+
+test('挑战规则按轮次写入公共房间状态', () => {
+  const base = createRoom({ ownerId: 'p0', ownerName: '玩家 1', playerLimit: 3, undercoverCount: 1, civilianWord: '牛奶', undercoverWord: '豆浆', challengeMode: 'random' });
+  const first = startDiscussion({ ...base, players: players(3) }, 1_000, () => 0);
+  assert.equal(getRoundChallenge(first, 1)?.text, '最多 3 个字');
+  const second = startNextRound({ ...first, status: 'result' }, 2_000, () => 0);
+  assert.notEqual(getRoundChallenge(second, 2)?.id, getRoundChallenge(first, 1)?.id);
+});
+
 test('唯一最高票玩家被淘汰', () => {
   const room = votingRoom();
   room.votes = { p0: 'p1', p1: 'p0', p2: 'p0', p3: 'p0', p4: 'p0', p5: 'p0' };
@@ -77,6 +96,35 @@ test('唯一最高票玩家被淘汰', () => {
   const next = applyBallotResult(room, result);
   assert.equal(next.players.find((player) => player.id === 'p0')?.alive, false);
   assert.equal(next.winner, 'civilian');
+});
+
+test('开启猜词翻盘后卧底被投出会进入 20 秒私密判定', () => {
+  const room = { ...votingRoom(), undercoverComebackEnabled: true };
+  room.votes = { p0: 'p1', p1: 'p0', p2: 'p0', p3: 'p0', p4: 'p0', p5: 'p0' };
+  const next = applyBallotResult(room, resolveBallot(room), 10_000);
+  assert.equal(next.status, 'guessing');
+  assert.equal(next.pendingComebackPlayerId, 'p0');
+  assert.equal(next.comebackDeadlineAt, 30_000);
+  assert.equal(next.players.find((player) => player.id === 'p0')?.alive, true);
+});
+
+test('卧底猜中另一组词立即获胜，猜错则正常退出', () => {
+  const base = { ...votingRoom(), undercoverComebackEnabled: true };
+  base.votes = { p0: 'p1', p1: 'p0', p2: 'p0', p3: 'p0', p4: 'p0', p5: 'p0' };
+  const guessing = applyBallotResult(base, resolveBallot(base), 10_000);
+  const won = resolveUndercoverComeback(guessing, 'p0', ' 牛奶！ ', 15_000);
+  assert.equal(won.status, 'finished');
+  assert.equal(won.winner, 'undercover');
+  assert.equal(won.lastComebackResult?.correct, true);
+
+  const lost = resolveUndercoverComeback(guessing, 'p0', '咖啡', 15_000);
+  assert.equal(lost.players.find((player) => player.id === 'p0')?.alive, false);
+  assert.equal(lost.winner, 'civilian');
+  assert.equal(lost.lastComebackResult?.correct, false);
+
+  const timedOut = resolveUndercoverComeback(guessing, 'p0', '牛奶', 30_000);
+  assert.equal(timedOut.lastComebackResult?.timedOut, true);
+  assert.equal(timedOut.winner, 'civilian');
 });
 
 test('首次平票进入只包含并列者的复投', () => {

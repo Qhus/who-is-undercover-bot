@@ -1,6 +1,31 @@
 export type Role = 'civilian' | 'undercover';
 export type Winner = Role | null;
-export type GameStatus = 'lobby' | 'cards' | 'discussion' | 'voting' | 'result' | 'finished';
+export type GameStatus = 'lobby' | 'cards' | 'discussion' | 'voting' | 'guessing' | 'result' | 'finished';
+export type ChallengeMode = 'off' | 'light' | 'random';
+
+export interface ChallengeRule {
+  id: string;
+  text: string;
+}
+
+export const LIGHT_CHALLENGE_RULES: readonly ChallengeRule[] = [
+  { id: 'max-8', text: '最多 8 个字' },
+  { id: 'scene', text: '只能描述使用场景' },
+  { id: 'appearance', text: '只能描述外观或感受' },
+  { id: 'free', text: '本轮自由表达' },
+];
+
+export const RANDOM_CHALLENGE_RULES: readonly ChallengeRule[] = [
+  { id: 'max-3', text: '最多 3 个字' },
+  { id: 'exact-7', text: '恰好 7 个字' },
+  { id: 'exact-8', text: '恰好 8 个字' },
+  { id: 'scene', text: '只能描述使用场景' },
+  { id: 'appearance', text: '只能描述外观或感受' },
+  { id: 'metaphor', text: '必须使用一个比喻' },
+  { id: 'question', text: '必须使用问句' },
+  { id: 'experience', text: '用一句个人经历表达' },
+  { id: 'free', text: '本轮自由表达' },
+];
 
 export const MIN_PLAYERS = 3;
 export const MAX_PLAYERS = 10;
@@ -39,6 +64,14 @@ export interface RoundResult {
   noElimination: boolean;
 }
 
+export interface ComebackResult {
+  playerId: string;
+  round: number;
+  guess: string;
+  correct: boolean;
+  timedOut: boolean;
+}
+
 export interface GameRoom {
   code: string;
   ownerId: string;
@@ -47,6 +80,13 @@ export interface GameRoom {
   undercoverCount: number;
   civilianWord: string;
   undercoverWord: string;
+  challengeMode: ChallengeMode;
+  roundChallenges?: Record<string, string>;
+  undercoverComebackEnabled: boolean;
+  undercoverComebackUsed: boolean;
+  pendingComebackPlayerId?: string | null;
+  comebackDeadlineAt?: number | null;
+  lastComebackResult?: ComebackResult | null;
   players: Player[];
   assignments: Record<string, Assignment>;
   round: number;
@@ -64,6 +104,26 @@ export interface GameRoom {
 }
 
 export type RandomSource = () => number;
+
+export function challengeModeLabel(mode: ChallengeMode): string {
+  if (mode === 'light') return '轻度';
+  if (mode === 'random') return '随机';
+  return '关闭';
+}
+
+export function selectChallengeRule(mode: ChallengeMode, previousId?: string | null, random: RandomSource = Math.random): ChallengeRule | null {
+  if (mode === 'off') return null;
+  const pool = mode === 'light' ? LIGHT_CHALLENGE_RULES : RANDOM_CHALLENGE_RULES;
+  const candidates = pool.length > 1 ? pool.filter((rule) => rule.id !== previousId) : pool;
+  return candidates[Math.floor(random() * candidates.length)] ?? null;
+}
+
+export function getRoundChallenge(room: Pick<GameRoom, 'challengeMode' | 'roundChallenges'>, round: number): ChallengeRule | null {
+  if ((room.challengeMode ?? 'off') === 'off') return null;
+  const id = room.roundChallenges?.[String(round)];
+  if (!id) return null;
+  return [...LIGHT_CHALLENGE_RULES, ...RANDOM_CHALLENGE_RULES].find((rule) => rule.id === id) ?? null;
+}
 
 export function makeId(prefix = 'p'): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
@@ -180,13 +240,40 @@ export function canBeginVoting(room: GameRoom, now = Date.now()): boolean {
   return discussionComplete(room) || !room.discussionDeadlineAt || now >= room.discussionDeadlineAt;
 }
 
-export function startDiscussion(room: GameRoom, now = Date.now()): GameRoom {
+export function startDiscussion(room: GameRoom, now = Date.now(), random: RandomSource = Math.random): GameRoom {
   const roundKey = String(room.round);
+  const previousId = room.roundChallenges?.[String(room.round - 1)] ?? null;
+  const selectedRule = room.roundChallenges?.[roundKey]
+    ? null
+    : selectChallengeRule(room.challengeMode ?? 'off', previousId, random);
   return {
     ...room,
     status: 'discussion',
     roundContents: { ...(room.roundContents ?? {}), [roundKey]: getRoundContents(room) },
+    roundChallenges: selectedRule
+      ? { ...(room.roundChallenges ?? {}), [roundKey]: selectedRule.id }
+      : (room.roundChallenges ?? {}),
     discussionDeadlineAt: now + DISCUSSION_DURATION_MS,
+    version: room.version + 1,
+    updatedAt: now,
+  };
+}
+
+function finalizeBallotResult(room: GameRoom, result: RoundResult, now: number): GameRoom {
+  const players = result.eliminatedId
+    ? room.players.map((player) => player.id === result.eliminatedId ? { ...player, alive: false } : player)
+    : room.players;
+  const winner = determineWinner({ players, assignments: room.assignments });
+  return {
+    ...room,
+    players,
+    winner,
+    status: winner ? 'finished' : 'result',
+    votes: {},
+    runoffCandidateIds: [],
+    pendingComebackPlayerId: null,
+    comebackDeadlineAt: null,
+    lastResult: result,
     version: room.version + 1,
     updatedAt: now,
   };
@@ -209,8 +296,7 @@ export function submitRoundContent(room: GameRoom, playerId: string, content: st
   };
 }
 
-export function applyBallotResult(room: GameRoom, result: RoundResult): GameRoom {
-  const now = Date.now();
+export function applyBallotResult(room: GameRoom, result: RoundResult, now = Date.now()): GameRoom {
   if (result.tiedIds.length > 1 && result.ballot === 1) {
     return {
       ...room,
@@ -225,40 +311,72 @@ export function applyBallotResult(room: GameRoom, result: RoundResult): GameRoom
     };
   }
 
-  const players = result.eliminatedId
-    ? room.players.map((player) => player.id === result.eliminatedId ? { ...player, alive: false } : player)
-    : room.players;
-  const winner = determineWinner({ players, assignments: room.assignments });
-  return {
-    ...room,
-    players,
-    winner,
-    status: winner ? 'finished' : 'result',
-    votes: {},
-    runoffCandidateIds: [],
-    lastResult: result,
-    history: [...room.history, result],
-    version: room.version + 1,
-    updatedAt: now,
-  };
+  const withHistory = { ...room, history: [...room.history, result] };
+  const eligibleForComeback = Boolean(
+    result.eliminatedId
+    && room.assignments[result.eliminatedId]?.role === 'undercover'
+    && room.undercoverComebackEnabled
+    && !room.undercoverComebackUsed,
+  );
+  if (eligibleForComeback) {
+    return {
+      ...withHistory,
+      status: 'guessing',
+      votes: {},
+      runoffCandidateIds: [],
+      pendingComebackPlayerId: result.eliminatedId,
+      comebackDeadlineAt: now + 20_000,
+      undercoverComebackUsed: true,
+      lastResult: result,
+      version: room.version + 1,
+      updatedAt: now,
+    };
+  }
+  return finalizeBallotResult(withHistory, result, now);
 }
 
-export function startNextRound(room: GameRoom, now = Date.now()): GameRoom {
+function normalizeGuess(value: string): string {
+  return value.trim().toLocaleLowerCase().replace(/[\s\p{P}\p{S}]/gu, '');
+}
+
+export function resolveUndercoverComeback(room: GameRoom, playerId: string, guess: string, now = Date.now()): GameRoom {
+  if (room.status !== 'guessing' || !room.lastResult || room.pendingComebackPlayerId !== playerId) throw new Error('当前没有可提交的翻盘机会');
+  const timedOut = !room.comebackDeadlineAt || now >= room.comebackDeadlineAt;
+  const normalizedGuess = normalizeGuess(guess);
+  if (!timedOut && !normalizedGuess) throw new Error('请填写另一组词语');
+  const correct = !timedOut && normalizedGuess === normalizeGuess(room.civilianWord);
+  const lastComebackResult: ComebackResult = { playerId, round: room.round, guess: guess.trim(), correct, timedOut };
+  if (correct) {
+    return {
+      ...room,
+      status: 'finished',
+      winner: 'undercover',
+      pendingComebackPlayerId: null,
+      comebackDeadlineAt: null,
+      lastComebackResult,
+      version: room.version + 1,
+      updatedAt: now,
+    };
+  }
+  return finalizeBallotResult({ ...room, lastComebackResult }, room.lastResult, now);
+}
+
+export function startNextRound(room: GameRoom, now = Date.now(), random: RandomSource = Math.random): GameRoom {
   if (room.winner) return room;
   const nextRound = room.round + 1;
-  return {
+  return startDiscussion({
     ...room,
-    status: 'discussion',
     round: nextRound,
     ballot: 1,
     runoffCandidateIds: [],
     votes: {},
     roundContents: { ...(room.roundContents ?? {}), [String(nextRound)]: {} },
-    discussionDeadlineAt: now + DISCUSSION_DURATION_MS,
+    discussionDeadlineAt: null,
     lastResult: null,
-    version: room.version + 1,
+    lastComebackResult: null,
+    version: room.version,
     updatedAt: now,
-  };
+  }, now, random);
 }
 
 export function createRoom(input: {
@@ -269,6 +387,8 @@ export function createRoom(input: {
   undercoverCount: number;
   civilianWord: string;
   undercoverWord: string;
+  challengeMode?: ChallengeMode;
+  undercoverComebackEnabled?: boolean;
 }): GameRoom {
   if (!Number.isInteger(input.playerLimit) || input.playerLimit < MIN_PLAYERS || input.playerLimit > MAX_PLAYERS) {
     throw new Error(`玩家人数必须为 ${MIN_PLAYERS}–${MAX_PLAYERS} 人`);
@@ -285,6 +405,13 @@ export function createRoom(input: {
     undercoverCount: input.undercoverCount,
     civilianWord: input.civilianWord.trim(),
     undercoverWord: input.undercoverWord.trim(),
+    challengeMode: input.challengeMode ?? 'off',
+    roundChallenges: {},
+    undercoverComebackEnabled: input.undercoverComebackEnabled ?? false,
+    undercoverComebackUsed: false,
+    pendingComebackPlayerId: null,
+    comebackDeadlineAt: null,
+    lastComebackResult: null,
     players: [{ id: input.ownerId, name: input.ownerName.trim(), seat: 1, alive: true, cardReady: false }],
     assignments: {},
     round: 1,
@@ -315,7 +442,12 @@ export function dealRoom(room: GameRoom, random: RandomSource = Math.random): Ga
     votes: {},
     history: [],
     roundContents: {},
+    roundChallenges: {},
     discussionDeadlineAt: null,
+    undercoverComebackUsed: false,
+    pendingComebackPlayerId: null,
+    comebackDeadlineAt: null,
+    lastComebackResult: null,
     lastResult: null,
     winner: null,
     version: room.version + 1,
