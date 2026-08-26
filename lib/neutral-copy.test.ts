@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { neutralMessageCopy, neutralizeGameCopy } from './neutral-copy.ts';
+import { CURRENT_RELEASE, RELEASE_NOTES } from './release-notes.ts';
 
 test('低干扰通知替换明显游戏术语', () => {
   assert.equal(neutralizeGameCopy('发牌失败，请重新投票'), '个人信息失败，请重新提交选择');
@@ -69,4 +70,23 @@ test('补充体验需求在 Excel 与沉浸模式都有操作入口', () => {
   assert.match(spreadsheetSource, /player\.alive && !player\.away \? getRoundContents\(room\)\[player\.id\].*'无需提交'/);
   assert.match(`${immersiveSource}\n${spreadsheetSource}`, /暂退/);
   assert.match(`${immersiveSource}\n${spreadsheetSource}`, /退出/);
+});
+
+test('版本通知由统一数据生成且当前版本始终位于首项', () => {
+  assert.equal(CURRENT_RELEASE, RELEASE_NOTES[0]);
+  assert.match(CURRENT_RELEASE.version, /^V\d+\.\d+$/);
+  assert.equal(new Set(RELEASE_NOTES.map((release) => release.version)).size, RELEASE_NOTES.length);
+  assert.ok(RELEASE_NOTES.every((release) => release.details.length >= 3));
+});
+
+test('Excel 主界面使用非弹窗通知栏并将沉浸模式降级为兼容视图', () => {
+  const spreadsheetSource = readFileSync(new URL('../app/spreadsheet-mode.tsx', import.meta.url), 'utf8');
+  const styles = readFileSync(new URL('../app/globals.css', import.meta.url), 'utf8');
+  const notificationStyles = styles.slice(styles.indexOf('.sheet-notification-panel'), styles.indexOf('.sheet-tabs'));
+  assert.match(spreadsheetSource, /通知 · \{CURRENT_RELEASE\.version\}/);
+  assert.match(spreadsheetSource, /sheet-notification-panel/);
+  assert.match(spreadsheetSource, /暂不记录已读状态，也不发送推送/);
+  assert.match(spreadsheetSource, />兼容视图<\/button>/);
+  assert.doesNotMatch(notificationStyles, /position:\s*fixed/);
+  assert.doesNotMatch(spreadsheetSource, /aria-modal="true"[^]*sheet-notification-panel/);
 });

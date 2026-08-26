@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { canTriggerBuzzer, challengeModeLabel, descriptionModeLabel, descriptionsAreRevealed, eligibleCandidates, eligibleVoters, getDescriptionTurnPlayer, getRoundChallenge, getRoundContents, isRoundContentVisible, LIGHT_CHALLENGE_RULES, PLAYER_LIMIT_OPTIONS, RANDOM_CHALLENGE_RULES, ROUND_CONTENT_MAX_LENGTH, undercoverOptions, type ChallengeMode, type DescriptionRevealMode, type GameRoom, type Player } from '@/lib/game';
 import { neutralizeGameCopy } from '@/lib/neutral-copy';
 import { createPrivacyGuard, PRIVATE_REVEAL_MS, PRIVACY_IDLE_MS, type PrivacyGuard } from '@/lib/privacy';
+import { CURRENT_RELEASE, RELEASE_NOTES } from '@/lib/release-notes';
 
 type Screen = 'home' | 'setup' | 'game';
 type Notice = { kind: 'info' | 'error'; text: string } | null;
@@ -147,6 +148,8 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
   const [returnSheetTab, setReturnSheetTab] = useState<SheetTab>('members');
   const [cellSelection, setCellSelection] = useState<{ flowKey: string; cell: string } | null>(null);
   const [sensitiveVisible, setSensitiveVisible] = useState(false);
+  const [notificationOpen, setNotificationOpen] = useState(false);
+  const [selectedReleaseVersion, setSelectedReleaseVersion] = useState(CURRENT_RELEASE.version);
   const privacy = useRef<PrivacyGuard | null>(null);
 
   useEffect(() => {
@@ -192,6 +195,7 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
   }
 
   const currentAssignment = props.room && props.wordReviewPlayer ? props.room.assignments[props.wordReviewPlayer.id] : null;
+  const selectedRelease = RELEASE_NOTES.find((release) => release.version === selectedReleaseVersion) ?? CURRENT_RELEASE;
   const isOwner = !props.remoteMode || props.currentPlayerId === props.room?.ownerId;
   const workflowGuide = useMemo<SheetGuide>(() => {
     if (sheetTab === 'guide') {
@@ -472,25 +476,40 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
   return <main className={`sheet-app ${sheetTab === 'guide' ? 'sheet-app--guide' : ''}`} onContextMenu={(event) => event.preventDefault()}>
     <header className="sheet-titlebar">
       <button className="sheet-filemark" onClick={props.onReset} aria-label="返回谁是卧底游戏首页">表</button>
-      <div><strong>{props.room ? `协作数据表 · ${props.room.code}` : '协作数据表'}</strong><span>{props.remoteMode ? '已同步' : '已保存到本机'}</span></div>
-      <div className="sheet-title-actions"><button onClick={openGuideSheet} aria-label="在表格中查看谁是卧底游玩步骤与核心规则">玩法与规则</button>{props.room && <><button onClick={props.onCopyRoomCode} aria-label="复制谁是卧底游戏房间码">复制编号</button><button onClick={props.onCopyCurrentRule} aria-label="复制谁是卧底本轮公共规则">复制规则</button></>}<button onClick={() => { privacy.current?.mask('mode-change'); props.onSwitchMode(); }} aria-label="切换到沉浸式谁是卧底游戏界面">沉浸模式</button></div>
+      <div><strong>{props.room ? `协作数据表 · ${props.room.code}` : '协作数据表'}</strong><span>{props.remoteMode ? '已同步' : '已保存到本机'} · {CURRENT_RELEASE.version}</span></div>
+      <div className="sheet-title-actions">
+        <button onClick={openGuideSheet} aria-label="在表格中查看谁是卧底游玩步骤与核心规则">帮助</button>
+        <button className={notificationOpen ? 'is-active' : ''} aria-expanded={notificationOpen} aria-controls="sheet-notification-panel" onClick={() => { privacy.current?.mask('sheet-change'); setNotificationOpen((open) => !open); }}>通知 · {CURRENT_RELEASE.version}</button>
+        {props.room && <><button onClick={props.onCopyRoomCode} aria-label="复制谁是卧底游戏房间码">复制编号</button><button onClick={props.onCopyCurrentRule} aria-label="复制谁是卧底本轮公共规则">复制备注</button></>}
+        <button className="sheet-compatibility-action" onClick={() => { privacy.current?.mask('mode-change'); props.onSwitchMode(); }} aria-label="切换到兼容保留的沉浸式谁是卧底游戏界面">兼容视图</button>
+      </div>
     </header>
     <nav className="sheet-ribbon" aria-label="表格工具栏"><button className="is-current">开始</button><button>数据</button><button>视图</button><span /><button onClick={() => privacy.current?.mask('escape')} aria-label="立即隐藏秘密词语">隐藏敏感内容</button></nav>
-    <div className="sheet-toolbar" aria-hidden="true"><span>撤销</span><span>重做</span><i /><b>系统字体</b><b>11</b><i /><strong>B</strong><em>I</em><u>U</u><i /><span>对齐</span><span>筛选</span><span>静音</span></div>
+    <div className="sheet-toolbar" aria-hidden="true"><span>撤销</span><span>重做</span><i /><b>系统字体</b><b>11</b><i /><strong>B</strong><em>I</em><u>U</u><i /><span>左对齐</span><span>自动换行</span><span>筛选</span></div>
     <div className="sheet-formula"><span className="sheet-namebox">{activeCell}</span><span className="sheet-fx">fx</span><output aria-live="polite">{formulaValue}</output></div>
-    <section className="sheet-flow-guide" aria-labelledby="sheet-current-guide">
-      <ol aria-label="操作流程">{['配置', '个人信息', '本轮内容', '提交选择', '结果'].map((label, index) => <li className={index === workflowGuide.step ? 'is-current' : index < workflowGuide.step ? 'is-complete' : ''} key={label}><span>{index + 1}</span>{label}</li>)}</ol>
-      <div><span>操作说明</span><strong id="sheet-current-guide">{workflowGuide.title}</strong><p>{workflowGuide.instruction}</p><b>{workflowGuide.location}</b></div>
-    </section>
-    {action}
-    {sensitiveVisible && currentAssignment && props.wordReviewPlayer && <aside className="sheet-private-review" role="status"><span>仅 {props.wordReviewPlayer.name} 可见</span><strong>自己的词语：{currentAssignment.word}</strong><button onClick={() => privacy.current?.mask('escape')}>立即隐藏</button></aside>}
-    {props.screen === 'game' && props.room?.status === 'discussion' && <aside className="sheet-rule-banner" aria-label="谁是卧底本轮公共表达规则">
-      <span>Round_{String(props.room.round).padStart(2, '0')} 公共规则</span>
-      <strong>{getRoundChallenge(props.room, props.room.round)?.text ?? '本轮自由表达'}</strong>
-      <small>当前输入 {props.roundContentDraft.length} 字 · 玩家自觉遵守 · 不影响提交</small>
-    </aside>}
-    <Grid rows={rows} activeCell={activeCell} emphasizedCells={workflowGuide.emphasizedCells} onActivate={(cell) => setCellSelection({ flowKey, cell })} />
-    <footer className="sheet-tabs"><button aria-label="新增工作表">＋</button>{sheetTabs.map((tab) => <button className={sheetTab === tab ? 'is-current' : ''} onClick={() => setSheetTab(tab)} key={tab}>{tabLabel(tab)}</button>)}<span /><small>低干扰显示不规避企业网络审计、终端监控或管理制度 · 闲置 {PRIVACY_IDLE_MS / 1000} 秒自动遮挡 · 显示 {PRIVATE_REVEAL_MS / 1000} 秒</small></footer>
+    <div className="sheet-workspace">
+      <div className="sheet-canvas">
+        <section className="sheet-flow-guide" aria-labelledby="sheet-current-guide">
+          <ol aria-label="操作流程">{['配置', '个人信息', '本轮内容', '提交选择', '结果'].map((label, index) => <li className={index === workflowGuide.step ? 'is-current' : index < workflowGuide.step ? 'is-complete' : ''} key={label}><span>{index + 1}</span>{label}</li>)}</ol>
+          <div><span>操作说明</span><strong id="sheet-current-guide">{workflowGuide.title}</strong><p>{workflowGuide.instruction}</p><b>{workflowGuide.location}</b></div>
+        </section>
+        {action}
+        {sensitiveVisible && currentAssignment && props.wordReviewPlayer && <aside className="sheet-private-review" role="status"><span>仅 {props.wordReviewPlayer.name} 可见</span><strong>自己的词语：{currentAssignment.word}</strong><button onClick={() => privacy.current?.mask('escape')}>立即隐藏</button></aside>}
+        {props.screen === 'game' && props.room?.status === 'discussion' && <aside className="sheet-rule-banner" aria-label="谁是卧底本轮公共表达规则">
+          <span>Round_{String(props.room.round).padStart(2, '0')} 公共规则</span>
+          <strong>{getRoundChallenge(props.room, props.room.round)?.text ?? '本轮自由表达'}</strong>
+          <small>当前输入 {props.roundContentDraft.length} 字 · 玩家自觉遵守 · 不影响提交</small>
+        </aside>}
+        <Grid rows={rows} activeCell={activeCell} emphasizedCells={workflowGuide.emphasizedCells} onActivate={(cell) => setCellSelection({ flowKey, cell })} />
+      </div>
+      {notificationOpen && <aside className="sheet-notification-panel" id="sheet-notification-panel" aria-labelledby="sheet-notification-title">
+        <header><div><span>版本通知</span><strong id="sheet-notification-title">更新说明</strong><small>当前版本 {CURRENT_RELEASE.version}</small></div><button onClick={() => setNotificationOpen(false)} aria-label="关闭更新说明栏">×</button></header>
+        <p className="sheet-notification-policy">内容随版本发布自动更新；暂不记录已读状态，也不发送推送。</p>
+        <div className="sheet-release-list" aria-label="版本列表">{RELEASE_NOTES.map((release) => <button className={selectedRelease.version === release.version ? 'is-selected' : ''} onClick={() => setSelectedReleaseVersion(release.version)} key={release.version}><span>{release.version}</span><strong>{release.title}</strong><small>{release.date}</small><p>{release.summary}</p></button>)}</div>
+        <section className="sheet-release-detail" aria-live="polite"><span>{selectedRelease.version} · {selectedRelease.date}</span><h2>{selectedRelease.title}</h2><p>{selectedRelease.summary}</p><ul>{selectedRelease.details.map((detail) => <li key={detail}>{detail}</li>)}</ul></section>
+      </aside>}
+    </div>
+    <footer className="sheet-tabs"><button aria-label="新增工作表">＋</button>{sheetTabs.map((tab) => <button className={sheetTab === tab ? 'is-current' : ''} onClick={() => setSheetTab(tab)} key={tab}>{tabLabel(tab)}</button>)}<span /><small>就绪 · 自动同步 · 保护视图：闲置 {PRIVACY_IDLE_MS / 1000} 秒遮挡，显示 {PRIVATE_REVEAL_MS / 1000} 秒</small></footer>
     {props.notice && <div className={`sheet-toast sheet-toast--${props.notice.kind}`} role="status">{neutralizeGameCopy(props.notice.text)}</div>}
   </main>;
 }
