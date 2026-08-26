@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { applyBallotResult, assignCards, autoAdvanceDue, autoVotingDue, canBeginVoting, canTriggerBuzzer, createRoom, determineWinner, discussionComplete, getDescriptionTurnPlayer, getRoundChallenge, getRoundContents, getVotingOpensAt, isRoundContentVisible, PLAYER_LIMIT_OPTIONS, RANDOM_CHALLENGE_RULES, resolveBallot, resolveUndercoverComeback, revealDescriptions, selectChallengeRule, setAutoAdvancePaused, skipDescription, startDiscussion, startNextRound, startVoting, submitRoundContent, triggerBuzzer, undercoverOptions, type GameRoom, type Player } from './game.ts';
-import { randomWordPairExcluding } from './words.ts';
+import { applyBallotResult, assignCards, autoAdvanceDue, autoVotingDue, canBeginVoting, canTriggerBuzzer, createRoom, determineWinner, discussionComplete, eligibleVoters, exitPlayer, getDescriptionTurnPlayer, getRoundChallenge, getRoundContents, getVotingOpensAt, isRoundContentVisible, PLAYER_LIMIT_OPTIONS, RANDOM_CHALLENGE_RULES, resolveBallot, resolveUndercoverComeback, revealDescriptions, selectChallengeRule, setAutoAdvancePaused, setPlayerAway, skipDescription, startDiscussion, startNextRound, startVoting, submitRoundContent, triggerBuzzer, undercoverOptions, type GameRoom, type Player } from './game.ts';
+import { randomWordPairAvoiding, randomWordPairExcluding, WORD_PAIR_ENTRIES, wordPairKey } from './words.ts';
 
 function players(count = 8): Player[] {
   return Array.from({ length: count }, (_, index) => ({ id: `p${index}`, name: `玩家 ${index + 1}`, seat: index + 1, alive: true, cardReady: true }));
@@ -47,8 +47,21 @@ test('3–4 人仅允许 1 名卧底，5 人起可选择 2 名', () => {
 });
 
 test('再来一局会排除上一局词组，包含正序和反序', () => {
-  assert.deepEqual(randomWordPairExcluding(['牛奶', '豆浆'], () => 0), ['雪碧', '可乐']);
-  assert.deepEqual(randomWordPairExcluding(['豆浆', '牛奶'], () => 0), ['雪碧', '可乐']);
+  const first = randomWordPairExcluding(['搬家', '旅行'], () => 0);
+  const reversed = randomWordPairExcluding(['旅行', '搬家'], () => 0);
+  assert.notEqual(wordPairKey(first), wordPairKey(['搬家', '旅行']));
+  assert.notEqual(wordPairKey(reversed), wordPairKey(['搬家', '旅行']));
+});
+
+test('词库至少 100 组且没有直白禁用词组、重复或近期重复', () => {
+  assert.ok(WORD_PAIR_ENTRIES.length >= 100);
+  const keys = WORD_PAIR_ENTRIES.map((entry) => wordPairKey(entry.words));
+  assert.equal(new Set(keys).size, keys.length);
+  assert.ok(WORD_PAIR_ENTRIES.every((entry) => ['medium', 'hard'].includes(entry.difficulty)));
+  assert.ok(!keys.includes(wordPairKey(['麻辣烫', '火锅'])));
+  assert.ok(!keys.includes(wordPairKey(['耳机', '音响'])));
+  const excluded = keys.slice(0, 10);
+  assert.ok(!excluded.includes(wordPairKey(randomWordPairAvoiding(excluded, () => 0))));
 });
 
 test('本轮内容可逐人提交，全员完成后开放选择', () => {
@@ -117,12 +130,47 @@ test('按座位顺序提交描述并允许房主跳过当前成员', () => {
   assert.throws(() => submitRoundContent(room, 'p1', '不能抢先'), /还没有轮到/);
   room = submitRoundContent(room, 'p0', '早餐常见', 2_000);
   assert.equal(getDescriptionTurnPlayer(room)?.id, 'p1');
+  assert.equal(room.discussionDeadlineAt, 122_000);
   assert.equal(isRoundContentVisible(room, 'p0', 'p2'), true);
   room = skipDescription(room, 'p1', 3_000);
   assert.equal(getDescriptionTurnPlayer(room)?.id, 'p2');
+  assert.equal(room.discussionDeadlineAt, 123_000);
   room = submitRoundContent(room, 'p2', '颜色浅', 4_000);
   assert.equal(room.descriptionsRevealedAt, 4_000);
   assert.equal(canBeginVoting(room, 4_000), true);
+});
+
+test('顺序描述每位玩家独立计时，当前玩家超时只跳过本人', () => {
+  const base = createRoom({ ownerId: 'p0', ownerName: '玩家 1', playerLimit: 3, undercoverCount: 1, civilianWord: '搬家', undercoverWord: '旅行', descriptionRevealMode: 'sequential' });
+  let room = startDiscussion({ ...base, players: players(3) }, 1_000);
+  room = skipDescription(room, 'p0', 121_000);
+  assert.deepEqual(room.skippedDescriptionPlayerIds, ['p0']);
+  assert.equal(getDescriptionTurnPlayer(room)?.id, 'p1');
+  assert.equal(room.discussionDeadlineAt, 241_000);
+  assert.equal(room.descriptionsRevealedAt, null);
+});
+
+test('暂退不触发胜负并移出当前参与名单，返回后恢复', () => {
+  const roster = players(4);
+  let room = votingRoom();
+  room = { ...room, players: roster, assignments: { p0: { role: 'undercover', word: '旅行' }, p1: { role: 'civilian', word: '搬家' }, p2: { role: 'civilian', word: '搬家' }, p3: { role: 'civilian', word: '搬家' } } };
+  room = setPlayerAway(room, 'p1', true, 1_000);
+  assert.equal(room.players.find((player) => player.id === 'p1')?.alive, true);
+  assert.equal(determineWinner(room), null);
+  assert.deepEqual(eligibleVoters(room).map((player) => player.id), ['p0', 'p2', 'p3']);
+  room = setPlayerAway(room, 'p1', false, 2_000);
+  assert.ok(eligibleVoters(room).some((player) => player.id === 'p1'));
+});
+
+test('永久退出按淘汰处理并立即重新判断胜负', () => {
+  const room = votingRoom();
+  const next = exitPlayer(room, 'p1', 1_000);
+  assert.equal(next.players.find((player) => player.id === 'p1')?.alive, false);
+  assert.equal(next.lastResult, null);
+  const decisive = exitPlayer({ ...room, players: room.players.slice(0, 3), assignments: { p0: { role: 'undercover', word: '旅行' }, p1: { role: 'civilian', word: '搬家' }, p2: { role: 'civilian', word: '搬家' } } }, 'p1', 2_000);
+  assert.equal(decisive.winner, 'undercover');
+  assert.equal(decisive.status, 'finished');
+  assert.equal(decisive.lastResult?.eliminatedId, 'p1');
 });
 
 test('随机挑战包含确认的 9 条规则且连续两轮不重复', () => {

@@ -311,6 +311,13 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgb(200 77 49 / 3
 .sheet-toast { position:fixed; z-index:40; right:18px; bottom:51px; max-width:min(420px,calc(100vw - 36px)); padding:10px 14px; color:#fff; background:#555; border-left:4px solid var(--sheet-green); box-shadow:0 2px 8px rgb(0 0 0 / 20%); }
 .sheet-toast--error { border-left-color:#b3261e; }
 
+.presence-actions { width:min(1180px,calc(100% - 48px)); margin:0 auto 16px; display:flex; flex-wrap:wrap; gap:8px; }
+.presence-actions>div { display:flex; align-items:center; gap:6px; padding:6px 8px; border:1px solid var(--line); background:#fff; }
+.presence-actions span { font-size:12px; font-weight:700; }
+.presence-actions button { padding:5px 9px; border:1px solid #bbb; background:#f7f7f5; cursor:pointer; }
+.presence-actions button.is-danger { color:#a4241d; border-color:#d8aaa6; background:#fff7f6; }
+.seat.is-away { opacity:.55; }
+
 @media (max-width:900px) {
   .home,.workspace { width:min(100% - 34px,720px); }
   .hero { grid-template-columns:1fr; gap:30px; padding:70px 0; }

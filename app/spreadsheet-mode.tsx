@@ -91,6 +91,8 @@ export interface SpreadsheetModeProps {
   onJoinName: (value: string) => void;
   onRenamePlayer: (id: string, name: string) => void;
   onCandidate: (id: string | null) => void;
+  onToggleAway: (playerId: string) => void;
+  onExitPlayer: (playerId: string) => void;
 }
 
 const columns = ['A', 'B', 'C', 'D', 'E', 'F'];
@@ -109,6 +111,7 @@ function tabLabel(tab: SheetTab): string {
 
 function neutralStatus(room: GameRoom, player: Player, activeCardPlayer: Player | null, activeDiscussionPlayer: Player | null, activeVoter: Player | null): string {
   if (!player.alive) return '本轮退出';
+  if (player.away) return '暂退中';
   if (room.status === 'lobby') return '等待中';
   if (room.status === 'cards') return player.cardReady ? '已确认自己的词语' : player.id === activeCardPlayer?.id ? '待确认' : '等待中';
   if (room.status === 'discussion') return getRoundContents(room)[player.id] ? '已完成' : player.id === activeDiscussionPlayer?.id ? '待提交' : '等待中';
@@ -374,7 +377,7 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
         ? <span className="sheet-secret-value">{currentAssignment.word}</span>
         : <button className="sheet-secret" onClick={() => privacy.current?.reveal()} aria-label="显示个人信息，真实用途是查看自己的秘密词语，不显示角色">••••••</button>;
     if (room.status === 'discussion') {
-      if (!player.alive) personal = '无需提交';
+      if (!player.alive || player.away) personal = '无需提交';
       else {
         const submittedContent = getRoundContents(room)[player.id];
         personal = submittedContent
@@ -383,7 +386,7 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
         if (isContentOwner) personal = <div className="sheet-content-input"><input value={props.roundContentDraft} maxLength={ROUND_CONTENT_MAX_LENGTH} onChange={(event) => props.onRoundContentDraft(event.target.value)} placeholder="在此填写本轮内容" aria-label="填写谁是卧底本轮描述内容" /><button disabled={!props.roundContentDraft.trim()} onClick={props.onSubmitRoundContent} aria-label="提交谁是卧底本轮描述内容">提交</button></div>;
       }
     }
-      if (room.status === 'voting') personal = player.alive ? getRoundContents(room)[player.id] ?? '本轮未提交' : '无需提交';
+      if (room.status === 'voting') personal = player.alive && !player.away ? getRoundContents(room)[player.id] ?? '本轮未提交' : '无需提交';
       if (room.status === 'guessing') personal = isComebackPlayer
         ? <div className="sheet-content-input"><input value={props.comebackDraft} onChange={(event) => props.onComebackDraft(event.target.value.slice(0, 30))} placeholder={`私密输入另一组词语 · ${formatCountdown(props.comebackRemainingSeconds)}`} aria-label="卧底猜词翻盘答案" /><button disabled={!props.comebackDraft.trim()} onClick={props.onSubmitComeback} aria-label="提交卧底猜词翻盘答案">提交</button></div>
         : '特殊判定中';
@@ -396,7 +399,8 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
       if (isVoter) selection = <div className="sheet-select-wrap"><select value={props.selectedCandidateId ?? ''} onChange={(event) => props.onCandidate(event.target.value || null)} aria-label="提交选择，真实用途是选择本轮投票对象"><option value="">请选择…</option>{eligibleCandidates(room).filter((candidate) => candidate.id !== player.id).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}</select><button disabled={!props.selectedCandidateId} onClick={props.onSubmitVote} aria-label="确认提交本轮投票选择">提交</button></div>;
       const canBuzz = canTriggerBuzzer(room, player.id) && (!props.remoteMode || props.currentPlayerId === player.id);
       const canReview = player.cardReady && (room.status === 'discussion' || room.status === 'voting' || room.status === 'result') && (!props.remoteMode || props.currentPlayerId === player.id);
-      const note = <div className="sheet-inline">{player.id === room.ownerId && <span>负责人</span>}{canReview && room.status !== 'cards' && <button onClick={() => { props.onReviewWord(player.id); window.setTimeout(() => privacy.current?.reveal(), 0); }} aria-label={`${player.name} 再次查看自己的词语`}>复看词语</button>}{canBuzz && <button onClick={() => props.onBuzzer(player.id)} aria-label={`${player.name} 主动爆灯`}>我要爆灯</button>}</div>;
+      const canControlPresence = room.status !== 'finished' && player.alive && (!props.remoteMode || props.currentPlayerId === player.id);
+      const note = <div className="sheet-inline">{player.id === room.ownerId && <span>负责人</span>}{canReview && room.status !== 'cards' && <button onClick={() => { props.onReviewWord(player.id); window.setTimeout(() => privacy.current?.reveal(), 0); }} aria-label={`${player.name} 再次查看自己的词语`}>复看词语</button>}{canBuzz && <button onClick={() => props.onBuzzer(player.id)} aria-label={`${player.name} 主动爆灯`}>我要爆灯</button>}{canControlPresence && <button onClick={() => props.onToggleAway(player.id)}>{player.away ? '返回' : '暂退'}</button>}{canControlPresence && <button onClick={() => props.onExitPlayer(player.id)}>退出</button>}</div>;
       rows.push([String(player.seat).padStart(2, '0'), player.name, neutralStatus(room, player, props.activeCardPlayer, props.activeDiscussionPlayer, props.activeVoter), personal, selection, note]);
     });
     return rows;
@@ -406,7 +410,7 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
     ['游玩步骤', '序号', '要做什么', '操作说明', '关键提醒', ''],
     ['开始这里', '01', '创建或加入房间', '房主创建房间并分享六位编号；其他玩家填写称呼和编号加入。', '所有人进入同一个房间', ''],
     ['下一步', '02', '私密查看词语', '每人只查看自己的词语，记住后点击“已确认自己的词语”。', '不要让旁边的人看到', ''],
-    ['然后', '03', '提交一条描述', '根据自己的词语写一条描述；描述公开 5 秒后自动进入投票。', '退出玩家显示“无需提交”', ''],
+    ['然后', '03', '提交一条描述', '根据自己的词语写一条描述；顺序模式每人独立 120 秒，描述公开 5 秒后自动投票。', '暂退或退出显示“无需提交”', ''],
     ['接着', '04', '匿名投票', '阅读所有人的描述，选择最像卧底的人；不能选择自己。', '只公开总票数', ''],
     ['查看', '05', '处理本轮结果', '最高票玩家退出；首次平票会复投，复投仍平票则本轮无人退出。', '系统自动判断胜负', ''],
     ['继续', '06', '进入下一轮', '未结束时结果页等待 10 秒自动进入下一轮，房主也可暂停或立即进入。', '结束后公开身份和词语', ''],
@@ -414,6 +418,7 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
     ['核心规则', '项目', '规则', '说明', '适用范围', ''],
     ['角色', '平民与卧底', '平民拿到同一个词，卧底拿到相近但不同的词。', '玩家只会看到自己的词语，不会提前看到角色。', '整局', ''],
     ['描述', '每人每轮一次', '描述最多 80 字，不能直接说出自己的词语。', '统一公开模式下，别人提交前看不到你的描述。', '每轮', ''],
+    ['离开', '暂退 / 退出', '暂退可返回且不影响胜负；退出视作淘汰且本局不能返回。', '投票名单变化时已投内容会清空。', '整局', ''],
     ['投票', '存活玩家一人一票', '不能投自己或已经退出的玩家；不公开谁投了谁。', '首次平票只在最高票玩家中复投。', '每轮', ''],
     ['胜负', '系统自动判定', '所有卧底退出则平民获胜；卧底人数不低于平民人数则卧底获胜。', '卧底胜利也显示“流程已完成”。', '整局', ''],
     ['主动爆灯', '房间可选功能', '描述公开后可爆灯猜另一组词；猜错或超时会立即退出。', '每局全局只能成功触发一次。', '开启时', ''],

@@ -49,6 +49,7 @@ export interface Player {
   seat: number;
   alive: boolean;
   cardReady: boolean;
+  away?: boolean;
 }
 
 export interface Assignment {
@@ -87,6 +88,7 @@ export interface GameRoom {
   undercoverCount: number;
   civilianWord: string;
   undercoverWord: string;
+  recentWordPairKeys?: string[];
   challengeMode: ChallengeMode;
   descriptionRevealMode?: DescriptionRevealMode;
   descriptionOrder?: string[];
@@ -191,7 +193,7 @@ export function assignCards(
 }
 
 export function eligibleVoters(room: GameRoom): Player[] {
-  return room.players.filter((player) => player.alive);
+  return room.players.filter((player) => player.alive && !player.away);
 }
 
 export function eligibleCandidates(room: GameRoom): Player[] {
@@ -269,7 +271,7 @@ export function descriptionCompleteForPlayer(room: GameRoom, playerId: string): 
 export function getDescriptionTurnPlayer(room: GameRoom): Player | null {
   if ((room.descriptionRevealMode ?? 'all_submitted') !== 'sequential' || room.status !== 'discussion') return null;
   const nextId = room.descriptionTurnPlayerId ?? descriptionOrder(room).find((id) => !descriptionCompleteForPlayer(room, id));
-  return room.players.find((player) => player.id === nextId && player.alive) ?? null;
+  return room.players.find((player) => player.id === nextId && player.alive && !player.away) ?? null;
 }
 
 export function descriptionsAreRevealed(room: GameRoom, now = Date.now()): boolean {
@@ -289,6 +291,7 @@ export function discussionComplete(room: GameRoom): boolean {
 
 export function canBeginVoting(room: GameRoom, now = Date.now()): boolean {
   if (room.status !== 'discussion') return false;
+  if (eligibleVoters(room).length < 2) return false;
   return descriptionsAreRevealed(room, now) && (discussionComplete(room) || !room.discussionDeadlineAt || now >= room.discussionDeadlineAt);
 }
 
@@ -315,7 +318,7 @@ export function startDiscussion(room: GameRoom, now = Date.now(), random: Random
     roundChallenges: selectedRule
       ? { ...(room.roundChallenges ?? {}), [roundKey]: selectedRule.id }
       : (room.roundChallenges ?? {}),
-    discussionDeadlineAt: now + DISCUSSION_DURATION_MS,
+    discussionDeadlineAt: order.length >= 2 ? now + DISCUSSION_DURATION_MS : null,
     descriptionOrder: order,
     descriptionTurnPlayerId: (room.descriptionRevealMode ?? 'all_submitted') === 'sequential' ? order[0] ?? null : null,
     descriptionsRevealedAt: null,
@@ -330,7 +333,7 @@ export function startDiscussion(room: GameRoom, now = Date.now(), random: Random
 
 function finalizeBallotResult(room: GameRoom, result: RoundResult, now: number): GameRoom {
   const players = result.eliminatedId
-    ? room.players.map((player) => player.id === result.eliminatedId ? { ...player, alive: false } : player)
+    ? room.players.map((player) => player.id === result.eliminatedId ? { ...player, alive: false, away: false } : player)
     : room.players;
   const winner = determineWinner({ players, assignments: room.assignments });
   const autoAdvanceEnabled = room.autoAdvanceEnabled ?? true;
@@ -372,6 +375,7 @@ export function submitRoundContent(room: GameRoom, playerId: string, content: st
     descriptionTurnPlayerId: nextTurnId,
     descriptionsRevealedAt: allComplete ? now : room.descriptionsRevealedAt ?? null,
     votingOpensAt: allComplete ? now + AUTO_VOTING_DELAY_MS : room.votingOpensAt ?? null,
+    discussionDeadlineAt: allComplete ? null : mode === 'sequential' ? now + DISCUSSION_DURATION_MS : room.discussionDeadlineAt,
     version: room.version + 1,
     updatedAt: now,
   };
@@ -381,6 +385,9 @@ export function revealDescriptions(room: GameRoom, now = Date.now()): GameRoom {
   if (room.status !== 'discussion') return room;
   if (room.descriptionsRevealedAt) return room;
   const timedOut = Boolean(room.discussionDeadlineAt && now >= room.discussionDeadlineAt);
+  if ((room.descriptionRevealMode ?? 'all_submitted') === 'sequential' && !discussionComplete(room)) {
+    throw new Error('顺序描述应逐人跳过，不能一次结束全员倒计时');
+  }
   if (!discussionComplete(room) && !timedOut) throw new Error('本轮描述尚未完成');
   const skipped = timedOut
     ? eligibleVoters(room).filter((player) => !getRoundContents(room)[player.id]).map((player) => player.id)
@@ -391,6 +398,7 @@ export function revealDescriptions(room: GameRoom, now = Date.now()): GameRoom {
     descriptionTurnPlayerId: null,
     descriptionsRevealedAt: now,
     votingOpensAt: now + AUTO_VOTING_DELAY_MS,
+    discussionDeadlineAt: null,
     version: room.version + 1,
     updatedAt: now,
   };
@@ -409,6 +417,7 @@ export function skipDescription(room: GameRoom, playerId: string, now = Date.now
     descriptionTurnPlayerId: nextTurnId,
     descriptionsRevealedAt: allComplete ? now : room.descriptionsRevealedAt ?? null,
     votingOpensAt: allComplete ? now + AUTO_VOTING_DELAY_MS : room.votingOpensAt ?? null,
+    discussionDeadlineAt: allComplete ? null : now + DISCUSSION_DURATION_MS,
     version: room.version + 1,
     updatedAt: now,
   };
@@ -482,7 +491,7 @@ export function canTriggerBuzzer(room: GameRoom, playerId: string, now = Date.no
     && !room.undercoverComebackUsed
     && (room.status === 'discussion' || room.status === 'voting')
     && descriptionsAreRevealed(room, now)
-    && room.players.some((player) => player.id === playerId && player.alive),
+    && room.players.some((player) => player.id === playerId && player.alive && !player.away),
   );
 }
 
@@ -529,7 +538,7 @@ export function resolveUndercoverComeback(room: GameRoom, playerId: string, gues
     };
   }
   if (reason === 'buzzer') {
-    const players = room.players.map((player) => player.id === playerId ? { ...player, alive: false } : player);
+    const players = room.players.map((player) => player.id === playerId ? { ...player, alive: false, away: false } : player);
     const winner = determineWinner({ players, assignments: room.assignments });
     const pausedStatus = room.pausedStatus ?? 'discussion';
     const survivingIds = new Set(players.filter((player) => player.alive).map((player) => player.id));
@@ -602,6 +611,118 @@ export function setAutoAdvancePaused(room: GameRoom, paused: boolean, now = Date
   };
 }
 
+function refreshDiscussionAfterPresenceChange(room: GameRoom, now: number): GameRoom {
+  if (room.status !== 'discussion' || room.descriptionsRevealedAt) return room;
+  const active = eligibleVoters(room).sort((a, b) => a.seat - b.seat);
+  const order = active.map((player) => player.id);
+  if (active.length < 2) {
+    return { ...room, descriptionOrder: order, descriptionTurnPlayerId: null, discussionDeadlineAt: null };
+  }
+  const complete = active.every((player) => descriptionCompleteForPlayer(room, player.id));
+  if (complete) {
+    return {
+      ...room,
+      descriptionOrder: order,
+      descriptionTurnPlayerId: null,
+      descriptionsRevealedAt: now,
+      votingOpensAt: now + AUTO_VOTING_DELAY_MS,
+      discussionDeadlineAt: null,
+    };
+  }
+  if ((room.descriptionRevealMode ?? 'all_submitted') !== 'sequential') {
+    return { ...room, descriptionOrder: order, discussionDeadlineAt: room.discussionDeadlineAt ?? now + DISCUSSION_DURATION_MS };
+  }
+  const currentStillValid = room.descriptionTurnPlayerId
+    && order.includes(room.descriptionTurnPlayerId)
+    && !descriptionCompleteForPlayer(room, room.descriptionTurnPlayerId);
+  const nextTurnPlayerId = currentStillValid
+    ? room.descriptionTurnPlayerId
+    : order.find((id) => !descriptionCompleteForPlayer(room, id)) ?? null;
+  return {
+    ...room,
+    descriptionOrder: order,
+    descriptionTurnPlayerId: nextTurnPlayerId,
+    discussionDeadlineAt: currentStillValid ? room.discussionDeadlineAt ?? now + DISCUSSION_DURATION_MS : now + DISCUSSION_DURATION_MS,
+  };
+}
+
+/** 暂退只移出当前描述和投票名单，不改变存活身份，也不参与胜负判定。 */
+export function setPlayerAway(room: GameRoom, playerId: string, away: boolean, now = Date.now()): GameRoom {
+  if (room.status === 'finished') return room;
+  const target = room.players.find((player) => player.id === playerId);
+  if (!target?.alive) throw new Error('已退出玩家不能切换暂退状态');
+  if (Boolean(target.away) === away) return room;
+  let next: GameRoom = {
+    ...room,
+    players: room.players.map((player) => player.id === playerId ? { ...player, away, cardReady: away && room.status === 'cards' ? true : player.cardReady } : player),
+    votes: room.status === 'voting' ? {} : room.votes,
+    ballot: room.status === 'voting' ? 1 : room.ballot,
+    runoffCandidateIds: room.status === 'voting' ? [] : room.runoffCandidateIds,
+    version: room.version + 1,
+    updatedAt: now,
+  };
+  if (next.status === 'cards') {
+    const active = eligibleVoters(next);
+    if (active.length >= MIN_PLAYERS && active.every((player) => player.cardReady)) return startDiscussion(next, now);
+  }
+  next = refreshDiscussionAfterPresenceChange(next, now);
+  return next;
+}
+
+/** 永久退出等同淘汰；若因此触发胜负，立即结束本局。 */
+export function exitPlayer(room: GameRoom, playerId: string, now = Date.now()): GameRoom {
+  if (room.status === 'finished') return room;
+  const target = room.players.find((player) => player.id === playerId);
+  if (!target?.alive) return room;
+  if (room.status === 'lobby') {
+    const players = room.players.filter((player) => player.id !== playerId).map((player, index) => ({ ...player, seat: index + 1 }));
+    return {
+      ...room,
+      players,
+      ownerId: room.ownerId === playerId ? players[0]?.id ?? room.ownerId : room.ownerId,
+      version: room.version + 1,
+      updatedAt: now,
+    };
+  }
+
+  const players = room.players.map((player) => player.id === playerId ? { ...player, alive: false, away: false, cardReady: true } : player);
+  const ownerId = room.ownerId === playerId ? players.find((player) => player.alive)?.id ?? room.ownerId : room.ownerId;
+  const winner = Object.keys(room.assignments).length ? determineWinner({ players, assignments: room.assignments }) : null;
+  const exitResult: RoundResult = {
+    round: room.round,
+    ballot: room.ballot,
+    counts: {},
+    tiedIds: [],
+    eliminatedId: playerId,
+    noElimination: false,
+  };
+  let next: GameRoom = {
+    ...room,
+    players,
+    ownerId,
+    winner,
+    status: winner ? 'finished' : room.status === 'guessing' ? (room.pausedStatus ?? 'result') : room.status,
+    votes: room.status === 'voting' ? {} : Object.fromEntries(Object.entries(room.votes).filter(([voterId, candidateId]) => voterId !== playerId && candidateId !== playerId)),
+    ballot: room.status === 'voting' ? 1 : room.ballot,
+    runoffCandidateIds: room.status === 'voting' ? [] : room.runoffCandidateIds.filter((id) => id !== playerId),
+    pendingComebackPlayerId: room.pendingComebackPlayerId === playerId ? null : room.pendingComebackPlayerId,
+    comebackDeadlineAt: room.pendingComebackPlayerId === playerId ? null : room.comebackDeadlineAt,
+    pendingGuessingReason: room.pendingComebackPlayerId === playerId ? null : room.pendingGuessingReason,
+    pausedStatus: room.pendingComebackPlayerId === playerId ? null : room.pausedStatus,
+    lastResult: winner ? exitResult : room.lastResult,
+    history: winner ? [...room.history, exitResult] : room.history,
+    nextRoundAt: winner ? null : room.nextRoundAt,
+    version: room.version + 1,
+    updatedAt: now,
+  };
+  if (!winner && next.status === 'cards') {
+    const active = eligibleVoters(next);
+    if (active.length >= MIN_PLAYERS && active.every((player) => player.cardReady)) return startDiscussion(next, now);
+  }
+  next = refreshDiscussionAfterPresenceChange(next, now);
+  return next;
+}
+
 export function createRoom(input: {
   code?: string;
   ownerId: string;
@@ -649,7 +770,7 @@ export function createRoom(input: {
     buzzerUsedBy: null,
     buzzerStatus: 'idle',
     pausedStatus: null,
-    players: [{ id: input.ownerId, name: input.ownerName.trim(), seat: 1, alive: true, cardReady: false }],
+    players: [{ id: input.ownerId, name: input.ownerName.trim(), seat: 1, alive: true, cardReady: false, away: false }],
     assignments: {},
     round: 1,
     ballot: 1,
@@ -677,7 +798,7 @@ export function dealRoom(room: GameRoom, random: RandomSource = Math.random): Ga
     ...room,
     status: 'cards',
     assignments,
-    players: room.players.map((player) => ({ ...player, alive: true, cardReady: false })),
+    players: room.players.map((player) => ({ ...player, alive: true, cardReady: false, away: false })),
     round: 1,
     ballot: 1,
     votes: {},
