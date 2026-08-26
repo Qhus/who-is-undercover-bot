@@ -4,7 +4,9 @@ import test from 'node:test';
 
 const schema = readFileSync(new URL('../cloudbase/schema.sql', import.meta.url), 'utf8');
 const verification = readFileSync(new URL('../cloudbase/verify.sql', import.meta.url), 'utf8');
-const concurrencyMigration = readFileSync(new URL('../cloudbase/concurrency-v2.sql', import.meta.url), 'utf8');
+const concurrencyBase = readFileSync(new URL('../cloudbase/concurrency-v2.sql', import.meta.url), 'utf8');
+const concurrencyMigration = readFileSync(new URL('../cloudbase/concurrency-v3-special-roles.sql', import.meta.url), 'utf8');
+const concurrencySource = `${concurrencyBase}\n${concurrencyMigration}`;
 const storeSource = readFileSync(new URL('./cloudbase-store.ts', import.meta.url), 'utf8');
 const appSource = readFileSync(new URL('../app/game-app.tsx', import.meta.url), 'utf8');
 
@@ -33,17 +35,18 @@ test('CloudBase 只读核验覆盖表、函数、RLS 和策略', () => {
 });
 
 test('并发迁移使用房间锁、操作幂等和受控状态合并', () => {
-  assert.match(concurrencyMigration, /primary key\s*\(game_code,\s*action_id\)/i);
-  assert.match(concurrencyMigration, /from public\.games[\s\S]*for update/i);
-  assert.match(concurrencyMigration, /from public\.game_actions[\s\S]*action_id = p_action_id/i);
-  for (const action of ['confirm_card', 'submit_description', 'submit_vote', 'advance_phase', 'trigger_buzzer', 'submit_special']) {
-    assert.match(concurrencyMigration, new RegExp(action));
+  assert.match(concurrencySource, /primary key\s*\(game_code,\s*action_id\)/i);
+  assert.match(concurrencySource, /from public\.games[\s\S]*for update/i);
+  assert.match(concurrencySource, /from public\.game_actions[\s\S]*action_id = p_action_id/i);
+  for (const action of ['confirm_card', 'submit_description', 'submit_vote', 'advance_phase', 'trigger_buzzer', 'submit_special', 'update_lobby_settings', 'accuse_undercover']) {
+    assert.match(concurrencySource, new RegExp(action));
   }
   for (const staleCode of ['WRONG_PHASE', 'STALE_ROUND', 'STALE_BALLOT', 'STALE_VERSION']) {
-    assert.match(concurrencyMigration, new RegExp(staleCode));
+    assert.match(concurrencySource, new RegExp(staleCode));
   }
-  assert.match(concurrencyMigration, /update public\.games[\s\S]*insert into public\.game_actions/i);
-  assert.match(concurrencyMigration, /revoke update\(state, version, updated_at\)/i);
+  assert.match(concurrencySource, /update public\.games[\s\S]*insert into public\.game_actions/i);
+  for (const marker of ['blank', 'civilianAccuseEnabled', 'civilianAccuseUsedBy']) assert.match(concurrencySource, new RegExp(marker));
+  assert.match(concurrencySource, /revoke update\(state, version, updated_at\)/i);
 });
 
 test('联机客户端使用同一操作 ID 重试并以服务端状态为准', () => {

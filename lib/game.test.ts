@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { applyBallotResult, assignCards, autoAdvanceDue, autoVotingDue, canBeginVoting, canTriggerBuzzer, createRoom, determineWinner, discussionComplete, eligibleVoters, exitPlayer, getDescriptionTurnPlayer, getRoundChallenge, getRoundContents, getVotingOpensAt, isRoundContentVisible, PLAYER_LIMIT_OPTIONS, RANDOM_CHALLENGE_RULES, resolveBallot, resolveUndercoverComeback, revealDescriptions, selectChallengeRule, setAutoAdvancePaused, setPlayerAway, skipDescription, startDiscussion, startNextRound, startVoting, submitRoundContent, triggerBuzzer, undercoverOptions, type GameRoom, type Player } from './game.ts';
+import { accuseUndercover, applyBallotResult, assignCards, autoAdvanceDue, autoVotingDue, canBeginVoting, canTriggerBuzzer, createRoom, determineWinner, discussionComplete, eligibleVoters, exitPlayer, getDescriptionTurnPlayer, getRoundChallenge, getRoundContents, getVotingOpensAt, isRoundContentVisible, PLAYER_LIMIT_OPTIONS, RANDOM_CHALLENGE_RULES, resolveBallot, resolveUndercoverComeback, revealDescriptions, selectChallengeRule, setAutoAdvancePaused, setPlayerAway, skipDescription, startDiscussion, startNextRound, startVoting, submitRoundContent, triggerBuzzer, undercoverOptions, updateLobbySettings, type GameRoom, type Player } from './game.ts';
 import { randomWordPairAvoiding, randomWordPairExcluding, WORD_PAIR_ENTRIES, wordPairKey } from './words.ts';
 
 function players(count = 8): Player[] {
@@ -51,6 +51,49 @@ test('再来一局会排除上一局词组，包含正序和反序', () => {
   const reversed = randomWordPairExcluding(['旅行', '搬家'], () => 0);
   assert.notEqual(wordPairKey(first), wordPairKey(['搬家', '旅行']));
   assert.notEqual(wordPairKey(reversed), wordPairKey(['搬家', '旅行']));
+});
+
+test('空白牌配置恰好生成一张无词语牌，且与卧底不是同一人', () => {
+  const cards = assignCards(players(6), 1, '甲', '乙', 1, () => 0);
+  const blank = Object.entries(cards).filter(([, card]) => card.role === 'blank');
+  const undercover = Object.entries(cards).filter(([, card]) => card.role === 'undercover');
+  assert.equal(blank.length, 1);
+  assert.equal(blank[0][1].word, '');
+  assert.notEqual(blank[0][0], undercover[0][0]);
+  assert.equal(determineWinner({ players: players(6), assignments: cards }), null);
+});
+
+test('空白牌与卧底共享特殊阵营胜负，且退出卧底后空白牌存活不会判平民胜利', () => {
+  const roster = players(5);
+  const assignments = Object.fromEntries(roster.map((player, index) => [player.id, { role: index === 0 ? 'undercover' as const : index === 1 ? 'blank' as const : 'civilian' as const, word: index === 0 ? '乙' : index === 1 ? '' : '甲' }]));
+  assert.equal(determineWinner({ players: roster, assignments }), null);
+  const after = exitPlayer({ ...votingRoom(), players: roster, assignments }, 'p0');
+  assert.equal(after.winner, null);
+});
+
+test('房主仅可在等待阶段修改总人数、卧底与空白牌配置', () => {
+  const room = createRoom({ ownerId: 'p0', ownerName: '房主', playerLimit: 6, undercoverCount: 1, civilianWord: '甲', undercoverWord: '乙' });
+  const changed = updateLobbySettings(room, 'p0', { playerLimit: 6, undercoverCount: 1, blankCardCount: 1, civilianAccuseEnabled: true });
+  assert.equal(changed.blankCardCount, 1);
+  assert.equal(changed.civilianAccuseEnabled, true);
+  assert.throws(() => updateLobbySettings(room, 'p1', { playerLimit: 6, undercoverCount: 1, blankCardCount: 0 }), /房主/);
+  assert.throws(() => updateLobbySettings({ ...room, status: 'cards' }, 'p0', { playerLimit: 6, undercoverCount: 1, blankCardCount: 0 }), /等待房间/);
+});
+
+test('平民爆灯可正确指认卧底或空白牌，错误指认淘汰发起者且每局一次', () => {
+  const base = { ...votingRoom(), civilianAccuseEnabled: true, descriptionsRevealedAt: 1_000 };
+  const right = accuseUndercover(base, 'p1', 'p0', 2_000);
+  assert.equal(right.players.find((player) => player.id === 'p0')?.alive, false);
+  assert.equal(right.civilianAccuseUsedBy, 'p1');
+  assert.throws(() => accuseUndercover(right, 'p2', 'p0'), /已经使用/);
+  const withBlank = { ...base, assignments: { ...base.assignments, p0: { role: 'blank' as const, word: '' } } };
+  assert.equal(accuseUndercover(withBlank, 'p1', 'p0').players.find((player) => player.id === 'p0')?.alive, false);
+  const wrong = accuseUndercover(base, 'p1', 'p2');
+  assert.equal(wrong.players.find((player) => player.id === 'p1')?.alive, false);
+  assert.equal(wrong.votes && Object.keys(wrong.votes).length, 0);
+  const specialAccuser = accuseUndercover({ ...base, assignments: { ...base.assignments, p1: { role: 'undercover', word: '乙' } } }, 'p1', 'p0');
+  assert.equal(specialAccuser.players.find((player) => player.id === 'p1')?.alive, false);
+  assert.equal(specialAccuser.players.find((player) => player.id === 'p0')?.alive, true);
 });
 
 test('词组去重键不包含 PostgreSQL jsonb 禁止的空字符', () => {

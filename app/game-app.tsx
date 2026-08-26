@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { applyBallotResult, autoAdvanceDue, autoVotingDue, canBeginVoting, canTriggerBuzzer, challengeModeLabel, createRoom, dealRoom, descriptionModeLabel, descriptionsAreRevealed, eligibleCandidates, eligibleVoters, exitPlayer, getDescriptionTurnPlayer, getRoundChallenge, getRoundContents, getVotingOpensAt, isRoundContentVisible, makeId, PLAYER_LIMIT_OPTIONS, revealDescriptions, resolveBallot, resolveUndercoverComeback, ROUND_CONTENT_MAX_LENGTH, selectChallengeRule, setAutoAdvancePaused, setPlayerAway, skipDescription as skipRoundDescription, startDiscussion, startNextRound, startVoting, submitRoundContent as recordRoundContent, triggerBuzzer, undercoverOptions, type ChallengeMode, type DescriptionRevealMode, type GameRoom, type Player } from '@/lib/game';
+import { accuseUndercover, applyBallotResult, autoAdvanceDue, autoVotingDue, canBeginVoting, canTriggerBuzzer, challengeModeLabel, createRoom, dealRoom, descriptionModeLabel, descriptionsAreRevealed, eligibleCandidates, eligibleVoters, exitPlayer, getDescriptionTurnPlayer, getRoundChallenge, getRoundContents, getVotingOpensAt, isRoundContentVisible, makeId, PLAYER_LIMIT_OPTIONS, revealDescriptions, resolveBallot, resolveUndercoverComeback, ROUND_CONTENT_MAX_LENGTH, selectChallengeRule, setAutoAdvancePaused, setPlayerAway, skipDescription as skipRoundDescription, startDiscussion, startNextRound, startVoting, submitRoundContent as recordRoundContent, triggerBuzzer, undercoverOptions, updateLobbySettings, type ChallengeMode, type DescriptionRevealMode, type GameRoom, type Player } from '@/lib/game';
 import { getCloudStore, type GameActionType } from '@/lib/cloudbase-store';
 import { randomWordPair, randomWordPairAvoiding, wordPairKey } from '@/lib/words';
 import SpreadsheetMode from './spreadsheet-mode';
@@ -16,9 +16,16 @@ function playerName(room: GameRoom, id: string | null | undefined): string {
   return room.players.find((player) => player.id === id)?.name ?? '无人';
 }
 
+function roleRevealCopy(room: GameRoom, playerId: string): string {
+  const assignment = room.assignments[playerId];
+  if (!assignment) return '未知 · —';
+  const label = assignment.role === 'undercover' ? '卧底' : assignment.role === 'blank' ? '空白牌' : '平民';
+  return `${label} · ${assignment.role === 'blank' ? '无词语' : assignment.word}`;
+}
+
 function eliminatedUndercoverName(room: GameRoom): string | null {
   const eliminatedId = room.lastResult?.eliminatedId;
-  return eliminatedId && room.assignments[eliminatedId]?.role === 'undercover' ? playerName(room, eliminatedId) : null;
+  return eliminatedId && ['undercover', 'blank'].includes(room.assignments[eliminatedId]?.role ?? '') ? playerName(room, eliminatedId) : null;
 }
 
 function statusCopy(room: GameRoom): string {
@@ -60,10 +67,10 @@ function RulesGuide({ onClose }: { onClose: () => void }) {
           <li><b>继续或结束</b><p>每轮结束后系统自动判定胜负；未满足条件就进入下一轮，结束时公开身份、词语和各轮票数。</p></li>
         </ol></section>
         <section className="complete-rules"><span className="panel-kicker">FULL RULES</span><h3>完整规则</h3><div className="rule-groups">
-          <article><h4>角色与词语</h4><ul><li>3–8 人默认 1 名卧底，9–10 人默认 2 名；3–4 人只允许 1 名。</li><li>平民拿到同一个词，卧底拿到相近但不同的词；本版本没有白板。</li><li>查看个人信息时只显示词语，不标注角色，身份在本局结束后统一公开。</li></ul></article>
+          <article><h4>角色与词语</h4><ul><li>3–8 人默认 1 名卧底，9–10 人默认 2 名；3–4 人只允许 1 名。</li><li>平民拿到同一个词，卧底拿到相近但不同的词；可选空白牌没有词语，需要根据描述发挥。</li><li>查看个人信息时只显示词语，不标注角色，身份在本局结束后统一公开。</li></ul></article>
           <article><h4>描述与公共挑战</h4><ul><li>顺序模式每位玩家各有独立 120 秒，超时只跳过当前玩家；全部提交模式为全员共用 120 秒。</li><li>每位存活且在场的玩家提交一次 1–80 字描述；描述公开后倒计时 5 秒自动开放投票。</li><li>挑战可选关闭、轻度或随机；公共规则每轮同步展示，并尽量避免连续重复。</li></ul></article>
           <article><h4>投票与平票</h4><ul><li>只有存活玩家可投票，每轮一票，不得投自己或已经退出的玩家。</li><li>系统不展示实时票型，只在全部提交后公布每位候选人的总票数，不公开谁投了谁。</li><li>唯一最高票者退出；首次平票对并列者复投，第二次仍平票则无人退出并进入下一轮。</li></ul></article>
-          <article><h4>胜负条件</h4><ul><li>所有卧底均退出，平民阵营获胜。</li><li>存活卧底人数大于或等于存活平民人数，卧底阵营获胜。</li><li>两项条件都未满足时继续下一轮；结束后可由房主原班人马再开一局。</li></ul></article>
+          <article><h4>胜负条件</h4><ul><li>卧底与空白牌都属于特殊阵营；特殊阵营全部退出，平民阵营获胜。</li><li>存活特殊阵营人数大于或等于存活平民人数，特殊阵营获胜。</li><li>两项条件都未满足时继续下一轮；结束后可由房主原班人马再开一局。</li></ul></article>
           <article><h4>暂退与退出</h4><ul><li>暂退后不参与当前描述和投票，也不会因此触发胜负；点击“返回”即可重新参与。</li><li>永久退出视作淘汰，本局不能返回，并会立即重新判断阵营胜负。</li><li>投票中有人暂退、返回或退出时，已投票会清空，避免候选名单变化造成无效票。</li></ul></article>
           <article><h4>卧底猜词翻盘（可选）</h4><ul><li>开启后，首名被成功投出的卧底有 20 秒私密机会猜平民词，全卧底阵营每局只有一次。</li><li>完全猜中立即结束本局；猜错、空提交或超时则该玩家正常退出。</li><li>比对忽略首尾空格、常见标点和英文字母大小写，不接受近义词。</li></ul></article>
           <article><h4>公平与隐私</h4><ul><li>秘密词语按住才显示，松开、切走页面或触发遮挡后隐藏；请轮流操作并避免旁观。</li><li>这是熟人娱乐工具，不防开发者工具查看数据，也不规避企业网络审计或终端管理。</li><li>若使用自定义词语，房主应选择含义相近、难度相当且不含敏感信息的一对词。</li></ul></article>
@@ -86,6 +93,10 @@ export default function GameApp() {
   const [ownerName, setOwnerName] = useState('房主');
   const [playerLimit, setPlayerLimit] = useState(8);
   const [undercoverCount, setUndercoverCount] = useState(1);
+  const [blankCardCount, setBlankCardCount] = useState(0);
+  const [civilianAccuseEnabled, setCivilianAccuseEnabled] = useState(false);
+  const [lobbySettingsDraft, setLobbySettingsDraft] = useState<{ playerLimit: number; undercoverCount: number; blankCardCount: number; civilianAccuseEnabled: boolean } | null>(null);
+  const [accuseTargetId, setAccuseTargetId] = useState<string | null>(null);
   const [civilianWord, setCivilianWord] = useState('');
   const [undercoverWord, setUndercoverWord] = useState('');
   const [customWords, setCustomWords] = useState(false);
@@ -339,7 +350,7 @@ export default function GameApp() {
     if (!civilianWord.trim() || !undercoverWord.trim()) return setNotice({ kind: 'error', text: '两组词语都需要填写' });
     if (civilianWord.trim() === undercoverWord.trim()) return setNotice({ kind: 'error', text: '两组词语不能相同' });
     const ownerId = makeId('player');
-    const created = createRoom({ ownerId, ownerName, playerLimit, undercoverCount, civilianWord, undercoverWord, challengeMode, undercoverComebackEnabled, descriptionRevealMode, buzzerEnabled, autoAdvanceEnabled });
+    const created = createRoom({ ownerId, ownerName, playerLimit, undercoverCount, blankCardCount, civilianAccuseEnabled, civilianWord, undercoverWord, challengeMode, undercoverComebackEnabled, descriptionRevealMode, buzzerEnabled, autoAdvanceEnabled });
     const base = { ...created, recentWordPairKeys: [wordPairKey([civilianWord, undercoverWord])] };
     const players: Player[] = Array.from({ length: playerLimit }, (_, index) => index === 0 ? base.players[0] : { id: makeId('player'), name: `玩家 ${index + 1}`, seat: index + 1, alive: true, cardReady: false, away: false });
     window.localStorage.removeItem('undercover-active-remote');
@@ -353,7 +364,7 @@ export default function GameApp() {
     setBusy(true);
     try {
       const ownerId = makeId('player');
-      const created = createRoom({ ownerId, ownerName, playerLimit, undercoverCount, civilianWord, undercoverWord, challengeMode, undercoverComebackEnabled, descriptionRevealMode, buzzerEnabled, autoAdvanceEnabled });
+      const created = createRoom({ ownerId, ownerName, playerLimit, undercoverCount, blankCardCount, civilianAccuseEnabled, civilianWord, undercoverWord, challengeMode, undercoverComebackEnabled, descriptionRevealMode, buzzerEnabled, autoAdvanceEnabled });
       const next = { ...created, recentWordPairKeys: [wordPairKey([civilianWord, undercoverWord])] };
       await getCloudStore().createRoom(next);
       window.localStorage.setItem(`undercover-player-${next.code}`, ownerId);
@@ -391,6 +402,27 @@ export default function GameApp() {
     if (room.players.some((player) => !player.name.trim())) return setNotice({ kind: 'error', text: '每个座位都需要一个名字' });
     try { const next = dealRoom(room); commitRoom(next); setRevealPlayerId(next.players[0].id); setPrivacyGate(true); }
     catch (error) { setNotice({ kind: 'error', text: error instanceof Error ? error.message : '发牌失败' }); }
+  }
+
+  function saveLobbySettings(settings: { playerLimit: number; undercoverCount: number; blankCardCount: number; civilianAccuseEnabled: boolean }) {
+    if (!room) return;
+    try {
+      const next = updateLobbySettings(room, remoteMode ? (currentPlayerId ?? '') : room.ownerId, settings);
+      if (remoteMode) {
+        void runRemoteAction(room, 'update_lobby_settings', { playerLimit: settings.playerLimit, undercoverCount: settings.undercoverCount, blankCardCount: settings.blankCardCount, civilianAccuseEnabled: settings.civilianAccuseEnabled }, `lobby-settings:${room.version}`).then((saved) => { if (saved) { setLobbySettingsDraft(null); setPlayerLimit(saved.playerLimit); setUndercoverCount(saved.undercoverCount); setBlankCardCount(saved.blankCardCount ?? 0); setCivilianAccuseEnabled(saved.civilianAccuseEnabled ?? false); } });
+      } else { commitRoom(next); setLobbySettingsDraft(null); setPlayerLimit(next.playerLimit); setUndercoverCount(next.undercoverCount); setBlankCardCount(next.blankCardCount ?? 0); setCivilianAccuseEnabled(next.civilianAccuseEnabled ?? false); }
+    } catch (error) { setNotice({ kind: 'error', text: error instanceof Error ? error.message : '房间设置保存失败' }); }
+  }
+
+  function submitCivilianAccuse() {
+    if (!room || !accuseTargetId) return;
+    const actorId = remoteMode ? currentPlayerId : room.players.find((player) => player.alive && !player.away)?.id;
+    if (!actorId) return;
+    try {
+      const next = accuseUndercover(room, actorId, accuseTargetId);
+      if (remoteMode) void runRemoteAction(room, 'accuse_undercover', { targetId: accuseTargetId }, `accuse:${room.round}:${actorId}`).then((saved) => { if (saved) { setAccuseTargetId(null); setPrivacyGate(true); } });
+      else { commitRoom(next); setAccuseTargetId(null); setPrivacyGate(true); }
+    } catch (error) { setNotice({ kind: 'error', text: error instanceof Error ? error.message : '平民爆灯指认失败' }); }
   }
 
   function confirmCard() {
@@ -566,7 +598,9 @@ export default function GameApp() {
     onCreateDemo={createDemo} onCreateRemote={() => void createRemote()} onStartDealing={startDealing} onConfirmCard={confirmCard}
     onRoundContentDraft={(value) => setRoundContentDraft(value.slice(0, ROUND_CONTENT_MAX_LENGTH))} onSubmitRoundContent={submitCurrentRoundContent}
     onBeginVoting={beginVoting} onSkipDescription={skipCurrentDescription} onBuzzer={startBuzzer} onSubmitVote={submitVote} onComebackDraft={setComebackDraft} onSubmitComeback={submitComeback} onContinue={continueGame} onToggleAutoAdvance={toggleAutoAdvance} onRematch={rematch} onOwnerName={setOwnerName}
-    onPlayerLimit={choosePlayerLimit} onUndercoverCount={setUndercoverCount} onCivilianWord={(value) => { setCivilianWord(value); setCustomWords(true); }}
+    blankCardCount={blankCardCount} civilianAccuseEnabled={civilianAccuseEnabled} lobbySettingsDraft={lobbySettingsDraft} accuseTargetId={accuseTargetId}
+    onLobbySettingsDraft={setLobbySettingsDraft} onSaveLobbySettings={saveLobbySettings} onAccuseTarget={setAccuseTargetId} onSubmitCivilianAccuse={submitCivilianAccuse}
+    onPlayerLimit={choosePlayerLimit} onUndercoverCount={setUndercoverCount} onBlankCardCount={setBlankCardCount} onCivilianAccuseEnabled={setCivilianAccuseEnabled} onCivilianWord={(value) => { setCivilianWord(value); setCustomWords(true); }}
     onUndercoverWord={(value) => { setUndercoverWord(value); setCustomWords(true); }} onRandomWords={() => { const [a, b] = randomWordPair(); setCivilianWord(a); setUndercoverWord(b); setCustomWords(false); }}
     onCustomWords={() => { setCustomWords(true); setCivilianWord(''); setUndercoverWord(''); }} onChallengeMode={setChallengeMode} onUndercoverComebackEnabled={setUndercoverComebackEnabled} onDescriptionRevealMode={setDescriptionRevealMode} onBuzzerEnabled={setBuzzerEnabled} onAutoAdvanceEnabled={setAutoAdvanceEnabled} onJoinCode={setJoinCode} onJoinName={setJoinName}
     onRenamePlayer={renamePlayer} onCandidate={setSelectedCandidateId} onToggleAway={togglePlayerAway} onExitPlayer={permanentlyExitPlayer}
@@ -623,7 +657,7 @@ export default function GameApp() {
       {room.status === 'voting' && remoteMode && !activeVoter && <section className="waiting-panel"><span className="stamp">投票已提交</span><h2>{Object.keys(room.votes).length}/{eligibleVoters(room).length} 人已经投票</h2><p>提交内容已隐藏。等最后一票完成，所有人的页面会同时看到公开票数和裁判结果。</p><div className="meter"><i style={{ width: `${Object.keys(room.votes).length / eligibleVoters(room).length * 100}%` }} /></div></section>}
       {room.status === 'guessing' && activeComebackPlayer && <section className="comeback-panel">{privacyGate ? <div className="privacy-gate"><span className="seat__avatar seat__avatar--large">{activeComebackPlayer.name.slice(0, 1)}</span><p>{room.pendingGuessingReason === 'buzzer' ? '主动爆灯' : '私密机会'}</p><h2>{activeComebackPlayer.name}</h2><span>请确认屏幕前只有你本人，倒计时正在继续</span><button className="button button--dark" onClick={() => setPrivacyGate(false)}>开始猜词</button></div> : <div className="comeback-form"><span className="stamp">{room.pendingGuessingReason === 'buzzer' ? '爆灯只能尝试一次' : '全阵营仅此一次'}</span><h2>猜出另一组词语</h2><strong>{formatCountdown(comebackRemainingSeconds)}</strong><p>{room.pendingGuessingReason === 'buzzer' ? '只有真正的卧底且完全猜中才能获胜；身份错误、猜错或超时都会立即退出。' : '只能提交一次；猜中后卧底阵营立即获胜，猜错或超时则正常退出。'}</p><input value={comebackDraft} onChange={(event) => setComebackDraft(event.target.value.slice(0, 30))} placeholder="输入另一组词语" aria-label="卧底猜词翻盘答案" autoFocus /><button className="button button--primary button--wide" disabled={!comebackDraft.trim()} onClick={submitComeback}>确认提交答案 <span>→</span></button></div>}</section>}
       {room.status === 'guessing' && !activeComebackPlayer && <section className="waiting-panel"><span className="stamp">{room.pendingGuessingReason === 'buzzer' ? '主动爆灯' : '特殊判定'}</span><h2>{formatCountdown(comebackRemainingSeconds)}</h2><p>一名成员正在私密完成判定。结果提交或倒计时结束后会统一处理。</p></section>}
-      {(room.status === 'result' || room.status === 'finished') && room.lastResult && <section className="result-layout"><div className={`verdict ${room.status === 'finished' ? 'is-final' : ''}`}><span className="stamp">裁判结果</span>{room.lastComebackResult?.correct ? <><p>本局结果</p><h2>流程已完成</h2><strong>猜词翻盘成功 · 正确答案：{room.civilianWord}</strong></> : eliminatedUndercoverName(room) ? <><p>成功找出卧底</p><h2>{eliminatedUndercoverName(room)}</h2><strong>{room.lastComebackResult ? `翻盘${room.lastComebackResult.timedOut ? '超时' : '失败'} · ` : ''}{room.status === 'finished' ? '所有卧底已经找出 · 平民胜利' : '仍有卧底 · 游戏继续'}</strong></> : room.status === 'finished' ? room.winner === 'undercover' ? <><p>本局结果</p><h2>流程已完成</h2><strong>卧底人数已不低于平民</strong></> : <><p>本局胜方</p><h2>平民阵营</h2><strong>所有卧底已经出局</strong></> : room.lastResult.noElimination ? <><p>第二次仍然平票</p><h2>本轮无人出局</h2><strong>游戏继续</strong></> : <><p>最高票玩家</p><h2>{playerName(room, room.lastResult.eliminatedId)}</h2><strong>本轮退出 · 游戏继续</strong></>}</div><div className="tally"><div className="section-title"><div><span className="panel-kicker">公开票数</span><h2>第 {room.lastResult.round} 轮{room.lastResult.ballot === 2 ? '复投' : ''}</h2></div><span>不公开谁投了谁</span></div>{Object.entries(room.lastResult.counts).sort((a, b) => b[1] - a[1]).map(([id, count]) => <div className="tally-row" key={id}><span>{playerName(room, id)}</span><i><b style={{ width: `${count / eligibleVoters(room).length * 100}%` }} /></i><strong>{count} 票</strong></div>)}{room.status === 'finished' && <div className="reveal-list"><h3>身份公开</h3>{room.players.map((player) => <div key={player.id}><span>{player.name}</span><b>{room.assignments[player.id].role === 'undercover' ? '卧底' : '平民'} · {room.assignments[player.id].word}</b></div>)}</div>}{room.status === 'result' && (room.autoAdvanceEnabled ?? true) && <div className="auto-advance"><strong>{room.autoAdvancePaused ? '自动进入已暂停' : `${nextRoundRemainingSeconds} 秒后自动进入第 ${room.round + 1} 轮`}</strong></div>}{!remoteMode || currentPlayerId === room.ownerId ? room.status === 'finished' ? <button className="button button--primary button--wide" onClick={rematch}>原班人马换词再来一局 <span>→</span></button> : <div className="result-actions"><button className="button button--primary" onClick={continueGame}>立即进入第 {room.round + 1} 轮 <span>→</span></button>{(room.autoAdvanceEnabled ?? true) && <button className="button button--outline" onClick={toggleAutoAdvance}>{room.autoAdvancePaused ? '继续自动进入' : '暂停自动进入'}</button>}</div> : <div className="waiting-line">{room.status === 'result' && (room.autoAdvanceEnabled ?? true) ? (room.autoAdvancePaused ? '房主已暂停自动进入' : `${nextRoundRemainingSeconds} 秒后自动进入下一轮`) : '等待房主推进游戏…'}</div>}</div></section>}
+      {(room.status === 'result' || room.status === 'finished') && room.lastResult && <section className="result-layout"><div className={`verdict ${room.status === 'finished' ? 'is-final' : ''}`}><span className="stamp">裁判结果</span>{room.lastComebackResult?.correct ? <><p>本局结果</p><h2>流程已完成</h2><strong>猜词翻盘成功 · 正确答案：{room.civilianWord}</strong></> : eliminatedUndercoverName(room) ? <><p>成功找出卧底</p><h2>{eliminatedUndercoverName(room)}</h2><strong>{room.lastComebackResult ? `翻盘${room.lastComebackResult.timedOut ? '超时' : '失败'} · ` : ''}{room.status === 'finished' ? '所有卧底已经找出 · 平民胜利' : '仍有卧底 · 游戏继续'}</strong></> : room.status === 'finished' ? room.winner === 'undercover' ? <><p>本局结果</p><h2>流程已完成</h2><strong>卧底人数已不低于平民</strong></> : <><p>本局胜方</p><h2>平民阵营</h2><strong>所有卧底已经出局</strong></> : room.lastResult.noElimination ? <><p>第二次仍然平票</p><h2>本轮无人出局</h2><strong>游戏继续</strong></> : <><p>最高票玩家</p><h2>{playerName(room, room.lastResult.eliminatedId)}</h2><strong>本轮退出 · 游戏继续</strong></>}</div><div className="tally"><div className="section-title"><div><span className="panel-kicker">公开票数</span><h2>第 {room.lastResult.round} 轮{room.lastResult.ballot === 2 ? '复投' : ''}</h2></div><span>不公开谁投了谁</span></div>{Object.entries(room.lastResult.counts).sort((a, b) => b[1] - a[1]).map(([id, count]) => <div className="tally-row" key={id}><span>{playerName(room, id)}</span><i><b style={{ width: `${count / eligibleVoters(room).length * 100}%` }} /></i><strong>{count} 票</strong></div>)}{room.status === 'finished' && <div className="reveal-list"><h3>身份公开</h3>{room.players.map((player) => <div key={player.id}><span>{player.name}</span><b>{roleRevealCopy(room, player.id)}</b></div>)}</div>}{room.status === 'result' && (room.autoAdvanceEnabled ?? true) && <div className="auto-advance"><strong>{room.autoAdvancePaused ? '自动进入已暂停' : `${nextRoundRemainingSeconds} 秒后自动进入第 ${room.round + 1} 轮`}</strong></div>}{!remoteMode || currentPlayerId === room.ownerId ? room.status === 'finished' ? <button className="button button--primary button--wide" onClick={rematch}>原班人马换词再来一局 <span>→</span></button> : <div className="result-actions"><button className="button button--primary" onClick={continueGame}>立即进入第 {room.round + 1} 轮 <span>→</span></button>{(room.autoAdvanceEnabled ?? true) && <button className="button button--outline" onClick={toggleAutoAdvance}>{room.autoAdvancePaused ? '继续自动进入' : '暂停自动进入'}</button>}</div> : <div className="waiting-line">{room.status === 'result' && (room.autoAdvanceEnabled ?? true) ? (room.autoAdvancePaused ? '房主已暂停自动进入' : `${nextRoundRemainingSeconds} 秒后自动进入下一轮`) : '等待房主推进游戏…'}</div>}</div></section>}
     </div>}
     {guideOpen && <RulesGuide onClose={() => setGuideOpen(false)} />}
     {notice && <div className={`toast toast--${notice.kind}`} role="status">{notice.text}</div>}

@@ -1,4 +1,4 @@
-export type Role = 'civilian' | 'undercover';
+export type Role = 'civilian' | 'undercover' | 'blank';
 export type Winner = Role | null;
 export type GameStatus = 'lobby' | 'cards' | 'discussion' | 'voting' | 'guessing' | 'result' | 'finished';
 export type ChallengeMode = 'off' | 'light' | 'random';
@@ -38,6 +38,7 @@ export const COMEBACK_DURATION_MS = 20_000;
 export const AUTO_ADVANCE_DELAY_MS = 10_000;
 export const AUTO_VOTING_DELAY_MS = 5_000;
 export const PLAYER_LIMIT_OPTIONS = Array.from({ length: MAX_PLAYERS - MIN_PLAYERS + 1 }, (_, index) => MIN_PLAYERS + index);
+export const BLANK_CARD_OPTIONS = [0, 1] as const;
 
 export function undercoverOptions(playerLimit: number): number[] {
   return playerLimit >= 5 ? [1, 2] : [1];
@@ -86,6 +87,10 @@ export interface GameRoom {
   status: GameStatus;
   playerLimit: number;
   undercoverCount: number;
+  blankCardCount?: number;
+  civilianAccuseEnabled?: boolean;
+  civilianAccuseUsedBy?: string | null;
+  lastCivilianAccuseResult?: { accuserId: string; targetId: string; correct: boolean; eliminatedId: string; round: number } | null;
   civilianWord: string;
   undercoverWord: string;
   recentWordPairKeys?: string[];
@@ -179,17 +184,31 @@ export function assignCards(
   undercoverCount: number,
   civilianWord: string,
   undercoverWord: string,
-  random: RandomSource = Math.random,
+  blankCardCountOrRandom: number | RandomSource = 0,
+  maybeRandom: RandomSource = Math.random,
 ): Record<string, Assignment> {
   if (players.length < 3) throw new Error('至少需要 3 名玩家');
-  if (undercoverCount < 1 || undercoverCount * 2 >= players.length) throw new Error('卧底人数不合法');
-  const undercoverIds = new Set(shuffle(players.map((player) => player.id), random).slice(0, undercoverCount));
+  const blankCardCount = typeof blankCardCountOrRandom === 'function' ? 0 : blankCardCountOrRandom;
+  const random = typeof blankCardCountOrRandom === 'function' ? blankCardCountOrRandom : maybeRandom;
+  validateRoleCounts(players.length, undercoverCount, blankCardCount);
+  const shuffledIds = shuffle(players.map((player) => player.id), random);
+  const undercoverIds = new Set(shuffledIds.slice(0, undercoverCount));
+  const blankIds = new Set(shuffledIds.slice(undercoverCount, undercoverCount + blankCardCount));
   return Object.fromEntries(players.map((player) => [
     player.id,
-    undercoverIds.has(player.id)
+    blankIds.has(player.id)
+      ? { role: 'blank' as const, word: '' }
+      : undercoverIds.has(player.id)
       ? { role: 'undercover' as const, word: undercoverWord }
       : { role: 'civilian' as const, word: civilianWord },
   ]));
+}
+
+export function validateRoleCounts(playerLimit: number, undercoverCount: number, blankCardCount = 0): void {
+  if (!Number.isInteger(undercoverCount) || undercoverCount < 1 || undercoverCount > 2) throw new Error('卧底人数不合法');
+  if (!Number.isInteger(blankCardCount) || blankCardCount < 0 || blankCardCount > 1) throw new Error('空白牌人数不合法');
+  const special = undercoverCount + blankCardCount;
+  if (special >= playerLimit - special) throw new Error('卧底人数不合法：特殊阵营人数必须少于平民人数');
 }
 
 export function eligibleVoters(room: GameRoom): Player[] {
@@ -246,7 +265,7 @@ export function determineWinner(room: Pick<GameRoom, 'players' | 'assignments'>)
   let undercovers = 0;
   for (const player of room.players) {
     if (!player.alive) continue;
-    if (room.assignments[player.id]?.role === 'undercover') undercovers += 1;
+    if (room.assignments[player.id]?.role === 'undercover' || room.assignments[player.id]?.role === 'blank') undercovers += 1;
     else civilians += 1;
   }
   if (undercovers === 0) return 'civilian';
@@ -458,7 +477,7 @@ export function applyBallotResult(room: GameRoom, result: RoundResult, now = Dat
   const withHistory = { ...room, history: [...room.history, result] };
   const eligibleForComeback = Boolean(
     result.eliminatedId
-    && room.assignments[result.eliminatedId]?.role === 'undercover'
+    && (room.assignments[result.eliminatedId]?.role === 'undercover' || room.assignments[result.eliminatedId]?.role === 'blank')
     && room.undercoverComebackEnabled
     && !room.undercoverComebackUsed,
   );
@@ -519,7 +538,7 @@ export function resolveUndercoverComeback(room: GameRoom, playerId: string, gues
   const normalizedGuess = normalizeGuess(guess);
   if (!timedOut && !normalizedGuess) throw new Error('请填写另一组词语');
   const correct = !timedOut && normalizedGuess === normalizeGuess(room.civilianWord);
-  const isUndercover = room.assignments[playerId]?.role === 'undercover';
+  const isUndercover = room.assignments[playerId]?.role === 'undercover' || room.assignments[playerId]?.role === 'blank';
   const validBuzzerWin = reason === 'buzzer' ? correct && isUndercover : correct;
   const lastComebackResult: ComebackResult = { playerId, round: room.round, guess: guess.trim(), correct: validBuzzerWin, timedOut, reason };
   if (validBuzzerWin) {
@@ -586,6 +605,8 @@ export function startNextRound(room: GameRoom, now = Date.now(), random: RandomS
     discussionDeadlineAt: null,
     lastResult: null,
     lastComebackResult: null,
+    civilianAccuseUsedBy: null,
+    lastCivilianAccuseResult: null,
     nextRoundAt: null,
     autoAdvancePaused: false,
     version: room.version,
@@ -733,6 +754,8 @@ export function createRoom(input: {
   ownerName: string;
   playerLimit: number;
   undercoverCount: number;
+  blankCardCount?: number;
+  civilianAccuseEnabled?: boolean;
   civilianWord: string;
   undercoverWord: string;
   challengeMode?: ChallengeMode;
@@ -744,9 +767,7 @@ export function createRoom(input: {
   if (!Number.isInteger(input.playerLimit) || input.playerLimit < MIN_PLAYERS || input.playerLimit > MAX_PLAYERS) {
     throw new Error(`玩家人数必须为 ${MIN_PLAYERS}–${MAX_PLAYERS} 人`);
   }
-  if (!Number.isInteger(input.undercoverCount) || input.undercoverCount < 1 || input.undercoverCount * 2 >= input.playerLimit) {
-    throw new Error('卧底人数不合法');
-  }
+  validateRoleCounts(input.playerLimit, input.undercoverCount, input.blankCardCount ?? 0);
   const now = Date.now();
   return {
     code: input.code ?? makeRoomCode(),
@@ -754,6 +775,10 @@ export function createRoom(input: {
     status: 'lobby',
     playerLimit: input.playerLimit,
     undercoverCount: input.undercoverCount,
+    blankCardCount: input.blankCardCount ?? 0,
+    civilianAccuseEnabled: input.civilianAccuseEnabled ?? false,
+    civilianAccuseUsedBy: null,
+    lastCivilianAccuseResult: null,
     civilianWord: input.civilianWord.trim(),
     undercoverWord: input.undercoverWord.trim(),
     challengeMode: input.challengeMode ?? 'off',
@@ -797,7 +822,7 @@ export function createRoom(input: {
 
 export function dealRoom(room: GameRoom, random: RandomSource = Math.random): GameRoom {
   if (room.players.length !== room.playerLimit) throw new Error('玩家尚未到齐');
-  const assignments = assignCards(room.players, room.undercoverCount, room.civilianWord, room.undercoverWord, random);
+  const assignments = assignCards(room.players, room.undercoverCount, room.civilianWord, room.undercoverWord, room.blankCardCount ?? 0, random);
   return {
     ...room,
     status: 'cards',
@@ -816,6 +841,8 @@ export function dealRoom(room: GameRoom, random: RandomSource = Math.random): Ga
     votingOpensAt: null,
     skippedDescriptionPlayerIds: [],
     undercoverComebackUsed: false,
+    civilianAccuseUsedBy: null,
+    lastCivilianAccuseResult: null,
     pendingComebackPlayerId: null,
     comebackDeadlineAt: null,
     lastComebackResult: null,
@@ -829,5 +856,58 @@ export function dealRoom(room: GameRoom, random: RandomSource = Math.random): Ga
     winner: null,
     version: room.version + 1,
     updatedAt: Date.now(),
+  };
+}
+
+export function updateLobbySettings(
+  room: GameRoom,
+  actorId: string,
+  settings: { playerLimit: number; undercoverCount: number; blankCardCount: number; civilianAccuseEnabled?: boolean },
+  now = Date.now(),
+): GameRoom {
+  if (room.status !== 'lobby') throw new Error('只有等待房间可以修改设置');
+  if (room.ownerId !== actorId) throw new Error('只有房主可以修改设置');
+  if (!Number.isInteger(settings.playerLimit) || settings.playerLimit < MIN_PLAYERS || settings.playerLimit > MAX_PLAYERS) throw new Error(`玩家人数必须为 ${MIN_PLAYERS}–${MAX_PLAYERS} 人`);
+  if (settings.playerLimit < room.players.length) throw new Error('总人数不能少于当前已加入人数');
+  validateRoleCounts(settings.playerLimit, settings.undercoverCount, settings.blankCardCount);
+  return {
+    ...room,
+    playerLimit: settings.playerLimit,
+    undercoverCount: settings.undercoverCount,
+    blankCardCount: settings.blankCardCount,
+    civilianAccuseEnabled: settings.civilianAccuseEnabled ?? room.civilianAccuseEnabled ?? false,
+    version: room.version + 1,
+    updatedAt: now,
+  };
+}
+
+export function accuseUndercover(room: GameRoom, accuserId: string, targetId: string, now = Date.now()): GameRoom {
+  if (room.civilianAccuseUsedBy) throw new Error('本局平民爆灯指认机会已经使用');
+  if (room.status !== 'voting' || !descriptionsAreRevealed(room, now)) throw new Error('当前不能进行平民爆灯指认');
+  if (!room.civilianAccuseEnabled) throw new Error('本局未开启平民爆灯指认');
+  const accuser = room.players.find((player) => player.id === accuserId);
+  const target = room.players.find((player) => player.id === targetId);
+  if (!accuser?.alive || accuser.away) throw new Error('当前玩家不能发起指认');
+  if (!target?.alive || target.away || target.id === accuserId) throw new Error('该候选人当前不可指认');
+  const accuserRole = room.assignments[accuserId]?.role;
+  const targetRole = room.assignments[targetId]?.role;
+  const correct = accuserRole === 'civilian' && (targetRole === 'undercover' || targetRole === 'blank');
+  const eliminatedId = correct ? targetId : accuserId;
+  const players = room.players.map((player) => player.id === eliminatedId ? { ...player, alive: false, away: false } : player);
+  const winner = determineWinner({ players, assignments: room.assignments });
+  const result = { accuserId, targetId, correct, eliminatedId, round: room.round };
+  return {
+    ...room,
+    players,
+    winner,
+    status: winner ? 'finished' : 'voting',
+    votes: {},
+    ballot: 1,
+    runoffCandidateIds: [],
+    civilianAccuseUsedBy: accuserId,
+    lastCivilianAccuseResult: result,
+    lastResult: winner ? { round: room.round, ballot: room.ballot, counts: {}, tiedIds: [], eliminatedId, noElimination: false } : room.lastResult,
+    version: room.version + 1,
+    updatedAt: now,
   };
 }

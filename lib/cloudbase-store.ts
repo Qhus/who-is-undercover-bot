@@ -5,7 +5,7 @@ import type { GameRoom } from './game';
 type GameRow = { state: GameRoom; version: number };
 type PgClient = ReturnType<IPgClient>;
 
-export type GameActionType = 'confirm_card' | 'submit_description' | 'submit_vote' | 'advance_phase' | 'trigger_buzzer' | 'submit_special' | 'change_presence';
+export type GameActionType = 'confirm_card' | 'submit_description' | 'submit_vote' | 'advance_phase' | 'trigger_buzzer' | 'submit_special' | 'change_presence' | 'update_lobby_settings' | 'accuse_undercover';
 export type GameActionOutcome = 'applied' | 'duplicate' | 'stale' | 'rejected';
 export interface GameActionResult {
   outcome: GameActionOutcome;
