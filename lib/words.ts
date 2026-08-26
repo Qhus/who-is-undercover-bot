@@ -51,7 +51,7 @@ export const WORD_PAIR_ENTRIES: readonly WordPairEntry[] = [
 export const WORD_PAIRS: readonly (readonly [string, string])[] = WORD_PAIR_ENTRIES.map((entry) => entry.words);
 
 export function wordPairKey(pair: readonly [string, string]): string {
-  return [...pair].sort((a, b) => a.localeCompare(b, 'zh-CN')).join('\u0000');
+  return JSON.stringify([...pair].sort((a, b) => a.localeCompare(b, 'zh-CN')));
 }
 
 export function randomWordPair(random = Math.random): [string, string] {

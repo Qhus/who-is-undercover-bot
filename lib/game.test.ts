@@ -53,6 +53,14 @@ test('再来一局会排除上一局词组，包含正序和反序', () => {
   assert.notEqual(wordPairKey(reversed), wordPairKey(['搬家', '旅行']));
 });
 
+test('词组去重键不包含 PostgreSQL jsonb 禁止的空字符', () => {
+  const key = wordPairKey(['搬家', '旅行']);
+  assert.equal(key, wordPairKey(['旅行', '搬家']));
+  assert.doesNotMatch(key, /\u0000/);
+  assert.doesNotMatch(JSON.stringify({ recentWordPairKeys: [key] }), /\\u0000/);
+  assert.deepEqual(JSON.parse(key).sort(), ['搬家', '旅行'].sort());
+});
+
 test('词库至少 100 组且没有直白禁用词组、重复或近期重复', () => {
   assert.ok(WORD_PAIR_ENTRIES.length >= 100);
   const keys = WORD_PAIR_ENTRIES.map((entry) => wordPairKey(entry.words));
