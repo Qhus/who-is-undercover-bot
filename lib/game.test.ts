@@ -173,6 +173,16 @@ test('永久退出按淘汰处理并立即重新判断胜负', () => {
   assert.equal(decisive.lastResult?.eliminatedId, 'p1');
 });
 
+test('猜词阶段其他人退出不会打断，猜词人退出会恢复原流程', () => {
+  const guessing = { ...votingRoom(), status: 'guessing' as const, pendingComebackPlayerId: 'p1', pausedStatus: 'voting' as const };
+  const observerExit = exitPlayer(guessing, 'p2', 1_000);
+  assert.equal(observerExit.status, 'guessing');
+  assert.equal(observerExit.pendingComebackPlayerId, 'p1');
+  const guesserExit = exitPlayer(guessing, 'p1', 2_000);
+  assert.equal(guesserExit.status, 'voting');
+  assert.equal(guesserExit.pendingComebackPlayerId, null);
+});
+
 test('随机挑战包含确认的 9 条规则且连续两轮不重复', () => {
   assert.equal(RANDOM_CHALLENGE_RULES.length, 9);
   assert.deepEqual(RANDOM_CHALLENGE_RULES.map((rule) => rule.text), [

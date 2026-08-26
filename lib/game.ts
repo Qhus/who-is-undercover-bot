@@ -688,6 +688,8 @@ export function exitPlayer(room: GameRoom, playerId: string, now = Date.now()): 
   const players = room.players.map((player) => player.id === playerId ? { ...player, alive: false, away: false, cardReady: true } : player);
   const ownerId = room.ownerId === playerId ? players.find((player) => player.alive)?.id ?? room.ownerId : room.ownerId;
   const winner = Object.keys(room.assignments).length ? determineWinner({ players, assignments: room.assignments }) : null;
+  const exitingPendingGuesser = room.status === 'guessing' && room.pendingComebackPlayerId === playerId;
+  const resumedStatus = exitingPendingGuesser ? (room.pausedStatus ?? 'result') : room.status;
   const exitResult: RoundResult = {
     round: room.round,
     ballot: room.ballot,
@@ -701,7 +703,7 @@ export function exitPlayer(room: GameRoom, playerId: string, now = Date.now()): 
     players,
     ownerId,
     winner,
-    status: winner ? 'finished' : room.status === 'guessing' ? (room.pausedStatus ?? 'result') : room.status,
+    status: winner ? 'finished' : resumedStatus,
     votes: room.status === 'voting' ? {} : Object.fromEntries(Object.entries(room.votes).filter(([voterId, candidateId]) => voterId !== playerId && candidateId !== playerId)),
     ballot: room.status === 'voting' ? 1 : room.ballot,
     runoffCandidateIds: room.status === 'voting' ? [] : room.runoffCandidateIds.filter((id) => id !== playerId),
@@ -711,7 +713,9 @@ export function exitPlayer(room: GameRoom, playerId: string, now = Date.now()): 
     pausedStatus: room.pendingComebackPlayerId === playerId ? null : room.pausedStatus,
     lastResult: winner ? exitResult : room.lastResult,
     history: winner ? [...room.history, exitResult] : room.history,
-    nextRoundAt: winner ? null : room.nextRoundAt,
+    nextRoundAt: winner ? null : exitingPendingGuesser && resumedStatus === 'result' && (room.autoAdvanceEnabled ?? true)
+      ? now + (room.autoAdvanceDelaySeconds ?? 10) * 1000
+      : room.nextRoundAt,
     version: room.version + 1,
     updatedAt: now,
   };
