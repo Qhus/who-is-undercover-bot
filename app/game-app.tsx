@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { applyBallotResult, autoAdvanceDue, autoVotingDue, canBeginVoting, canTriggerBuzzer, challengeModeLabel, createRoom, dealRoom, descriptionModeLabel, descriptionsAreRevealed, eligibleCandidates, eligibleVoters, exitPlayer, getDescriptionTurnPlayer, getRoundChallenge, getRoundContents, getVotingOpensAt, isRoundContentVisible, makeId, PLAYER_LIMIT_OPTIONS, revealDescriptions, resolveBallot, resolveUndercoverComeback, ROUND_CONTENT_MAX_LENGTH, setAutoAdvancePaused, setPlayerAway, skipDescription as skipRoundDescription, startDiscussion, startNextRound, startVoting, submitRoundContent as recordRoundContent, triggerBuzzer, undercoverOptions, type ChallengeMode, type DescriptionRevealMode, type GameRoom, type Player } from '@/lib/game';
-import { getCloudStore } from '@/lib/cloudbase-store';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { applyBallotResult, autoAdvanceDue, autoVotingDue, canBeginVoting, canTriggerBuzzer, challengeModeLabel, createRoom, dealRoom, descriptionModeLabel, descriptionsAreRevealed, eligibleCandidates, eligibleVoters, exitPlayer, getDescriptionTurnPlayer, getRoundChallenge, getRoundContents, getVotingOpensAt, isRoundContentVisible, makeId, PLAYER_LIMIT_OPTIONS, revealDescriptions, resolveBallot, resolveUndercoverComeback, ROUND_CONTENT_MAX_LENGTH, selectChallengeRule, setAutoAdvancePaused, setPlayerAway, skipDescription as skipRoundDescription, startDiscussion, startNextRound, startVoting, submitRoundContent as recordRoundContent, triggerBuzzer, undercoverOptions, type ChallengeMode, type DescriptionRevealMode, type GameRoom, type Player } from '@/lib/game';
+import { getCloudStore, type GameActionType } from '@/lib/cloudbase-store';
 import { randomWordPair, randomWordPairAvoiding, wordPairKey } from '@/lib/words';
 import SpreadsheetMode from './spreadsheet-mode';
 
@@ -110,6 +110,7 @@ export default function GameApp() {
   const [clockNow, setClockNow] = useState(() => Date.now());
   const [guideOpen, setGuideOpen] = useState(false);
   const [wordReviewPlayerId, setWordReviewPlayerId] = useState<string | null>(null);
+  const pendingRemoteActions = useRef(new Set<string>());
 
   useEffect(() => {
     const savedMode = window.localStorage.getItem('undercover-display-mode');
@@ -231,17 +232,57 @@ export default function GameApp() {
     return requested ?? activeCardPlayer ?? activeDiscussionPlayer ?? activeVoter ?? null;
   }, [room, wordReviewPlayerId, remoteMode, currentPlayerId, activeCardPlayer, activeDiscussionPlayer, activeVoter]);
 
-  function commitRoom(next: GameRoom) {
-    setRoom(next);
-    if (remoteMode) void getCloudStore().saveRoom(next).catch((error) => setNotice({ kind: 'error', text: error instanceof Error ? error.message : '同步失败' }));
+  async function runRemoteAction(
+    sourceRoom: GameRoom,
+    actionType: GameActionType,
+    payload: Record<string, unknown>,
+    pendingKey: string,
+  ): Promise<GameRoom | null> {
+    if (pendingRemoteActions.current.has(pendingKey)) return null;
+    pendingRemoteActions.current.add(pendingKey);
+    const actionId = makeId('action');
+    try {
+      let result;
+      try {
+        result = await getCloudStore().applyGameAction({ room: sourceRoom, actionId, actionType, payload });
+      } catch {
+        result = await getCloudStore().applyGameAction({ room: sourceRoom, actionId, actionType, payload });
+      }
+      setRoom(result.state);
+      if (result.outcome === 'stale') setNotice({ kind: 'info', text: '状态已更新，请重试' });
+      if (result.outcome === 'rejected') setNotice({ kind: 'error', text: result.message || '当前操作无法完成' });
+      return result.outcome === 'applied' || result.outcome === 'duplicate' ? result.state : null;
+    } catch {
+      try {
+        const latest = await getCloudStore().getRoom(sourceRoom.code);
+        if (latest) setRoom(latest);
+      } catch { /* watcher will keep retrying */ }
+      setNotice({ kind: 'error', text: '同步未完成，已刷新最新状态，请重试' });
+      return null;
+    } finally {
+      pendingRemoteActions.current.delete(pendingKey);
+    }
+  }
+
+  function commitRoom(
+    next: GameRoom,
+    remoteAction: { type?: GameActionType; transition?: string; automatic?: boolean; key?: string } = {},
+  ) {
+    if (!remoteMode || !room) {
+      setRoom(next);
+      return;
+    }
+    const type = remoteAction.type ?? 'advance_phase';
+    const transition = remoteAction.transition ?? 'controlled_transition';
+    void runRemoteAction(room, type, { proposedState: next, transition, automatic: remoteAction.automatic ?? false }, remoteAction.key ?? `${type}:${transition}:${room.version}`);
   }
 
   useEffect(() => {
     if (!room || room.status !== 'guessing' || comebackRemainingSeconds > 0 || !room.pendingComebackPlayerId) return;
     const timeout = window.setTimeout(() => {
       const next = resolveUndercoverComeback(room, room.pendingComebackPlayerId!, '', Date.now());
-      setRoom(next);
-      if (remoteMode) void getCloudStore().saveRoom(next).catch(() => undefined);
+      if (remoteMode) void runRemoteAction(room, 'advance_phase', { proposedState: next, transition: 'guess_timeout', automatic: true }, `guess-timeout:${room.version}`);
+      else setRoom(next);
     }, 0);
     return () => window.clearTimeout(timeout);
   }, [room, comebackRemainingSeconds, remoteMode]);
@@ -253,9 +294,9 @@ export default function GameApp() {
       const next = (room.descriptionRevealMode ?? 'all_submitted') === 'sequential' && current
         ? skipRoundDescription(room, current.id, Date.now())
         : revealDescriptions(room, Date.now());
-      setRoom(next);
       setDiscussionPlayerId(getDescriptionTurnPlayer(next)?.id ?? null);
-      if (remoteMode) void getCloudStore().saveRoom(next).catch(() => undefined);
+      if (remoteMode) void runRemoteAction(room, 'advance_phase', { proposedState: next, transition: current ? 'auto_skip_description' : 'auto_reveal_descriptions', automatic: true }, `discussion-timeout:${room.version}`);
+      else setRoom(next);
     }, 0);
     return () => window.clearTimeout(timeout);
   }, [room, discussionRemainingSeconds, remoteMode]);
@@ -264,9 +305,9 @@ export default function GameApp() {
     if (!room || !autoAdvanceDue(room, clockNow)) return;
     const timeout = window.setTimeout(() => {
       const next = startNextRound(room, Date.now());
-      setRoom(next);
       setRoundContentDraft('');
-      if (remoteMode) void getCloudStore().saveRoom(next).catch(() => undefined);
+      if (remoteMode) void runRemoteAction(room, 'advance_phase', { proposedState: next, transition: 'auto_next_round', automatic: true }, `auto-next:${room.version}`);
+      else setRoom(next);
     }, 0);
     return () => window.clearTimeout(timeout);
   }, [room, clockNow, remoteMode]);
@@ -275,11 +316,11 @@ export default function GameApp() {
     if (!room || !autoVotingDue(room, clockNow)) return;
     const timeout = window.setTimeout(() => {
       const next = startVoting(room, clockNow);
-      setRoom(next);
       setVotePlayerId(eligibleVoters(next)[0]?.id ?? null);
       setSelectedCandidateId(null);
       setPrivacyGate(true);
-      if (remoteMode) void getCloudStore().saveRoom(next).catch(() => undefined);
+      if (remoteMode) void runRemoteAction(room, 'advance_phase', { proposedState: next, transition: 'auto_open_voting', automatic: true }, `auto-voting:${room.version}`);
+      else setRoom(next);
     }, 0);
     return () => window.clearTimeout(timeout);
   }, [room, clockNow, remoteMode]);
@@ -354,22 +395,32 @@ export default function GameApp() {
 
   function confirmCard() {
     if (!room || !activeCardPlayer) return;
+    if (remoteMode) {
+      const previousId = room.roundChallenges?.[String(room.round - 1)] ?? null;
+      const challengeId = selectChallengeRule(room.challengeMode ?? 'off', previousId)?.id ?? null;
+      void runRemoteAction(room, 'confirm_card', { challengeId }, `confirm-card:${room.round}:${activeCardPlayer.id}`).then((next) => {
+        if (!next) return;
+        setPrivacyGate(true);
+        setRevealPlayerId(next.players.find((player) => player.alive && !player.away && !player.cardReady)?.id ?? null);
+      });
+      return;
+    }
     const players = room.players.map((player) => player.id === activeCardPlayer.id ? { ...player, cardReady: true } : player);
     const nextPlayer = players.find((player) => player.alive && !player.away && !player.cardReady);
-    const everybodyReady = players.filter((player) => player.alive && !player.away).every((player) => player.cardReady);
-    if (remoteMode) {
-      const next = everybodyReady
-        ? startDiscussion({ ...room, players })
-        : { ...room, players, status: 'cards' as const, version: room.version + 1, updatedAt: Date.now() };
-      commitRoom(next);
-      setPrivacyGate(true); return;
-    }
     if (!nextPlayer) { const next = startDiscussion({ ...room, players }); commitRoom(next); setDiscussionPlayerId(next.players.find((player) => player.alive)?.id ?? null); setRoundContentDraft(''); setRevealPlayerId(null); setPrivacyGate(true); return; }
     commitRoom({ ...room, players }); setRevealPlayerId(nextPlayer.id); setRevealed(false); setPrivacyGate(true);
   }
 
   function submitCurrentRoundContent() {
     if (!room || !activeDiscussionPlayer) return;
+    if (remoteMode) {
+      void runRemoteAction(room, 'submit_description', { content: roundContentDraft }, `description:${room.round}:${activeDiscussionPlayer.id}`).then((next) => {
+        if (!next) return;
+        setRoundContentDraft('');
+        setDiscussionPlayerId(getDescriptionTurnPlayer(next)?.id ?? null);
+      });
+      return;
+    }
     try {
       const next = recordRoundContent(room, activeDiscussionPlayer.id, roundContentDraft);
       commitRoom(next);
@@ -400,8 +451,19 @@ export default function GameApp() {
 
   function submitVote() {
     if (!room || !activeVoter || !selectedCandidateId) return;
+    if (remoteMode) {
+      const voterId = activeVoter.id;
+      void runRemoteAction(room, 'submit_vote', { candidateId: selectedCandidateId }, `vote:${room.round}:${room.ballot}:${voterId}`).then((next) => {
+        if (!next) return;
+        setSelectedCandidateId(null);
+        setPrivacyGate(true);
+        setVotePlayerId(eligibleVoters(next).find((player) => !next.votes[player.id])?.id ?? null);
+        if (next.status === 'voting' && next.ballot === 2 && room.ballot === 1) setNotice({ kind: 'info', text: '最高票并列，马上进行一次复投' });
+      });
+      return;
+    }
     const votes = { ...room.votes, [activeVoter.id]: selectedCandidateId };
-    const withVote = { ...room, votes, version: room.version + 1, updatedAt: Date.now() };
+    const withVote = { ...room, votes, version: room.version + 1, updatedAt: clockNow };
     const remaining = eligibleVoters(withVote).find((player) => !votes[player.id]);
     setSelectedCandidateId(null); setPrivacyGate(true);
     if (remaining) { commitRoom(withVote); setVotePlayerId(remaining.id); return; }
@@ -416,6 +478,14 @@ export default function GameApp() {
     if (!room || !activeComebackPlayer) return;
     try {
       const next = resolveUndercoverComeback(room, activeComebackPlayer.id, comebackDraft);
+      if (remoteMode) {
+        void runRemoteAction(room, 'submit_special', { proposedState: next, transition: 'submit_guess' }, `special:${room.round}:${activeComebackPlayer.id}`).then((saved) => {
+          if (!saved) return;
+          setComebackDraft(''); setPrivacyGate(true);
+          if (room.pendingGuessingReason === 'buzzer' && !saved.winner) setNotice({ kind: 'info', text: '爆灯判定未通过，该玩家已退出，原流程继续' });
+        });
+        return;
+      }
       commitRoom(next); setComebackDraft(''); setPrivacyGate(true);
       if (room.pendingGuessingReason === 'buzzer' && !next.winner) setNotice({ kind: 'info', text: '爆灯判定未通过，该玩家已退出，原流程继续' });
     } catch (error) { setNotice({ kind: 'error', text: error instanceof Error ? error.message : '翻盘答案提交失败' }); }
@@ -426,6 +496,13 @@ export default function GameApp() {
     if (!window.confirm('爆灯后必须猜另一组词；猜错或超时会立即退出。确定继续吗？')) return;
     try {
       const next = triggerBuzzer(room, playerId);
+      if (remoteMode) {
+        void runRemoteAction(room, 'trigger_buzzer', { proposedState: next, transition: 'trigger_buzzer' }, `buzzer:${room.round}:${playerId}`).then((saved) => {
+          if (!saved) return;
+          setComebackDraft(''); setPrivacyGate(true); setWordReviewPlayerId(null);
+        });
+        return;
+      }
       commitRoom(next); setComebackDraft(''); setPrivacyGate(true); setWordReviewPlayerId(null);
     } catch (error) { setNotice({ kind: 'error', text: error instanceof Error ? error.message : '爆灯失败' }); }
   }
@@ -436,11 +513,14 @@ export default function GameApp() {
     if (!player?.alive) return;
     try {
       const next = setPlayerAway(room, playerId, !player.away);
-      commitRoom(next);
-      setRevealPlayerId(next.players.find((item) => item.alive && !item.away && !item.cardReady)?.id ?? null);
-      setDiscussionPlayerId(getDescriptionTurnPlayer(next)?.id ?? eligibleVoters(next).find((item) => !getRoundContents(next)[item.id])?.id ?? null);
-      setVotePlayerId(eligibleVoters(next).find((item) => !next.votes[item.id])?.id ?? null);
-      setNotice({ kind: 'info', text: player.away ? `${player.name} 已返回游戏` : `${player.name} 已暂退，不参与当前描述与投票` });
+      const applyPresence = (saved: GameRoom) => {
+        setRevealPlayerId(saved.players.find((item) => item.alive && !item.away && !item.cardReady)?.id ?? null);
+        setDiscussionPlayerId(getDescriptionTurnPlayer(saved)?.id ?? eligibleVoters(saved).find((item) => !getRoundContents(saved)[item.id])?.id ?? null);
+        setVotePlayerId(eligibleVoters(saved).find((item) => !saved.votes[item.id])?.id ?? null);
+        setNotice({ kind: 'info', text: player.away ? `${player.name} 已返回游戏` : `${player.name} 已暂退，不参与当前描述与投票` });
+      };
+      if (remoteMode) void runRemoteAction(room, 'change_presence', { proposedState: next, transition: player.away ? 'return' : 'away' }, `presence:${room.version}:${playerId}`).then((saved) => { if (saved) applyPresence(saved); });
+      else { commitRoom(next); applyPresence(next); }
     } catch (error) { setNotice({ kind: 'error', text: error instanceof Error ? error.message : '暂退状态切换失败' }); }
   }
 
@@ -450,11 +530,14 @@ export default function GameApp() {
     if (!player?.alive) return;
     if (!window.confirm(`${player.name} 退出后将视作淘汰，且本局不能返回。确定退出吗？`)) return;
     const next = exitPlayer(room, playerId);
-    commitRoom(next);
-    setRevealPlayerId(next.players.find((item) => item.alive && !item.away && !item.cardReady)?.id ?? null);
-    setDiscussionPlayerId(getDescriptionTurnPlayer(next)?.id ?? null);
-    setVotePlayerId(eligibleVoters(next).find((item) => !next.votes[item.id])?.id ?? null);
-    setNotice({ kind: 'info', text: `${player.name} 已退出，并按淘汰处理` });
+    const applyExit = (saved: GameRoom) => {
+      setRevealPlayerId(saved.players.find((item) => item.alive && !item.away && !item.cardReady)?.id ?? null);
+      setDiscussionPlayerId(getDescriptionTurnPlayer(saved)?.id ?? null);
+      setVotePlayerId(eligibleVoters(saved).find((item) => !saved.votes[item.id])?.id ?? null);
+      setNotice({ kind: 'info', text: `${player.name} 已退出，并按淘汰处理` });
+    };
+    if (remoteMode) void runRemoteAction(room, 'change_presence', { proposedState: next, transition: 'exit' }, `exit:${room.version}:${playerId}`).then((saved) => { if (saved) applyExit(saved); });
+    else { commitRoom(next); applyExit(next); }
   }
 
   function continueGame() { if (room) { const next = startNextRound(room); commitRoom(next); setDiscussionPlayerId(next.players.find((player) => player.alive)?.id ?? null); setRoundContentDraft(''); } }

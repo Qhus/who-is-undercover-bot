@@ -28,6 +28,7 @@
 - Excel 模式的玩法说明以独立工作表呈现，保留绿色标题栏、公式栏和单元格风格，并可返回打开说明前的工作表；首页以 A2/A4 区分房主与玩家入口。
 - 描述公开后显示 5 秒倒计时并自动开放投票，房主可提前开放；退出玩家当轮“本轮内容”显示“无需提交”。
 - 本局结束后点击“换词再来一局”会保留玩家名单、重新分配身份，并保证新词组与上一局不同。
+- 联机关键操作通过数据库房间锁和唯一操作 ID 合并；同时确认、提交描述或投票不会再覆盖其他玩家的结果，重复请求保持幂等。
 
 ## 本地运行
 
@@ -42,12 +43,16 @@ npm run dev -- --hostname localhost --port 43210
 
 1. 在环境中启用匿名登录。
 2. 在 SQL 编辑器执行 [`cloudbase/schema.sql`](cloudbase/schema.sql)。脚本创建 `games`、`game_members`、受控建房/加入函数和同房间 RLS。
-3. 复制 `.env.example` 为 `.env.local`，填写环境 ID、上海地域和 Publishable Key。
-4. 安全来源中加入本地地址和最终 GitHub Pages 域名。
+3. 执行 [`cloudbase/concurrency-v2.sql`](cloudbase/concurrency-v2.sql)，创建并发操作表和受控操作函数；先不要执行文件末尾注释掉的权限收紧语句。
+4. 执行 [`cloudbase/verify.sql`](cloudbase/verify.sql)，确认所有核验项均为 `true`。
+5. 复制 `.env.example` 为 `.env.local`，填写环境 ID、上海地域和 Publishable Key。
+6. 安全来源中加入本地地址和最终 GitHub Pages 域名。
 
 只允许将 Publishable Key 暴露到浏览器。不要把 CloudBase API Key、SecretId 或 SecretKey 写入环境文件或 GitHub。
 
 当前开发机已经配置浏览器 Publishable Key；它不会被 Git 跟踪。2026-08-24 已在真实 CloudBase 环境成功执行完整 RLS schema，并确认两张表、三个函数、两表 RLS 和三条策略全部存在。浏览器真实链路已通过匿名建房、第二独立来源匿名加入、房主同步成员，以及第三匿名会话非成员查询返回 0 行。
+
+`concurrency-v2.sql` 属于待人工执行的 V2 迁移。迁移执行并完成双浏览器验收后，再撤销普通成员对 `games.state/version` 的直接更新权限；旧线上前端仍运行时不得提前撤销，否则会中断现有联机操作。
 
 本环境的 `auth.uid()` 返回 `text`，因此 `owner_uid` 和 `user_uid` 必须保持为 `text`；不要改成 `uuid`。如果旧脚本在第一条 `CREATE TABLE` 就报类型错误，说明初始化尚未发生，直接重新执行修正后的完整脚本即可。
 

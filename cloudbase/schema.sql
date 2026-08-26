@@ -1,5 +1,6 @@
 -- 在 CloudBase PostgreSQL 的 SQL 编辑器中一次性执行。
 -- 匿名用户只能读取/更新自己已加入的房间；加入房间必须通过受控函数完成。
+-- 完成本文件后还需执行 concurrency-v2.sql，才能启用 LFR-39 并发操作接口。
 
 create table if not exists public.games (
   code text primary key check (code ~ '^[A-Z2-9]{6}$'),

@@ -5,6 +5,16 @@ import type { GameRoom } from './game';
 type GameRow = { state: GameRoom; version: number };
 type PgClient = ReturnType<IPgClient>;
 
+export type GameActionType = 'confirm_card' | 'submit_description' | 'submit_vote' | 'advance_phase' | 'trigger_buzzer' | 'submit_special' | 'change_presence';
+export type GameActionOutcome = 'applied' | 'duplicate' | 'stale' | 'rejected';
+export interface GameActionResult {
+  outcome: GameActionOutcome;
+  code: string;
+  message: string;
+  state: GameRoom;
+  version: number;
+}
+
 function publicConfig() {
   const env = process.env.NEXT_PUBLIC_CLOUDBASE_ENV_ID;
   const accessKey = process.env.NEXT_PUBLIC_CLOUDBASE_ACCESS_KEY;
@@ -59,15 +69,25 @@ export class CloudBaseRoomStore {
     return data ? (data as unknown as GameRow).state : null;
   }
 
-  async saveRoom(room: GameRoom): Promise<void> {
+  async applyGameAction(input: {
+    room: GameRoom;
+    actionId: string;
+    actionType: GameActionType;
+    payload?: Record<string, unknown>;
+  }): Promise<GameActionResult> {
     await this.connect();
-    const { data, error } = await this.db().from('games').update({
-      state: room,
-      version: room.version,
-      updated_at: new Date().toISOString(),
-    }).eq('code', room.code).lt('version', room.version).select('version').maybeSingle();
+    const { data, error } = await this.db().rpc('apply_game_action', {
+      p_code: input.room.code,
+      p_action_id: input.actionId,
+      p_action_type: input.actionType,
+      p_expected_status: input.room.status,
+      p_expected_round: input.room.round,
+      p_expected_ballot: input.room.status === 'voting' ? input.room.ballot : null,
+      p_expected_version: input.room.version,
+      p_payload: input.payload ?? {},
+    }).single();
     if (error) throw error;
-    if (!data) throw new Error('房间刚刚被其他玩家更新，已放弃这次重复操作');
+    return data as unknown as GameActionResult;
   }
 
   watchRoom(code: string, onChange: (room: GameRoom) => void, onError: (error: unknown) => void) {
