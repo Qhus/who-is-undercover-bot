@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createPrivacyGuard, type PrivacyScheduler } from './privacy.ts';
+import { createCourtRoom } from './court-game.ts';
 
 function fakeScheduler() {
   let nextId = 1;
@@ -42,4 +43,11 @@ test('Esc 和窗口失焦会立即遮挡', () => {
   guard.mask('blur');
   assert.equal(events.at(-1), 'blur');
   guard.dispose();
+});
+
+test('离谱法堂公共房间初始状态不包含私密正文、关键词或选票', () => {
+  const room = createCourtRoom('房主', 1, () => 0.2);
+  const publicState = JSON.stringify(room);
+  for (const privateField of ['keywords', 'defense', 'supplement', 'submissionIds']) assert.doesNotMatch(publicState, new RegExp(`"${privateField}"`));
+  assert.equal(room.gameType, 'absurd_court');
 });

@@ -9,6 +9,8 @@ const concurrencyMigration = readFileSync(new URL('../cloudbase/concurrency-v3-s
 const concurrencyHotfix = readFileSync(new URL('../cloudbase/concurrency-v3-1-special-roles-hotfix.sql', import.meta.url), 'utf8');
 const versionedRpcMigration = readFileSync(new URL('../cloudbase/concurrency-v3-2-versioned-rpc.sql', import.meta.url), 'utf8');
 const versionedRpcVerification = readFileSync(new URL('../cloudbase/verify-v3-2-versioned-rpc.sql', import.meta.url), 'utf8');
+const courtPlayableMigration = readFileSync(new URL('../cloudbase/concurrency-v4-1-court-playable.sql', import.meta.url), 'utf8');
+const courtPlayableVerification = readFileSync(new URL('../cloudbase/verify-v4-1-court-playable.sql', import.meta.url), 'utf8');
 const concurrencySource = `${concurrencyBase}\n${concurrencyMigration}\n${concurrencyHotfix}\n${versionedRpcMigration}`;
 const storeSource = readFileSync(new URL('./cloudbase-store.ts', import.meta.url), 'utf8');
 const appSource = readFileSync(new URL('../app/game-app.tsx', import.meta.url), 'utf8');
@@ -74,4 +76,15 @@ test('联机客户端使用同一操作 ID 重试并以服务端状态为准', (
   assert.match(appSource, /状态已更新，请重试/);
   assert.doesNotMatch(appSource, /getCloudStore\(\)\.saveRoom/);
   assert.doesNotMatch(storeSource, /\.from\('games'\)\.update/);
+});
+
+test('离谱法堂 V4.1 使用服务端内容池和完整即时推进状态机', () => {
+  for (const table of ['court_cases', 'court_twists', 'court_keywords', 'court_private_assignments', 'court_submissions', 'court_votes']) assert.match(courtPlayableMigration, new RegExp(table));
+  for (const helper of ['court_begin_round', 'court_reveal_defenses', 'court_open_supplement', 'court_open_voting', 'court_finish_voting']) assert.match(courtPlayableMigration, new RegExp(helper));
+  assert.match(courtPlayableMigration, /array_agg\(content order by random\(\)\)/);
+  assert.match(courtPlayableMigration, /n>=jsonb_array_length\(state->'expectedPlayerIds'\)[\s\S]*court_reveal_defenses/);
+  assert.match(courtPlayableMigration, /n>=eligible[\s\S]*court_open_voting/);
+  assert.match(courtPlayableMigration, /court_finish_voting[\s\S]*authorName[\s\S]*roundVotes/);
+  assert.doesNotMatch(courtPlayableMigration, /proposedState|p_player_id/);
+  for (const expected of ['20 court cases', '30 court twists', '60 court keywords', 'immediate defense advance', 'result reveals author']) assert.match(courtPlayableVerification, new RegExp(expected));
 });

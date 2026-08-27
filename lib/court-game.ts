@@ -2,8 +2,8 @@ import { COURT_CASES, COURT_KEYWORDS, COURT_TWISTS } from './court-content.ts';
 import { makeRoomCode, shuffle, type Player, type RandomSource } from './game.ts';
 
 export type CourtStatus = 'lobby' | 'defense' | 'defense_reveal' | 'supplement' | 'voting' | 'result' | 'finished';
-export interface CourtPublicEntry { submissionId: string; displayCode: string; defense: string; supplement: string | null; }
-export interface CourtRoundResult { round: number; votes: Record<string, number>; winnerIds: string[]; }
+export interface CourtPublicEntry { submissionId: string; displayCode: string; defense: string; supplement: string | null; authorId?: string; authorName?: string; roundVotes?: number; }
+export interface CourtRoundResult { round: number; winnerIds: string[]; highestVotes: number; }
 export interface AbsurdCourtRoom { code: string; gameType: 'absurd_court'; ownerId: string; players: Player[]; playerLimit: number; version: number; createdAt: number; updatedAt: number; status: CourtStatus; round: number; totalRounds: 3; phaseDeadlineAt: number | null; caseId: string | null; caseText: string | null; twistId: string | null; twistText: string | null; usedCaseIds: string[]; usedTwistIds: string[]; expectedPlayerIds: string[]; defenseSubmittedCount: number; supplementSubmittedCount: number; voteSubmittedCount: number; publicEntries: CourtPublicEntry[]; roundResults: CourtRoundResult[]; totalScores: Record<string, number>; }
 export const COURT_MIN_PLAYERS = 3, COURT_MAX_PLAYERS = 8;
 export const COURT_DURATIONS: Record<Exclude<CourtStatus, 'lobby' | 'finished'>, number> = { defense: 30_000, defense_reveal: 5_000, supplement: 15_000, voting: 30_000, result: 10_000 };

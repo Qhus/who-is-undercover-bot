@@ -159,6 +159,7 @@ export default function CourtSpreadsheetMode() {
   const entries = room?.publicEntries ?? [];
   const voteNeeded = room && room.expectedPlayerIds.length >= 5 ? 2 : 1;
   const isOwner = room?.ownerId === playerId;
+  const latestResult = room?.roundResults.at(-1) ?? null;
 
   const submitDefense = () => {
     if (!room) return;
@@ -215,7 +216,7 @@ export default function CourtSpreadsheetMode() {
           {room.status === 'defense_reveal' && <tr><th>5</th><td>匿名陈述</td><td colSpan={5}>{entries.map((entry) => <p key={entry.submissionId}><b>{entry.displayCode}</b>：{entry.defense}</p>)}</td></tr>}
           {room.status === 'supplement' && <><tr><th>5</th><td>突发证据</td><td colSpan={5}>{room.twistText}</td></tr><tr><th>6</th><td>补充圆谎</td><td colSpan={4}><input value={supplement} onChange={(event) => setSupplement(event.target.value.slice(0, 30))} placeholder="继续把话圆回来，最多 30 字" /></td><td><button className="sheet-action" disabled={!myEntry} onClick={submitSupplement}>提交补充</button></td></tr></>}
           {room.status === 'voting' && <>{entries.map((entry, index) => <tr key={entry.submissionId}><th>{6 + index}</th><td>{entry.displayCode}{entry.submissionId === myEntry?.submissionId ? '（你的陈述）' : ''}</td><td colSpan={4}>{entry.defense}<br />{entry.supplement ?? '未补充说明'}</td><td>{entry.submissionId !== myEntry?.submissionId && <button onClick={() => setChoices((current) => current.includes(entry.submissionId) ? current.filter((id) => id !== entry.submissionId) : current.length < voteNeeded ? [...current, entry.submissionId] : current)}>{choices.includes(entry.submissionId) ? '已选择' : '投给这条'}</button>}</td></tr>)}<tr><th>20</th><td>最佳狡辩评选</td><td colSpan={4}>请选择 {voteNeeded} 条最精彩的陈述；不能投自己，不显示实时票型。</td><td><button className="sheet-action" onClick={submitVote}>提交选票</button></td></tr></>}
-          {['result', 'finished'].includes(room.status) && <><tr><th>5</th><td>判决统计</td><td colSpan={4}>{room.players.map((player) => `${player.name} ${room.totalScores[player.id] ?? 0} 票`).join('；')}</td><td>{room.status === 'finished' ? '三轮完成' : '10 秒后进入下一轮'}</td></tr><tr><th>6</th><td>评选说明</td><td colSpan={5}>最高票获得“本轮最佳狡辩”；并列时共享称号。</td></tr></>}
+          {['result', 'finished'].includes(room.status) && <>{entries.map((entry, index) => <tr key={entry.submissionId}><th>{5 + index}</th><td>{latestResult?.winnerIds.includes(entry.authorId ?? '') ? '本轮最佳狡辩' : entry.displayCode}</td><td>{entry.authorName ?? '待揭晓'}</td><td colSpan={2}>{entry.defense}<br />{entry.supplement ?? '未补充说明'}</td><td>{entry.roundVotes ?? 0} 票</td><td>{latestResult?.winnerIds.includes(entry.authorId ?? '') ? '并列时共享称号' : '本轮结果'}</td></tr>)}<tr><th>20</th><td>累计排行榜</td><td colSpan={4}>{[...room.players].sort((a, b) => (room.totalScores[b.id] ?? 0) - (room.totalScores[a.id] ?? 0)).map((player) => `${player.name} ${room.totalScores[player.id] ?? 0} 票`).join('；')}</td><td>{room.status === 'finished' ? '三轮完成' : '10 秒后进入下一轮'}</td></tr></>}
           </>}</>}
         </tbody>
       </table></div>
