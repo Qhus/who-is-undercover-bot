@@ -270,10 +270,6 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgb(200 77 49 / 3
 .sheet-rule-banner>span { padding:3px 7px; color:#fff; background:var(--sheet-green); font-size:9px; white-space:nowrap; }
 .sheet-rule-banner>strong { min-width:0; color:#153e29; line-height:1.45; white-space:normal; overflow-wrap:anywhere; }
 .sheet-rule-banner>small { color:#5e6f64; font-size:10px; white-space:nowrap; }
-.sheet-private-review { min-height:48px; display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:12px; padding:7px 12px; color:#fff; background:#8b3a2b; }
-.sheet-private-review span { font-size:10px; }
-.sheet-private-review strong { font-size:15px; }
-.sheet-private-review button { min-height:28px; padding:0 10px; color:#fff; border:1px solid rgb(255 255 255 / 50%); background:transparent; }
 .sheet-grid-scroll { min-height:0; flex:1; overflow:auto; background:#fff; }
 .sheet-grid { width:100%; min-width:900px; border-collapse:separate; border-spacing:0; table-layout:fixed; }
 .sheet-grid th,.sheet-grid td { height:34px; padding:4px 8px; border-right:1px solid var(--sheet-grid); border-bottom:1px solid var(--sheet-grid); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:400; }

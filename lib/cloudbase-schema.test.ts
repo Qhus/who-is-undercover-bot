@@ -6,7 +6,8 @@ const schema = readFileSync(new URL('../cloudbase/schema.sql', import.meta.url),
 const verification = readFileSync(new URL('../cloudbase/verify.sql', import.meta.url), 'utf8');
 const concurrencyBase = readFileSync(new URL('../cloudbase/concurrency-v2.sql', import.meta.url), 'utf8');
 const concurrencyMigration = readFileSync(new URL('../cloudbase/concurrency-v3-special-roles.sql', import.meta.url), 'utf8');
-const concurrencySource = `${concurrencyBase}\n${concurrencyMigration}`;
+const concurrencyHotfix = readFileSync(new URL('../cloudbase/concurrency-v3-1-special-roles-hotfix.sql', import.meta.url), 'utf8');
+const concurrencySource = `${concurrencyBase}\n${concurrencyMigration}\n${concurrencyHotfix}`;
 const storeSource = readFileSync(new URL('./cloudbase-store.ts', import.meta.url), 'utf8');
 const appSource = readFileSync(new URL('../app/game-app.tsx', import.meta.url), 'utf8');
 
@@ -47,6 +48,12 @@ test('并发迁移使用房间锁、操作幂等和受控状态合并', () => {
   assert.match(concurrencySource, /update public\.games[\s\S]*insert into public\.game_actions/i);
   for (const marker of ['blank', 'civilianAccuseEnabled', 'civilianAccuseUsedBy']) assert.match(concurrencySource, new RegExp(marker));
   assert.match(concurrencySource, /revoke update\(state, version, updated_at\)/i);
+  assert.match(concurrencyHotfix, /create or replace function public\.apply_game_action/i);
+  assert.doesNotMatch(concurrencyHotfix, /rename to apply_game_action_v2/i);
+  assert.match(concurrencyHotfix, /status' = 'discussion'[\s\S]*descriptionsRevealedAt/i);
+  assert.match(concurrencyHotfix, /coalesce\(p_payload->>'targetPlayerId', p_payload->>'targetId'\)/i);
+  assert.match(concurrencyHotfix, /p_action_type = 'submit_vote'[\s\S]*role' = 'blank'/i);
+  assert.match(concurrencyHotfix, /role' in \('undercover','blank'\)/i);
 });
 
 test('联机客户端使用同一操作 ID 重试并以服务端状态为准', () => {

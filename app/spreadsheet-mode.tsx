@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { BLANK_CARD_OPTIONS, canTriggerBuzzer, challengeModeLabel, descriptionModeLabel, descriptionsAreRevealed, eligibleCandidates, eligibleVoters, getDescriptionTurnPlayer, getRoundChallenge, getRoundContents, isRoundContentVisible, LIGHT_CHALLENGE_RULES, PLAYER_LIMIT_OPTIONS, RANDOM_CHALLENGE_RULES, ROUND_CONTENT_MAX_LENGTH, undercoverOptions, validateRoleCounts, type ChallengeMode, type DescriptionRevealMode, type GameRoom, type Player } from '@/lib/game';
+import { BLANK_CARD_OPTIONS, canAccuseUndercover, canTriggerBuzzer, challengeModeLabel, descriptionModeLabel, descriptionsAreRevealed, eligibleCandidates, eligibleVoters, getDescriptionTurnPlayer, getRoundChallenge, getRoundContents, isRoundContentVisible, LIGHT_CHALLENGE_RULES, PLAYER_LIMIT_OPTIONS, RANDOM_CHALLENGE_RULES, ROUND_CONTENT_MAX_LENGTH, undercoverOptions, validateRoleCounts, type ChallengeMode, type DescriptionRevealMode, type GameRoom, type Player } from '@/lib/game';
 import { neutralizeGameCopy } from '@/lib/neutral-copy';
 import { createPrivacyGuard, PRIVATE_REVEAL_MS, PRIVACY_IDLE_MS, type PrivacyGuard } from '@/lib/privacy';
 import { CURRENT_RELEASE, RELEASE_NOTES } from '@/lib/release-notes';
@@ -9,6 +9,7 @@ import { CURRENT_RELEASE, RELEASE_NOTES } from '@/lib/release-notes';
 type Screen = 'home' | 'setup' | 'game';
 type Notice = { kind: 'info' | 'error'; text: string } | null;
 type SheetTab = 'members' | 'rules' | 'guide' | 'log' | `round-${string}`;
+type LobbySettingsDraft = { playerLimit: number; undercoverCount: number; blankCardCount: number };
 type SheetGuide = {
   step: number;
   title: string;
@@ -45,7 +46,8 @@ export interface SpreadsheetModeProps {
   undercoverCount: number;
   blankCardCount: number;
   civilianAccuseEnabled: boolean;
-  lobbySettingsDraft: { playerLimit: number; undercoverCount: number; blankCardCount: number; civilianAccuseEnabled: boolean } | null;
+  lobbySettingsDraft: LobbySettingsDraft | null;
+  accuseActorId: string | null;
   accuseTargetId: string | null;
   civilianWord: string;
   undercoverWord: string;
@@ -85,9 +87,11 @@ export interface SpreadsheetModeProps {
   onUndercoverCount: (value: number) => void;
   onBlankCardCount: (value: number) => void;
   onCivilianAccuseEnabled: (value: boolean) => void;
-  onLobbySettingsDraft: (value: { playerLimit: number; undercoverCount: number; blankCardCount: number; civilianAccuseEnabled: boolean } | null) => void;
-  onSaveLobbySettings: (value: { playerLimit: number; undercoverCount: number; blankCardCount: number; civilianAccuseEnabled: boolean }) => void;
+  onLobbySettingsDraft: (value: LobbySettingsDraft | null) => void;
+  onSaveLobbySettings: (value: LobbySettingsDraft) => void;
+  onOpenCivilianAccuse: (playerId: string) => void;
   onAccuseTarget: (id: string | null) => void;
+  onCancelCivilianAccuse: () => void;
   onSubmitCivilianAccuse: () => void;
   onCivilianWord: (value: string) => void;
   onUndercoverWord: (value: string) => void;
@@ -212,7 +216,6 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
     playerLimit: props.room.playerLimit,
     undercoverCount: props.room.undercoverCount,
     blankCardCount: props.room.blankCardCount ?? 0,
-    civilianAccuseEnabled: props.room.civilianAccuseEnabled ?? false,
   } : null);
   function updateLobbyDraft(patch: Partial<NonNullable<typeof lobbyDraft>>) {
     if (!lobbyDraft) return;
@@ -251,13 +254,27 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
         emphasizedCells: ['B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B9', 'B10', 'B11', 'B12'],
         cellHints: {
           B2: '必填：负责人称呼', B3: '必填：成员数量', B4: '必填：特殊成员数量', B5: '选择本轮挑战模式',
-          B6: '选择描述公开方式', B7: '选择是否开启猜词翻盘', B8: '选择是否开启主动爆灯', B9: '选择是否自动进入下一轮',
+          B6: '选择描述公开方式', B7: '选择是否开启猜词翻盘', B8: '选择是否开启猜词爆灯', B9: '选择是否自动进入下一轮',
           B10: '必填：选择自动或手动生成字段', B11: '必填：字段 A', B12: '必填：字段 B',
         },
       };
     }
     const room = props.room;
     if (!room) return { step: 0, title: '等待载入', instruction: '正在读取协作表。', location: '无需操作', focusCell: 'A1', emphasizedCells: [], cellHints: {} };
+    const accuseActor = room.players.find((player) => player.id === props.accuseActorId);
+    if (accuseActor && canAccuseUndercover(room, accuseActor.id)) {
+      const firstRow = room.players.length + 2;
+      const finalRow = firstRow + eligibleVoters(room).filter((player) => player.id !== accuseActor.id).length + 1;
+      return {
+        step: 3,
+        title: `${accuseActor.name}：确认平民指认`,
+        instruction: '在成员列表下方选择一名候选人，再到“最终操作”行确认；不想继续可点击“取消”。',
+        location: `候选区域：A${firstRow}–F${finalRow}`,
+        focusCell: `A${firstRow}`,
+        emphasizedCells: [`A${firstRow}`, `E${finalRow}`],
+        cellHints: { [`A${firstRow}`]: `发起人：${accuseActor.name}`, [`E${finalRow}`]: props.accuseTargetId ? '确认或取消本次指认' : '请先选择候选人' },
+      };
+    }
     if (room.status === 'lobby') {
       return {
         step: 0,
@@ -277,7 +294,7 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
       return {
         step: 1,
         title: props.activeCardPlayer ? `${props.activeCardPlayer.name}：查看个人信息` : '等待其他成员完成',
-        instruction: props.activeCardPlayer ? `点击 ${cell} 的“••••••”查看，记住后点击表格上方“已确认自己的词语”。4 秒后会自动遮挡。` : '你的词语已经确认，请等待其他成员。',
+        instruction: props.activeCardPlayer ? `点击 ${cell} 的“···”查看，记住后点击表格上方“已确认自己的词语”。4 秒后会自动遮挡。` : '你的词语已经确认，请等待其他成员。',
         location: props.activeCardPlayer ? `当前填写位置：${cell}（个人信息列）` : '进度位置：C 列',
         focusCell: props.activeCardPlayer ? cell : 'C2',
         emphasizedCells: props.activeCardPlayer ? [cell] : [],
@@ -336,14 +353,14 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
       location: comebackWon ? '结果提示：特殊判定成功' : foundUndercover ? '结果提示：已成功找出卧底' : '结果：当前 Round 工作表；历史：操作记录',
       focusCell: 'D2', emphasizedCells: ['D2'], cellHints: { D2: comebackWon ? '流程已完成' : foundUndercover ? `成功找出卧底：${foundUndercover.name}` : '查看本轮结果' },
     };
-  }, [sheetTab, props.screen, props.room, props.activeCardPlayer, props.activeDiscussionPlayer, props.activeVoter, props.activeComebackPlayer, props.discussionRemainingSeconds, props.votingOpenRemainingSeconds, props.comebackRemainingSeconds, props.nextRoundRemainingSeconds, props.canOpenVoting, isOwner]);
+  }, [sheetTab, props.screen, props.room, props.accuseActorId, props.accuseTargetId, props.activeCardPlayer, props.activeDiscussionPlayer, props.activeVoter, props.activeComebackPlayer, props.discussionRemainingSeconds, props.votingOpenRemainingSeconds, props.comebackRemainingSeconds, props.nextRoundRemainingSeconds, props.canOpenVoting, isOwner]);
 
-  const flowKey = `${sheetTab}|${props.screen}|${props.room?.status ?? ''}|${props.room?.round ?? ''}|${props.activeCardPlayer?.id ?? ''}|${props.activeDiscussionPlayer?.id ?? ''}|${props.activeVoter?.id ?? ''}`;
+  const flowKey = `${sheetTab}|${props.screen}|${props.room?.status ?? ''}|${props.room?.round ?? ''}|${props.activeCardPlayer?.id ?? ''}|${props.activeDiscussionPlayer?.id ?? ''}|${props.activeVoter?.id ?? ''}|${props.accuseActorId ?? ''}`;
   const activeCell = cellSelection?.flowKey === flowKey ? cellSelection.cell : workflowGuide.focusCell;
 
   const formulaValue = sensitiveVisible && currentAssignment
     ? (currentAssignment.role === 'blank' ? '你没有词语，请根据其他人的描述进行发挥。' : currentAssignment.word)
-    : workflowGuide.cellHints[activeCell] ?? (activeCell === 'D2' && props.room?.status === 'cards' ? '••••••' : `=${tabLabel(sheetTab)}!${activeCell}`);
+    : workflowGuide.cellHints[activeCell] ?? (activeCell === 'D2' && props.room?.status === 'cards' ? '···' : `=${tabLabel(sheetTab)}!${activeCell}`);
 
   const gameRows = (): ReactNode[][] => {
     const room = props.room;
@@ -353,10 +370,12 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
       const pool = room.challengeMode === 'random' ? RANDOM_CHALLENGE_RULES : room.challengeMode === 'light' ? LIGHT_CHALLENGE_RULES : [];
       return [
         ['规则项目', '当前设置', '适用范围', '说明', '状态', ''],
+        ['角色配置', `${room.playerLimit} 人 / ${room.undercoverCount} 名卧底 / ${room.blankCardCount ?? 0} 张空白牌`, '整局', '空白牌没有词语，与卧底同属特殊阵营', '已完成', ''],
         ['本轮挑战', challengeModeLabel(room.challengeMode ?? 'off'), '每轮公共', getRoundChallenge(room, room.round)?.text ?? '无附加规则', '已完成', ''],
         ['描述方式', descriptionModeLabel(room.descriptionRevealMode ?? 'all_submitted'), '每轮公共', '统一公开或按座位顺序公开', descriptionsAreRevealed(room) ? '已公开' : '等待中', ''],
         ['特殊判定', room.undercoverComebackEnabled ? '开启' : '关闭', '特殊成员方每局一次', '20 秒内猜中另一组词立即获胜', room.undercoverComebackUsed ? '已完成' : '等待中', ''],
-        ['主动爆灯', room.buzzerEnabled ? '开启' : '关闭', '全局一次', '猜错或超时立即退出', room.buzzerUsedBy ? '已使用' : '等待中', ''],
+        ['猜词爆灯', room.buzzerEnabled ? '开启' : '关闭', '全局一次', '猜错或超时立即退出', room.buzzerUsedBy ? '已使用' : '等待中', ''],
+        ['平民爆灯指认', room.civilianAccuseEnabled ? '开启' : '关闭', '每局一次', '描述公开后可指认；指错则发起者退出', room.civilianAccuseUsedBy ? '已使用' : '等待中', ''],
         ['自动下一轮', (room.autoAdvanceEnabled ?? true) ? '开启' : '关闭', '结果阶段', `${room.autoAdvanceDelaySeconds ?? 10} 秒后自动进入`, room.autoAdvancePaused ? '已暂停' : '等待中', ''],
         ['规则执行', '玩家自觉遵守', '本轮内容', '当前不校验、不拦截提交', '已完成', ''],
         ...pool.map((rule, index) => [`规则池 ${String(index + 1).padStart(2, '0')}`, rule.text, challengeModeLabel(room.challengeMode ?? 'off'), '每轮随机且尽量不连续重复', '等待中', '']),
@@ -400,7 +419,7 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
       let personal: ReactNode = player.cardReady ? '已完成' : '等待中';
       if (isCardOwner) personal = sensitiveVisible && currentAssignment
         ? <span className="sheet-secret-value">{currentAssignment.role === 'blank' ? '你没有词语，请根据其他人的描述进行发挥。' : currentAssignment.word}</span>
-        : <button className="sheet-secret" onClick={() => privacy.current?.reveal()} aria-label="显示个人信息，真实用途是查看自己的秘密词语，不显示角色">••••••</button>;
+        : <button className="sheet-secret" onClick={() => privacy.current?.reveal()} aria-label="显示个人信息，真实用途是查看自己的秘密词语，不显示角色">···</button>;
     if (room.status === 'discussion') {
       if (!player.alive || player.away) personal = '无需提交';
       else {
@@ -420,30 +439,42 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
           ? room.lastComebackResult?.correct ? '特殊判定成功' : eliminatedUndercover(room) ? '成功找出卧底' : '本轮退出'
           : '—';
       }
+      if (sensitiveVisible && props.wordReviewPlayer?.id === player.id && player.cardReady && (room.status === 'discussion' || room.status === 'voting' || room.status === 'result')) {
+        const assignment = room.assignments[player.id];
+        personal = <span className="sheet-secret-value">{assignment?.role === 'blank' ? '你没有词语，请根据其他人的描述进行发挥。' : assignment?.word}</span>;
+      }
       let selection: ReactNode = room.votes[player.id] ? '已完成' : '—';
       if (isVoter) selection = <div className="sheet-select-wrap"><select value={props.selectedCandidateId ?? ''} onChange={(event) => props.onCandidate(event.target.value || null)} aria-label="提交选择，真实用途是选择本轮投票对象"><option value="">请选择…</option>{eligibleCandidates(room).filter((candidate) => candidate.id !== player.id).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}</select><button disabled={!props.selectedCandidateId} onClick={props.onSubmitVote} aria-label="确认提交本轮投票选择">提交</button></div>;
       const canBuzz = canTriggerBuzzer(room, player.id) && (!props.remoteMode || props.currentPlayerId === player.id);
       const canReview = player.cardReady && (room.status === 'discussion' || room.status === 'voting' || room.status === 'result') && (!props.remoteMode || props.currentPlayerId === player.id);
       const canControlPresence = room.status !== 'finished' && player.alive && (!props.remoteMode || props.currentPlayerId === player.id);
-      const canAccuse = room.status === 'voting' && room.civilianAccuseEnabled && !room.civilianAccuseUsedBy && player.alive && !player.away && (!props.remoteMode || props.currentPlayerId === player.id);
-      const note = <div className="sheet-inline">{player.id === room.ownerId && <span>负责人</span>}{canReview && room.status !== 'cards' && <button onClick={() => { props.onReviewWord(player.id); window.setTimeout(() => privacy.current?.reveal(), 0); }} aria-label={`${player.name} 再次查看自己的词语`}>复看词语</button>}{canBuzz && <button onClick={() => props.onBuzzer(player.id)} aria-label={`${player.name} 主动爆灯`}>我要爆灯</button>}{canAccuse && <button onClick={() => props.onAccuseTarget(player.id)} aria-label="打开平民爆灯指认">平民爆灯指认</button>}{canControlPresence && <button onClick={() => props.onToggleAway(player.id)}>{player.away ? '返回' : '暂退'}</button>}{canControlPresence && <button onClick={() => props.onExitPlayer(player.id)}>退出</button>}</div>;
+      const canAccuse = canAccuseUndercover(room, player.id) && (!props.remoteMode || props.currentPlayerId === player.id);
+      const note = <div className="sheet-inline">{player.id === room.ownerId && <span>负责人</span>}{canReview && room.status !== 'cards' && <button className="sheet-secret" onClick={() => { props.onReviewWord(player.id); window.setTimeout(() => privacy.current?.reveal(), 0); }} aria-label={`${player.name} 再次查看自己的词语`}>···</button>}{canBuzz && <button onClick={() => props.onBuzzer(player.id)} aria-label={`${player.name} 猜词爆灯`}>猜词爆灯</button>}{canAccuse && <button onClick={() => props.onOpenCivilianAccuse(player.id)} aria-label={`${player.name} 打开平民爆灯指认`}>平民爆灯指认</button>}{canControlPresence && <button onClick={() => props.onToggleAway(player.id)}>{player.away ? '返回' : '暂退'}</button>}{canControlPresence && <button onClick={() => props.onExitPlayer(player.id)}>退出</button>}</div>;
       rows.push([String(player.seat).padStart(2, '0'), player.name, neutralStatus(room, player, props.activeCardPlayer, props.activeDiscussionPlayer, props.activeVoter), personal, selection, note]);
     });
     if (room.status === 'lobby') {
-      const settings = lobbyDraft ?? { playerLimit: room.playerLimit, undercoverCount: room.undercoverCount, blankCardCount: room.blankCardCount ?? 0, civilianAccuseEnabled: room.civilianAccuseEnabled ?? false };
+      const settings = lobbyDraft ?? { playerLimit: room.playerLimit, undercoverCount: room.undercoverCount, blankCardCount: room.blankCardCount ?? 0 };
       let validation = '';
       try { validateRoleCounts(settings.playerLimit, settings.undercoverCount, settings.blankCardCount); if (settings.playerLimit < room.players.length) validation = '总人数不能少于已加入人数'; } catch (error) { validation = error instanceof Error ? error.message : '配置不合法'; }
       const editing = isOwner && lobbyEditing && Boolean(props.lobbySettingsDraft);
       rows.push(['设置', '总人数', editing ? <select value={settings.playerLimit} onChange={(event) => { const value = Number(event.target.value); const undercover = undercoverOptions(value).includes(settings.undercoverCount) ? settings.undercoverCount : undercoverOptions(value)[0]; updateLobbyDraft({ playerLimit: value, undercoverCount: undercover }); }} aria-label="等待房间总人数">{PLAYER_LIMIT_OPTIONS.map((value) => <option value={value} key={value}>{value}</option>)}</select> : `${room.playerLimit} 人`, '等待房间可调整', '', isOwner && !editing ? '房主可编辑' : '']);
       rows.push(['设置', '卧底人数', editing ? <select value={settings.undercoverCount} onChange={(event) => updateLobbyDraft({ undercoverCount: Number(event.target.value) })} aria-label="等待房间卧底人数">{undercoverOptions(settings.playerLimit).map((value) => <option value={value} key={value}>{value}</option>)}</select> : `${room.undercoverCount} 人`, '特殊阵营配置', '', '']);
       rows.push(['设置', '空白牌人数', editing ? <select value={settings.blankCardCount} onChange={(event) => updateLobbyDraft({ blankCardCount: Number(event.target.value) })} aria-label="等待房间空白牌人数">{BLANK_CARD_OPTIONS.map((value) => <option value={value} key={value}>{value}</option>)}</select> : `${room.blankCardCount ?? 0} 张`, '0–1 张；没有词语', '', '']);
-      rows.push(['设置', '平民爆灯指认', editing ? <select value={settings.civilianAccuseEnabled ? 'on' : 'off'} onChange={(event) => updateLobbyDraft({ civilianAccuseEnabled: event.target.value === 'on' })} aria-label="等待房间平民爆灯指认开关"><option value="off">关闭</option><option value="on">开启</option></select> : (room.civilianAccuseEnabled ? '开启' : '关闭'), '投票阶段每局一次', '', '']);
-      rows.push(['设置', editing ? '保存配置' : '配置操作', editing ? <div className="sheet-inline"><button className="sheet-action" disabled={Boolean(validation)} onClick={() => { props.onSaveLobbySettings(settings); setLobbyEditing(false); }}>保存等待房间设置</button><button onClick={() => { props.onLobbySettingsDraft(null); setLobbyEditing(false); }}>取消修改</button></div> : isOwner ? <button className="sheet-action" onClick={() => { props.onLobbySettingsDraft({ playerLimit: room.playerLimit, undercoverCount: room.undercoverCount, blankCardCount: room.blankCardCount ?? 0, civilianAccuseEnabled: room.civilianAccuseEnabled ?? false }); setLobbyEditing(true); }}>编辑配置</button> : '—', editing ? (validation || '三个配置一次保存，不影响已加入成员') : '房主可编辑，其他玩家只读', '', '']);
+      rows.push(['设置', editing ? '保存配置' : '配置操作', editing ? <div className="sheet-inline"><button className="sheet-action" disabled={Boolean(validation)} onClick={() => { props.onSaveLobbySettings(settings); setLobbyEditing(false); }}>保存等待房间设置</button><button onClick={() => { props.onLobbySettingsDraft(null); setLobbyEditing(false); }}>取消修改</button></div> : isOwner ? <button className="sheet-action" onClick={() => { props.onLobbySettingsDraft({ playerLimit: room.playerLimit, undercoverCount: room.undercoverCount, blankCardCount: room.blankCardCount ?? 0 }); setLobbyEditing(true); }}>编辑配置</button> : '—', editing ? (validation || '三个配置一次保存，不影响已加入成员') : '房主可编辑，其他玩家只读', '', '']);
     }
-    const accuseActorId = props.currentPlayerId ?? eligibleVoters(room)[0]?.id ?? null;
-    if (room.status === 'voting' && room.civilianAccuseEnabled && !room.civilianAccuseUsedBy && accuseActorId && eligibleVoters(room).length > 1 && (!props.remoteMode || accuseActorId === props.currentPlayerId)) {
-      const targetOptions = eligibleVoters(room).filter((player) => player.id !== accuseActorId);
-      rows.push(['指认', '平民爆灯指认', <select key="accuse-target" value={props.accuseTargetId ?? ''} onChange={(event) => props.onAccuseTarget(event.target.value || null)} aria-label="选择平民爆灯指认对象"><option value="">请选择目标…</option>{targetOptions.map((player) => <option value={player.id} key={player.id}>{player.name}</option>)}</select>, '指中卧底或空白牌目标退出；指错则自己退出', props.accuseTargetId ? <button key="accuse-submit" className="sheet-action" onClick={props.onSubmitCivilianAccuse}>确认指认</button> : '—', '每局一次']);
+    const accuseActor = room.players.find((player) => player.id === props.accuseActorId);
+    if (accuseActor && canAccuseUndercover(room, accuseActor.id) && (!props.remoteMode || accuseActor.id === props.currentPlayerId)) {
+      const targetOptions = eligibleVoters(room).filter((player) => player.id !== accuseActor.id);
+      rows.push(['指认', '发起人', accuseActor.name, '指中卧底或空白牌则目标退出；指错则自己退出', '本局仅一次', '']);
+      rows.push(...targetOptions.map((candidate) => [
+        '候选',
+        candidate.name,
+        candidate.id === props.accuseTargetId ? '已选择' : '在场',
+        candidate.id === props.accuseTargetId ? '等待最终确认' : '可指认',
+        <button key={`accuse-${candidate.id}`} className={candidate.id === props.accuseTargetId ? 'sheet-action' : ''} onClick={() => props.onAccuseTarget(candidate.id)} aria-label={`选择 ${candidate.name} 作为平民爆灯指认对象`}>{candidate.id === props.accuseTargetId ? '已选择' : '选择'}</button>,
+        '',
+      ]));
+      rows.push(['指认', '最终操作', props.accuseTargetId ? `将指认：${targetOptions.find((player) => player.id === props.accuseTargetId)?.name ?? '未知成员'}` : '尚未选择目标', '确认后不可撤销，并会清空当前票数', <div key="accuse-actions" className="sheet-inline"><button className="sheet-action" disabled={!props.accuseTargetId} onClick={props.onSubmitCivilianAccuse}>确认指认</button><button onClick={props.onCancelCivilianAccuse}>取消</button></div>, '']);
     }
     return rows;
   };
@@ -464,8 +495,8 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
     ['投票', '存活玩家一人一票', '不能投自己或已经退出的玩家；不公开谁投了谁。', '首次平票只在最高票玩家中复投。', '每轮', ''],
     ['胜负', '系统自动判定', '特殊阵营（卧底＋空白牌）全部退出则平民获胜；特殊阵营人数不低于平民人数则特殊阵营获胜。', '特殊阵营胜利也显示“流程已完成”。', '整局', ''],
     ['空白牌', '没有词语', '根据其他人的描述进行发挥；猜中平民词可为特殊阵营赢得胜利。', '猜错或超时会退出。', '开启时', ''],
-    ['平民爆灯指认', '投票阶段一次', '描述公开后，任一在场玩家可指认目标；指中卧底或空白牌目标退出。', '指错或特殊阵营发起，发起者退出；使用后清空票数。', '开启时', ''],
-    ['主动爆灯', '特殊阵营主动猜词', '描述公开后可猜另一组词；猜错或超时会立即退出。', '每局全局只能成功触发一次。', '开启时', ''],
+    ['平民爆灯指认', '每局一次', '描述公开后，任一在场玩家可指认目标；指中卧底或空白牌目标退出。', '指错或特殊阵营发起，发起者退出；使用后清空票数。', '开启时', ''],
+    ['猜词爆灯', '特殊阵营主动猜词', '描述公开后可猜另一组词；猜错或超时会立即退出。', '每局全局只能成功触发一次。', '开启时', ''],
     ['隐私', '轮流操作', '词语最多显示 4 秒；松开、按 Esc、切走页面或窗口失焦都会遮挡。', '熟人娱乐工具，不防开发者工具作弊。', '整局', ''],
   ];
 
@@ -490,8 +521,8 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
           ['本轮挑战', <select key="challenge-mode" value={props.challengeMode} onChange={(event) => props.onChallengeMode(event.target.value as ChallengeMode)} aria-label="选择谁是卧底每轮公共挑战模式"><option value="off">关闭</option><option value="light">轻度</option><option value="random">随机</option></select>, '关闭 / 轻度 / 随机', '每轮公开；玩家自觉遵守', '已完成', ''],
           ['描述方式', <select key="description-mode" value={props.descriptionRevealMode} onChange={(event) => props.onDescriptionRevealMode(event.target.value as DescriptionRevealMode)} aria-label="选择谁是卧底描述公开方式"><option value="all_submitted">全部提交后公开</option><option value="sequential">按座位顺序公开</option></select>, '统一公开 / 依次公开', '默认统一公开，避免模仿', '已完成', ''],
           ['特殊判定', <select key="comeback" value={props.undercoverComebackEnabled ? 'on' : 'off'} onChange={(event) => props.onUndercoverComebackEnabled(event.target.value === 'on')} aria-label="选择是否开启卧底猜词翻盘"><option value="off">关闭</option><option value="on">开启</option></select>, '关闭 / 开启', '特殊成员方每局一次，猜中立即获胜', '已完成', ''],
-          ['主动爆灯', <select key="buzzer" value={props.buzzerEnabled ? 'on' : 'off'} onChange={(event) => props.onBuzzerEnabled(event.target.value === 'on')} aria-label="选择是否开启谁是卧底主动爆灯"><option value="off">关闭</option><option value="on">开启</option></select>, '关闭 / 开启', '特殊阵营主动猜词，猜错或超时立即退出', '已完成', ''],
-          ['平民爆灯指认', <select key="civilian-accuse" value={props.civilianAccuseEnabled ? 'on' : 'off'} onChange={(event) => props.onCivilianAccuseEnabled(event.target.value === 'on')} aria-label="选择是否开启平民爆灯指认"><option value="off">关闭</option><option value="on">开启</option></select>, '关闭 / 开启', '投票阶段每局一次，指错则发起者退出', '已完成', ''],
+          ['猜词爆灯', <select key="buzzer" value={props.buzzerEnabled ? 'on' : 'off'} onChange={(event) => props.onBuzzerEnabled(event.target.value === 'on')} aria-label="选择是否开启谁是卧底猜词爆灯"><option value="off">关闭</option><option value="on">开启</option></select>, '关闭 / 开启', '特殊阵营主动猜词，猜错或超时立即退出', '已完成', ''],
+          ['平民爆灯指认', <select key="civilian-accuse" value={props.civilianAccuseEnabled ? 'on' : 'off'} onChange={(event) => props.onCivilianAccuseEnabled(event.target.value === 'on')} aria-label="选择是否开启平民爆灯指认"><option value="off">关闭</option><option value="on">开启</option></select>, '关闭 / 开启', '描述公开后每局一次，指错则发起者退出', '已完成', ''],
           ['自动下一轮', <select key="auto-advance" value={props.autoAdvanceEnabled ? 'on' : 'off'} onChange={(event) => props.onAutoAdvanceEnabled(event.target.value === 'on')} aria-label="选择是否自动进入谁是卧底下一轮"><option value="on">开启</option><option value="off">关闭</option></select>, '开启 / 关闭', '结果展示 10 秒后自动进入', '已完成', ''],
           ['字段来源', <div key="word-source" className="sheet-inline"><button className={!props.customWords ? 'is-selected' : ''} onClick={props.onRandomWords} aria-label="随机生成谁是卧底词语">自动</button><button className={props.customWords ? 'is-selected' : ''} onClick={props.onCustomWords} aria-label="自定义谁是卧底词语">手动</button></div>, '', '两项内容需相近', '已完成', ''],
           ['字段 A', <input key="civilian-word" value={props.civilianWord} onChange={(event) => props.onCivilianWord(event.target.value)} placeholder="填写普通成员内容" aria-label="平民词语" />, '', '普通成员内容', props.civilianWord ? '已完成' : '待提交', ''],
@@ -511,7 +542,7 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
           {props.room.status === 'discussion' && isOwner && (props.room.descriptionRevealMode ?? 'all_submitted') === 'sequential' && getDescriptionTurnPlayer(props.room) && <button onClick={props.onSkipDescription}>跳过当前描述</button>}
           {props.room.status === 'result' && isOwner && <><button className="sheet-primary-action" onClick={props.onContinue}>立即进入下一轮</button>{(props.room.autoAdvanceEnabled ?? true) && <button onClick={props.onToggleAutoAdvance}>{props.room.autoAdvancePaused ? '继续自动进入' : '暂停自动进入'}</button>}</>}
           {props.room.status === 'finished' && isOwner && <button className="sheet-primary-action" onClick={props.onRematch} aria-label="更换词语并重新开始谁是卧底游戏">换词再来一局</button>}
-          <span>{props.room.status === 'discussion' ? `${descriptionModeLabel(props.room.descriptionRevealMode ?? 'all_submitted')} · ${Object.keys(getRoundContents(props.room)).length}/${eligibleVoters(props.room).length} 已完成 · ${descriptionsAreRevealed(props.room) ? `${props.votingOpenRemainingSeconds} 秒后自动开放投票` : formatCountdown(props.discussionRemainingSeconds)}` : props.room.status === 'voting' ? `${Object.keys(props.room.votes).length}/${eligibleVoters(props.room).length} 已完成 · 本轮描述保持可见` : props.room.status === 'guessing' ? `${props.room.pendingGuessingReason === 'buzzer' ? '主动爆灯' : '特殊判定'} · ${formatCountdown(props.comebackRemainingSeconds)}` : props.room.status === 'result' && (props.room.autoAdvanceEnabled ?? true) ? (props.room.autoAdvancePaused ? '自动进入已暂停' : `${props.nextRoundRemainingSeconds} 秒后自动进入下一轮`) : neutralizeGameCopy(props.room.status)}</span>
+          <span>{props.room.status === 'discussion' ? `${descriptionModeLabel(props.room.descriptionRevealMode ?? 'all_submitted')} · ${Object.keys(getRoundContents(props.room)).length}/${eligibleVoters(props.room).length} 已完成 · ${descriptionsAreRevealed(props.room) ? `${props.votingOpenRemainingSeconds} 秒后自动开放投票` : formatCountdown(props.discussionRemainingSeconds)}` : props.room.status === 'voting' ? `${Object.keys(props.room.votes).length}/${eligibleVoters(props.room).length} 已完成 · 本轮描述保持可见` : props.room.status === 'guessing' ? `${props.room.pendingGuessingReason === 'buzzer' ? '猜词爆灯' : '特殊判定'} · ${formatCountdown(props.comebackRemainingSeconds)}` : props.room.status === 'result' && (props.room.autoAdvanceEnabled ?? true) ? (props.room.autoAdvancePaused ? '自动进入已暂停' : `${props.nextRoundRemainingSeconds} 秒后自动进入下一轮`) : neutralizeGameCopy(props.room.status)}</span>
         </div>
       : null;
 
@@ -536,7 +567,6 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
           <div><span>操作说明</span><strong id="sheet-current-guide">{workflowGuide.title}</strong><p>{workflowGuide.instruction}</p><b>{workflowGuide.location}</b></div>
         </section>
         {action}
-        {sensitiveVisible && currentAssignment && props.wordReviewPlayer && <aside className="sheet-private-review" role="status"><span>仅 {props.wordReviewPlayer.name} 可见</span><strong>自己的词语：{currentAssignment.word}</strong><button onClick={() => privacy.current?.mask('escape')}>立即隐藏</button></aside>}
         {props.screen === 'game' && props.room?.status === 'discussion' && <aside className="sheet-rule-banner" aria-label="谁是卧底本轮公共表达规则">
           <span>Round_{String(props.room.round).padStart(2, '0')} 公共规则</span>
           <strong>{getRoundChallenge(props.room, props.room.round)?.text ?? '本轮自由表达'}</strong>

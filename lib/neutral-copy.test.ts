@@ -61,7 +61,7 @@ test('卧底获胜的结束标题统一为流程已完成', () => {
 test('补充体验需求在 Excel 与沉浸模式都有操作入口', () => {
   const immersiveSource = readFileSync(new URL('../app/game-app.tsx', import.meta.url), 'utf8');
   const spreadsheetSource = readFileSync(new URL('../app/spreadsheet-mode.tsx', import.meta.url), 'utf8');
-  for (const copy of ['已确认自己的词语', '再次查看自己的词语', '全部提交后公开', '我要爆灯', '暂停自动进入']) {
+  for (const copy of ['已确认自己的词语', '再次查看自己的词语', '全部提交后公开', '我要猜词爆灯', '暂停自动进入']) {
     assert.match(`${immersiveSource}\n${spreadsheetSource}`, new RegExp(copy));
   }
   assert.match(spreadsheetSource, /本轮描述保持可见/);
@@ -70,6 +70,19 @@ test('补充体验需求在 Excel 与沉浸模式都有操作入口', () => {
   assert.match(spreadsheetSource, /player\.alive && !player\.away \? getRoundContents\(room\)\[player\.id\].*'无需提交'/);
   assert.match(`${immersiveSource}\n${spreadsheetSource}`, /暂退/);
   assert.match(`${immersiveSource}\n${spreadsheetSource}`, /退出/);
+});
+
+test('Excel 词语查看只占用 D 列且平民指认是表格内二次确认', () => {
+  const spreadsheetSource = readFileSync(new URL('../app/spreadsheet-mode.tsx', import.meta.url), 'utf8');
+  const styles = readFileSync(new URL('../app/globals.css', import.meta.url), 'utf8');
+  assert.match(spreadsheetSource, />···<\/button>/);
+  assert.match(spreadsheetSource, /props\.wordReviewPlayer\?\.id === player\.id/);
+  assert.doesNotMatch(spreadsheetSource, /sheet-private-review/);
+  assert.doesNotMatch(styles, /sheet-private-review/);
+  assert.match(spreadsheetSource, /发起人/);
+  assert.match(spreadsheetSource, /最终操作/);
+  assert.match(spreadsheetSource, /确认指认/);
+  assert.match(spreadsheetSource, /取消/);
 });
 
 test('版本通知由统一数据生成且当前版本始终位于首项', () => {

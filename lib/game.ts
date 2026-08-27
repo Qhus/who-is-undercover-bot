@@ -605,8 +605,6 @@ export function startNextRound(room: GameRoom, now = Date.now(), random: RandomS
     discussionDeadlineAt: null,
     lastResult: null,
     lastComebackResult: null,
-    civilianAccuseUsedBy: null,
-    lastCivilianAccuseResult: null,
     nextRoundAt: null,
     autoAdvancePaused: false,
     version: room.version,
@@ -862,7 +860,7 @@ export function dealRoom(room: GameRoom, random: RandomSource = Math.random): Ga
 export function updateLobbySettings(
   room: GameRoom,
   actorId: string,
-  settings: { playerLimit: number; undercoverCount: number; blankCardCount: number; civilianAccuseEnabled?: boolean },
+  settings: { playerLimit: number; undercoverCount: number; blankCardCount: number },
   now = Date.now(),
 ): GameRoom {
   if (room.status !== 'lobby') throw new Error('只有等待房间可以修改设置');
@@ -875,7 +873,6 @@ export function updateLobbySettings(
     playerLimit: settings.playerLimit,
     undercoverCount: settings.undercoverCount,
     blankCardCount: settings.blankCardCount,
-    civilianAccuseEnabled: settings.civilianAccuseEnabled ?? room.civilianAccuseEnabled ?? false,
     version: room.version + 1,
     updatedAt: now,
   };
@@ -883,7 +880,7 @@ export function updateLobbySettings(
 
 export function accuseUndercover(room: GameRoom, accuserId: string, targetId: string, now = Date.now()): GameRoom {
   if (room.civilianAccuseUsedBy) throw new Error('本局平民爆灯指认机会已经使用');
-  if (room.status !== 'voting' || !descriptionsAreRevealed(room, now)) throw new Error('当前不能进行平民爆灯指认');
+  if (!canAccuseUndercover(room, accuserId, now)) throw new Error('当前不能进行平民爆灯指认');
   if (!room.civilianAccuseEnabled) throw new Error('本局未开启平民爆灯指认');
   const accuser = room.players.find((player) => player.id === accuserId);
   const target = room.players.find((player) => player.id === targetId);
@@ -910,4 +907,14 @@ export function accuseUndercover(room: GameRoom, accuserId: string, targetId: st
     version: room.version + 1,
     updatedAt: now,
   };
+}
+
+export function canAccuseUndercover(room: GameRoom, playerId: string, now = Date.now()): boolean {
+  const allowedPhase = room.status === 'voting' || (room.status === 'discussion' && descriptionsAreRevealed(room, now));
+  return Boolean(
+    room.civilianAccuseEnabled
+    && !room.civilianAccuseUsedBy
+    && allowedPhase
+    && room.players.some((player) => player.id === playerId && player.alive && !player.away),
+  );
 }

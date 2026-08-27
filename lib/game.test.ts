@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { accuseUndercover, applyBallotResult, assignCards, autoAdvanceDue, autoVotingDue, canBeginVoting, canTriggerBuzzer, createRoom, determineWinner, discussionComplete, eligibleVoters, exitPlayer, getDescriptionTurnPlayer, getRoundChallenge, getRoundContents, getVotingOpensAt, isRoundContentVisible, PLAYER_LIMIT_OPTIONS, RANDOM_CHALLENGE_RULES, resolveBallot, resolveUndercoverComeback, revealDescriptions, selectChallengeRule, setAutoAdvancePaused, setPlayerAway, skipDescription, startDiscussion, startNextRound, startVoting, submitRoundContent, triggerBuzzer, undercoverOptions, updateLobbySettings, type GameRoom, type Player } from './game.ts';
+import { accuseUndercover, applyBallotResult, assignCards, autoAdvanceDue, autoVotingDue, canAccuseUndercover, canBeginVoting, canTriggerBuzzer, createRoom, dealRoom, determineWinner, discussionComplete, eligibleVoters, exitPlayer, getDescriptionTurnPlayer, getRoundChallenge, getRoundContents, getVotingOpensAt, isRoundContentVisible, PLAYER_LIMIT_OPTIONS, RANDOM_CHALLENGE_RULES, resolveBallot, resolveUndercoverComeback, revealDescriptions, selectChallengeRule, setAutoAdvancePaused, setPlayerAway, skipDescription, startDiscussion, startNextRound, startVoting, submitRoundContent, triggerBuzzer, undercoverOptions, updateLobbySettings, type GameRoom, type Player } from './game.ts';
 import { randomWordPairAvoiding, randomWordPairExcluding, WORD_PAIR_ENTRIES, wordPairKey } from './words.ts';
 
 function players(count = 8): Player[] {
@@ -72,8 +72,8 @@ test('空白牌与卧底共享特殊阵营胜负，且退出卧底后空白牌�
 });
 
 test('房主仅可在等待阶段修改总人数、卧底与空白牌配置', () => {
-  const room = createRoom({ ownerId: 'p0', ownerName: '房主', playerLimit: 6, undercoverCount: 1, civilianWord: '甲', undercoverWord: '乙' });
-  const changed = updateLobbySettings(room, 'p0', { playerLimit: 6, undercoverCount: 1, blankCardCount: 1, civilianAccuseEnabled: true });
+  const room = createRoom({ ownerId: 'p0', ownerName: '房主', playerLimit: 6, undercoverCount: 1, civilianWord: '甲', undercoverWord: '乙', civilianAccuseEnabled: true });
+  const changed = updateLobbySettings(room, 'p0', { playerLimit: 6, undercoverCount: 1, blankCardCount: 1 });
   assert.equal(changed.blankCardCount, 1);
   assert.equal(changed.civilianAccuseEnabled, true);
   assert.throws(() => updateLobbySettings(room, 'p1', { playerLimit: 6, undercoverCount: 1, blankCardCount: 0 }), /房主/);
@@ -94,6 +94,47 @@ test('平民爆灯可正确指认卧底或空白牌，错误指认淘汰发起�
   const specialAccuser = accuseUndercover({ ...base, assignments: { ...base.assignments, p1: { role: 'undercover', word: '乙' } } }, 'p1', 'p0');
   assert.equal(specialAccuser.players.find((player) => player.id === 'p1')?.alive, false);
   assert.equal(specialAccuser.players.find((player) => player.id === 'p0')?.alive, true);
+});
+
+test('描述公开后即可平民爆灯，使用机会跨轮保留但再开一局重置', () => {
+  const revealed = { ...votingRoom(), status: 'discussion' as const, civilianAccuseEnabled: true, descriptionsRevealedAt: 1_000 };
+  assert.equal(canAccuseUndercover(revealed, 'p1', 2_000), true);
+  const used = accuseUndercover(revealed, 'p1', 'p2', 2_000);
+  const nextRound = startNextRound({ ...used, status: 'result', winner: null }, 3_000);
+  assert.equal(nextRound.civilianAccuseUsedBy, 'p1');
+  assert.equal(canAccuseUndercover({ ...nextRound, status: 'voting' }, 'p2', 4_000), false);
+  const redealt = dealRoom({ ...nextRound, players: players(6) }, () => 0);
+  assert.equal(redealt.civilianAccuseUsedBy, null);
+  assert.equal(redealt.lastCivilianAccuseResult, null);
+});
+
+test('再开一局延续玩法配置，只重置牌局状态', () => {
+  const room = createRoom({ ownerId: 'p0', ownerName: '房主', playerLimit: 6, undercoverCount: 1, blankCardCount: 1, civilianAccuseEnabled: true, civilianWord: '搬家', undercoverWord: '旅行', challengeMode: 'random', undercoverComebackEnabled: true, descriptionRevealMode: 'sequential', buzzerEnabled: true, autoAdvanceEnabled: false });
+  const redealt = dealRoom({ ...room, players: players(6), civilianAccuseUsedBy: 'p1', buzzerUsedBy: 'p0', undercoverComebackUsed: true }, () => 0);
+  assert.deepEqual({
+    playerLimit: redealt.playerLimit,
+    undercoverCount: redealt.undercoverCount,
+    blankCardCount: redealt.blankCardCount,
+    civilianAccuseEnabled: redealt.civilianAccuseEnabled,
+    challengeMode: redealt.challengeMode,
+    undercoverComebackEnabled: redealt.undercoverComebackEnabled,
+    descriptionRevealMode: redealt.descriptionRevealMode,
+    buzzerEnabled: redealt.buzzerEnabled,
+    autoAdvanceEnabled: redealt.autoAdvanceEnabled,
+  }, {
+    playerLimit: 6,
+    undercoverCount: 1,
+    blankCardCount: 1,
+    civilianAccuseEnabled: true,
+    challengeMode: 'random',
+    undercoverComebackEnabled: true,
+    descriptionRevealMode: 'sequential',
+    buzzerEnabled: true,
+    autoAdvanceEnabled: false,
+  });
+  assert.equal(redealt.civilianAccuseUsedBy, null);
+  assert.equal(redealt.buzzerUsedBy, null);
+  assert.equal(redealt.undercoverComebackUsed, false);
 });
 
 test('词组去重键不包含 PostgreSQL jsonb 禁止的空字符', () => {
@@ -320,6 +361,17 @@ test('平民误爆灯或卧底猜错会退出并恢复原阶段', () => {
   const undercoverFailed = resolveUndercoverComeback(triggerBuzzer(room, 'p0', 4_000), 'p0', '咖啡', 5_000);
   assert.equal(undercoverFailed.winner, 'civilian');
   assert.equal(undercoverFailed.undercoverComebackUsed, true);
+});
+
+test('空白牌可以使用猜词爆灯，猜中平民词时特殊阵营获胜', () => {
+  const roster = players(6);
+  const assignments = { ...votingRoom().assignments, p0: { role: 'blank' as const, word: '' }, p1: { role: 'undercover' as const, word: '豆浆' } };
+  const base = createRoom({ ownerId: 'p0', ownerName: '玩家 1', playerLimit: 6, undercoverCount: 1, blankCardCount: 1, civilianWord: '牛奶', undercoverWord: '豆浆', buzzerEnabled: true });
+  let room = startDiscussion({ ...base, players: roster, assignments }, 1_000);
+  for (const [index, player] of roster.entries()) room = submitRoundContent(room, player.id, `描述${index}`, 2_000 + index);
+  const result = resolveUndercoverComeback(triggerBuzzer(room, 'p0', 4_000), 'p0', '牛奶', 5_000);
+  assert.equal(result.winner, 'undercover');
+  assert.equal(result.buzzerStatus, 'success');
 });
 
 test('首次平票进入只包含并列者的复投', () => {
