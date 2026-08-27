@@ -85,7 +85,7 @@ function Seat({ player }: { player: Player }) {
   return <div className={`seat ${!player.alive ? 'is-out' : player.away ? 'is-away' : ''}`}><span className="seat__number">{String(player.seat).padStart(2, '0')}</span><span className="seat__avatar">{player.name.slice(0, 1)}</span><span className="seat__name">{player.name}</span><span className="seat__status">{!player.alive ? '已出局' : player.away ? '暂退' : player.cardReady ? '已确认' : '在场'}</span></div>;
 }
 
-export default function GameApp() {
+export default function GameApp({ onOpenCourt, onJoinCourt }: { onOpenCourt?: () => void; onJoinCourt?: (code: string, playerId: string) => void }) {
   const [displayMode, setDisplayMode] = useState<DisplayMode>('spreadsheet');
   const [screen, setScreen] = useState<Screen>('home');
   const [room, setRoom] = useState<GameRoom | null>(null);
@@ -387,6 +387,10 @@ export default function GameApp() {
       const rememberedId = window.localStorage.getItem(`undercover-player-${code}`);
       const requestedId = rememberedId ?? makeId('player');
       const joined = await getCloudStore().joinRoom(code, requestedId, joinName.trim());
+      if ((joined.room as unknown as { gameType?: string }).gameType === 'absurd_court') {
+        onJoinCourt?.(code, joined.playerId);
+        return;
+      }
       window.localStorage.setItem(`undercover-player-${code}`, joined.playerId);
       window.localStorage.setItem('undercover-active-remote', JSON.stringify({ code, playerId: joined.playerId }));
       window.localStorage.removeItem('undercover-demo-room');
@@ -624,7 +628,7 @@ export default function GameApp() {
     onPlayerLimit={choosePlayerLimit} onUndercoverCount={setUndercoverCount} onBlankCardCount={setBlankCardCount} onCivilianAccuseEnabled={setCivilianAccuseEnabled} onCivilianWord={(value) => { setCivilianWord(value); setCustomWords(true); }}
     onUndercoverWord={(value) => { setUndercoverWord(value); setCustomWords(true); }} onRandomWords={() => { const [a, b] = randomWordPair(); setCivilianWord(a); setUndercoverWord(b); setCustomWords(false); }}
     onCustomWords={() => { setCustomWords(true); setCivilianWord(''); setUndercoverWord(''); }} onChallengeMode={setChallengeMode} onUndercoverComebackEnabled={setUndercoverComebackEnabled} onDescriptionRevealMode={setDescriptionRevealMode} onBuzzerEnabled={setBuzzerEnabled} onAutoAdvanceEnabled={setAutoAdvanceEnabled} onJoinCode={setJoinCode} onJoinName={setJoinName}
-    onRenamePlayer={renamePlayer} onCandidate={setSelectedCandidateId} onToggleAway={togglePlayerAway} onExitPlayer={permanentlyExitPlayer}
+    onRenamePlayer={renamePlayer} onCandidate={setSelectedCandidateId} onToggleAway={togglePlayerAway} onExitPlayer={permanentlyExitPlayer} onOpenCourt={onOpenCourt}
   />;
 
   return <main className="app-shell">
