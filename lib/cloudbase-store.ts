@@ -76,7 +76,7 @@ export class CloudBaseRoomStore {
     payload?: Record<string, unknown>;
   }): Promise<GameActionResult> {
     await this.connect();
-    const { data, error } = await this.db().rpc('apply_game_action', {
+    const { data, error } = await this.db().rpc('apply_game_action_v31', {
       p_code: input.room.code,
       p_action_id: input.actionId,
       p_action_type: input.actionType,

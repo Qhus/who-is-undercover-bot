@@ -7,7 +7,9 @@ const verification = readFileSync(new URL('../cloudbase/verify.sql', import.meta
 const concurrencyBase = readFileSync(new URL('../cloudbase/concurrency-v2.sql', import.meta.url), 'utf8');
 const concurrencyMigration = readFileSync(new URL('../cloudbase/concurrency-v3-special-roles.sql', import.meta.url), 'utf8');
 const concurrencyHotfix = readFileSync(new URL('../cloudbase/concurrency-v3-1-special-roles-hotfix.sql', import.meta.url), 'utf8');
-const concurrencySource = `${concurrencyBase}\n${concurrencyMigration}\n${concurrencyHotfix}`;
+const versionedRpcMigration = readFileSync(new URL('../cloudbase/concurrency-v3-2-versioned-rpc.sql', import.meta.url), 'utf8');
+const versionedRpcVerification = readFileSync(new URL('../cloudbase/verify-v3-2-versioned-rpc.sql', import.meta.url), 'utf8');
+const concurrencySource = `${concurrencyBase}\n${concurrencyMigration}\n${concurrencyHotfix}\n${versionedRpcMigration}`;
 const storeSource = readFileSync(new URL('./cloudbase-store.ts', import.meta.url), 'utf8');
 const appSource = readFileSync(new URL('../app/game-app.tsx', import.meta.url), 'utf8');
 
@@ -54,10 +56,15 @@ test('并发迁移使用房间锁、操作幂等和受控状态合并', () => {
   assert.match(concurrencyHotfix, /coalesce\(p_payload->>'targetPlayerId', p_payload->>'targetId'\)/i);
   assert.match(concurrencyHotfix, /p_action_type = 'submit_vote'[\s\S]*role' = 'blank'/i);
   assert.match(concurrencyHotfix, /role' in \('undercover','blank'\)/i);
+  assert.match(versionedRpcMigration, /create(?:\s+or\s+replace)? function public\.apply_game_action_v31/i);
+  assert.match(versionedRpcMigration, /public\.apply_game_action\(p_code/i);
+  assert.doesNotMatch(versionedRpcMigration, /public\.apply_game_action_v2\s*\(/i);
+  assert.match(versionedRpcVerification, /versioned RPC exists/i);
+  assert.match(versionedRpcVerification, /targetPlayerId/i);
 });
 
 test('联机客户端使用同一操作 ID 重试并以服务端状态为准', () => {
-  assert.match(storeSource, /rpc\('apply_game_action'/);
+  assert.match(storeSource, /rpc\('apply_game_action_v31'/);
   assert.match(storeSource, /p_action_id:\s*input\.actionId/);
   assert.match(appSource, /const actionId = makeId\('action'\)/);
   assert.ok((appSource.match(/applyGameAction\(\{ room: sourceRoom, actionId, actionType, payload \}\)/g) ?? []).length >= 2);
