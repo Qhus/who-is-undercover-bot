@@ -1,24 +1,226 @@
 'use client';
-import { useCallback, useEffect, useState } from 'react';
-import { assignKeywords, createCourtRoom, nextCourtStatus, startCourtRound, validateDefense, validateVote, type AbsurdCourtRoom } from '@/lib/court-game';
-import { getCloudStore } from '@/lib/cloudbase-store';
+
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { createCourtRoom, validateDefense, validateVote, type AbsurdCourtRoom } from '@/lib/court-game';
+import { getCloudStore, type CourtActionType } from '@/lib/cloudbase-store';
 import { makeId } from '@/lib/game';
 
-type Props = { onBack: () => void; initialCode?: string; initialPlayerId?: string };
-const statusName: Record<string,string>={lobby:'等待成员',defense:'第一轮辩护',defense_reveal:'匿名公开',supplement:'补充解释',voting:'匿名投票',result:'本轮结果',finished:'全局结果'};
-function remaining(deadline:number|null, now:number) { return deadline ? Math.max(0,Math.ceil((deadline-now)/1000)) : 0; }
-export default function CourtSpreadsheetMode({onBack,initialCode,initialPlayerId}:Props) {
- const [name,setName]=useState('房主'),[room,setRoom]=useState<AbsurdCourtRoom|null>(null),[keywords,setKeywords]=useState<string[]>([]),[showKeys,setShowKeys]=useState(false),[defense,setDefense]=useState(''),[supplement,setSupplement]=useState(''),[choices,setChoices]=useState<string[]>([]),[notice,setNotice]=useState(''),[now,setNow]=useState(0),[playerId,setPlayerId]=useState(initialPlayerId??''),[remote,setRemote]=useState(Boolean(initialCode));
- const cloudReady=Boolean(process.env.NEXT_PUBLIC_CLOUDBASE_ENV_ID&&process.env.NEXT_PUBLIC_CLOUDBASE_ACCESS_KEY);
- useEffect(()=>{ if(!initialCode)return; let stop:undefined|(()=>void); void (async()=>{try{const store=getCloudStore(); const found=await store.getCourtRoom(initialCode); if(!found)throw new Error('未找到离谱法堂房间'); setRoom(found); setPlayerId(initialPlayerId??window.localStorage.getItem(`court-player-${initialCode}`)??''); stop=store.watchCourtRoom(initialCode,setRoom,error=>setNotice(error instanceof Error?error.message:'房间同步失败')); const assignment=await store.getMyCourtAssignment(initialCode); setKeywords(assignment?.keywords??[]);}catch(error){setNotice(error instanceof Error?error.message:'房间连接失败')}})(); return()=>stop?.();},[initialCode,initialPlayerId]);
- const apply=useCallback(async(actionType: Parameters<ReturnType<typeof getCloudStore>['applyCourtAction']>[0]['actionType'],payload:Record<string,unknown>={})=>{if(!room||!remote)return null; try{const result=await getCloudStore().applyCourtAction({room,actionId:makeId('court-action'),actionType,payload});setRoom(result.state);if(result.outcome==='stale')setNotice('状态已更新，请重试');return result.state;}catch(error){setNotice(error instanceof Error?error.message:'操作失败');return null;}},[room,remote]);
- useEffect(()=>{const tick=()=>{const time=Date.now();setNow(time); if(remote&&room?.phaseDeadlineAt&&time>=room.phaseDeadlineAt&&!['lobby','finished'].includes(room.status))void apply('advance_court_phase'); else if(!remote)setRoom(old=>old?.phaseDeadlineAt&&time>=old.phaseDeadlineAt&&!['lobby','finished'].includes(old.status)?nextCourtStatus(old,time):old)};tick();const t=window.setInterval(tick,700); const hide=()=>setShowKeys(false); window.addEventListener('blur',hide); window.addEventListener('keydown',e=>{if(e.key==='Escape')hide()}); return()=>{clearInterval(t);window.removeEventListener('blur',hide)}},[room,remote,apply]);
- const currentId=playerId||(room?.ownerId??''); const myEntry=room?.publicEntries.find(e=>e.submissionId===`s-${currentId}-${room.round}`)??null; const voteNeeded=room?room.expectedPlayerIds.length>=5?2:1:1;
- const start=()=>{let next=createCourtRoom(name); if(cloudReady){void (async()=>{try{await getCloudStore().createCourtRoom(next);window.localStorage.setItem(`court-player-${next.code}`,next.ownerId);setPlayerId(next.ownerId);setRemote(true);setRoom(next);setNotice(`联机表已创建：${next.code}。等待至少 3 人后由房主开始。`); }catch(error){setNotice(error instanceof Error?error.message:'创建联机房间失败')}})();return;} next.players.push({id:'demo-b',name:'成员乙',seat:2,alive:true,cardReady:false},{id:'demo-c',name:'成员丙',seat:3,alive:true,cardReady:false}); next=startCourtRound(next); setKeywords(assignKeywords(next.expectedPlayerIds)[next.ownerId]); setRoom(next); setNotice('本机演示已开始；配置 CloudBase 后可创建联机房间。');};
- const startRound=()=>{if(!room)return;if(!remote){setRoom(startCourtRound(room));return;}void apply('start_court_game').then(async next=>{if(next){const assignment=await getCloudStore().getMyCourtAssignment(next.code);setKeywords(assignment?.keywords??[]);}});};
- const submitDefense=()=>{if(!room)return;try{validateDefense(defense,keywords); if(remote){void apply('submit_court_defense',{defense:defense.trim()}).then(next=>{if(next){setDefense('');setShowKeys(false);setNotice('已私密提交，公开前不会显示作者或关键词。')}});return;} const entry={submissionId:`s-${currentId}-${room.round}`,displayCode:`陈述 ${String.fromCharCode(65+room.publicEntries.length)}`,defense:defense.trim(),supplement:null}; const next={...room,publicEntries:[...room.publicEntries,entry],defenseSubmittedCount:room.defenseSubmittedCount+1,version:room.version+1}; setRoom(next.defenseSubmittedCount>=next.expectedPlayerIds.length?nextCourtStatus(next,Date.now()):next);setDefense('');setShowKeys(false);setNotice('已私密提交，公开前不会显示作者或关键词。');}catch(e){setNotice(e instanceof Error?e.message:'提交失败')}};
- const submitSupplement=()=>{if(!room||!myEntry)return;const text=supplement.trim();if(text.length>30){setNotice('补充说明不能超过 30 字');return}if(remote){void apply('submit_court_supplement',{supplement:text}).then(next=>next&&setSupplement(''));return;}const entries=room.publicEntries.map(e=>e.submissionId===myEntry.submissionId?{...e,supplement:text||null}:e);const next={...room,publicEntries:entries,supplementSubmittedCount:room.supplementSubmittedCount+1,version:room.version+1};setRoom(next.supplementSubmittedCount>=next.publicEntries.length?nextCourtStatus(next,Date.now()):next);setSupplement('');};
- const submitVote=()=>{if(!room)return;try{validateVote(myEntry?.submissionId??null,choices,room.publicEntries.map(e=>e.submissionId),room.expectedPlayerIds.length);if(remote){void apply('submit_court_vote',{submissionIds:choices}).then(next=>{if(next){setChoices([]);setNotice('匿名选票已提交。')}});return;} const scores={...room.totalScores}; choices.forEach(id=>{const entry=room.publicEntries.find(e=>e.submissionId===id);if(entry)scores[entry.submissionId]=(scores[entry.submissionId]??0)+1}); const next={...room,totalScores:scores,voteSubmittedCount:room.voteSubmittedCount+1,version:room.version+1};setRoom(next.voteSubmittedCount>=next.expectedPlayerIds.length?nextCourtStatus(next,Date.now()):next);setChoices([]);setNotice('匿名选票已提交。');}catch(e){setNotice(e instanceof Error?e.message:'投票失败')}};
- const entries=room?.publicEntries??[];
- return <main className="sheet-app court-sheet"><header className="sheet-titlebar"><button className="sheet-filemark" onClick={onBack}>表</button><div><strong>{room?`情况说明表 · ${room.code}`:'协作数据表 · 模板中心'}</strong><span>离谱法堂 · 实验玩法</span></div><div className="sheet-title-actions"><button onClick={onBack}>模板中心</button>{room&&<button onClick={()=>navigator.clipboard?.writeText(room.code)}>复制编号</button>}</div></header><nav className="sheet-ribbon"><button className="is-current">开始</button><button>数据</button><button>视图</button><span/><button onClick={()=>setShowKeys(false)}>隐藏敏感内容</button></nav><div className="sheet-formula"><span className="sheet-namebox">A1</span><span className="sheet-fx">fx</span><output>{room?`${statusName[room.status]} · 第 ${room.round}/3 轮 · ${remaining(room.phaseDeadlineAt,now)} 秒`:'选择模板后开始'}</output></div><section className="sheet-workspace"><div className="sheet-canvas"><div className="sheet-commandbar">{!room?<><span>填写称呼后新建情况说明表</span><button className="sheet-primary-action" onClick={start}>{cloudReady?'创建联机情况说明表':'创建本机演示表'}</button></>:room.status==='lobby'?<button className="sheet-primary-action" onClick={startRound}>开始第一轮</button>:<span>系统自动推进 · {remaining(room.phaseDeadlineAt,now)} 秒</span>}</div><div className="sheet-grid-scroll"><table className="sheet-grid"><thead><tr><th/><th>A</th><th>B</th><th>C</th><th>D</th><th>E</th></tr></thead><tbody>{!room?<><tr><th>1</th><td>工作簿模板</td><td>娱乐玩法</td><td>人数</td><td>状态</td><td>操作</td></tr><tr><th>2</th><td>情况说明表</td><td>离谱法堂</td><td>3–8 人</td><td>实验</td><td><input value={name} onChange={e=>setName(e.target.value.slice(0,12))} aria-label="房主称呼"/></td></tr><tr><th>3</th><td>成员识别表</td><td>谁是卧底</td><td>3–10 人</td><td>正式</td><td><button onClick={onBack}>返回</button></td></tr></>:<><tr><th>1</th><td>案件登记</td><td>案件编号</td><td>罪名</td><td>阶段</td><td>提交进度</td></tr><tr><th>2</th><td>{room.caseId??'—'}</td><td>Round {room.round}</td><td>{room.caseText??'等待开始'}</td><td>{statusName[room.status]}</td><td>{room.status==='defense'?`${room.defenseSubmittedCount}/${room.expectedPlayerIds.length}`:room.status==='voting'?`${room.voteSubmittedCount}/${room.expectedPlayerIds.length}`:'自动推进'}</td></tr><tr><th>4</th><td>私密附件</td><td>本人关键词</td><td colSpan={2}>{showKeys?keywords.join('、'):'···'}</td><td><button onClick={()=>setShowKeys(v=>!v)}>{showKeys?'遮挡':'查看'}</button></td></tr>{room.status==='defense'&&<tr><th>5</th><td>陈述记录</td><td colSpan={3}><input value={defense} onChange={e=>setDefense(e.target.value.slice(0,40))} placeholder="同时包含两个关键词的辩护（最多40字）" aria-label="辩护输入"/><small>{defense.length}/40 · {keywords.filter(k=>defense.includes(k)).length}/2 关键词命中</small></td><td><button className="sheet-action" onClick={submitDefense}>提交辩护</button></td></tr>}{room.status==='defense_reveal'&&<tr><th>5</th><td>陈述记录</td><td colSpan={4}>{entries.map(e=><p key={e.submissionId}><b>{e.displayCode}</b>：{e.defense}</p>)}</td></tr>}{room.status==='supplement'&&<><tr><th>5</th><td>突发证据</td><td colSpan={4}>{room.twistText}</td></tr><tr><th>6</th><td>补充解释</td><td colSpan={3}><input value={supplement} onChange={e=>setSupplement(e.target.value.slice(0,30))} placeholder="补充说明，最多30字"/></td><td><button onClick={submitSupplement} disabled={!myEntry}>提交</button></td></tr></>}{room.status==='voting'&&<>{entries.map((e,i)=><tr key={e.submissionId}><th>{6+i}</th><td>{e.displayCode}{e.submissionId===myEntry?.submissionId?'（你的陈述）':''}</td><td colSpan={2}>{e.defense}<br/>{e.supplement??'未补充说明'}</td><td>{e.submissionId!==myEntry?.submissionId&&<button onClick={()=>setChoices(c=>c.includes(e.submissionId)?c.filter(x=>x!==e.submissionId):c.length<voteNeeded?[...c,e.submissionId]:c)}>{choices.includes(e.submissionId)?'已选择':'选择'}</button>}</td></tr>)}<tr><th>20</th><td>匿名投票</td><td colSpan={3}>需选 {voteNeeded} 条不同陈述；不显示实时票型。</td><td><button className="sheet-action" onClick={submitVote}>提交选票</button></td></tr></>}{['result','finished'].includes(room.status)&&<><tr><th>5</th><td>判决统计</td><td colSpan={3}>累计得票：{Object.entries(room.totalScores).map(([id,v])=>`${entries.find(e=>e.submissionId===id)?.displayCode??id} ${v}票`).join('；')||'尚无票数'}</td><td>{room.status==='finished'?'三轮已完成':'10 秒后下一轮'}</td></tr><tr><th>6</th><td>公开说明</td><td colSpan={4}>结果阶段由服务端公开作者映射；公开前不保存于公共状态。</td></tr></>}</>}</tbody></table></div>{notice&&<div className="sheet-toast sheet-toast--info">{notice}</div>}</div></section><footer className="sheet-tabs"><button>＋</button><button className="is-current">成员列表</button><button>案件登记</button><button>私密附件</button><button>陈述记录</button><button>判决统计</button><button>玩法说明</button><button>操作记录</button></footer></main>;
+const statusName: Record<string, string> = {
+  lobby: '等待成员', defense: '匿名辩护', defense_reveal: '匿名公开', supplement: '补充圆谎',
+  voting: '评选最佳狡辩', result: '本轮结果', finished: '最终排行',
+};
+
+function remaining(deadline: number | null, now: number) {
+  return deadline ? Math.max(0, Math.ceil((deadline - now) / 1000)) : 0;
+}
+
+export default function CourtSpreadsheetMode() {
+  const [ownerName, setOwnerName] = useState('');
+  const [joinName, setJoinName] = useState('');
+  const [joinCode, setJoinCode] = useState('');
+  const [room, setRoom] = useState<AbsurdCourtRoom | null>(null);
+  const [playerId, setPlayerId] = useState('');
+  const [keywords, setKeywords] = useState<string[]>([]);
+  const [keywordRound, setKeywordRound] = useState(0);
+  const [showKeys, setShowKeys] = useState(false);
+  const [defense, setDefense] = useState('');
+  const [supplement, setSupplement] = useState('');
+  const [choices, setChoices] = useState<string[]>([]);
+  const [notice, setNotice] = useState('欢迎进入离谱法堂：这里不找卧底，只评选最佳狡辩。');
+  const [busy, setBusy] = useState(false);
+  const [now, setNow] = useState(0);
+  const advancing = useRef(false);
+  const cloudReady = Boolean(process.env.NEXT_PUBLIC_CLOUDBASE_ENV_ID && process.env.NEXT_PUBLIC_CLOUDBASE_ACCESS_KEY);
+
+  const loadAssignment = useCallback(async (code: string, round: number) => {
+    if (round <= 0) return;
+    const assignment = await getCloudStore().getMyCourtAssignment(code);
+    setKeywords(assignment?.round === round ? assignment.keywords : []);
+    setKeywordRound(assignment?.round ?? 0);
+    setShowKeys(false);
+  }, []);
+
+  useEffect(() => {
+    if (!cloudReady) return;
+    const saved = window.localStorage.getItem('court-active-remote');
+    if (!saved) return;
+    void (async () => {
+      try {
+        const active = JSON.parse(saved) as { code: string; playerId: string };
+        const found = await getCloudStore().getCourtRoom(active.code);
+        if (!found) return;
+        setPlayerId(active.playerId);
+        setRoom(found);
+        if (found.status !== 'lobby') await loadAssignment(found.code, found.round);
+        setNotice('已恢复上次打开的离谱法堂房间。');
+      } catch {
+        setNotice('上次房间暂时无法恢复，可重新输入房间编号加入。');
+      }
+    })();
+  }, [cloudReady, loadAssignment]);
+
+  const activeCode = room?.code ?? '';
+
+  useEffect(() => {
+    if (!activeCode || !playerId || !cloudReady) return;
+    return getCloudStore().watchCourtRoom(activeCode, (next) => {
+      setRoom(next);
+      if (next.status === 'defense' && next.round !== keywordRound) {
+        void loadAssignment(next.code, next.round).catch(() => setNotice('本轮私密关键词读取失败，请刷新后重试。'));
+      }
+    }, (error) => setNotice(error instanceof Error ? error.message : '房间同步失败'));
+  }, [activeCode, cloudReady, keywordRound, loadAssignment, playerId]);
+
+  const apply = useCallback(async (actionType: CourtActionType, payload: Record<string, unknown> = {}) => {
+    if (!room) return null;
+    try {
+      const result = await getCloudStore().applyCourtAction({ room, actionId: makeId('court-action'), actionType, payload });
+      setRoom(result.state);
+      if (result.outcome === 'stale') setNotice('房间状态已经更新，请重新操作。');
+      return result.state;
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : '操作失败');
+      return null;
+    }
+  }, [room]);
+
+  useEffect(() => {
+    const tick = () => {
+      const time = Date.now();
+      setNow(time);
+      if (!room?.phaseDeadlineAt || time < room.phaseDeadlineAt || ['lobby', 'finished'].includes(room.status) || advancing.current) return;
+      advancing.current = true;
+      void apply('advance_court_phase').finally(() => { advancing.current = false; });
+    };
+    tick();
+    const timer = window.setInterval(tick, 700);
+    const hide = () => setShowKeys(false);
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') hide(); };
+    window.addEventListener('blur', hide);
+    window.addEventListener('keydown', escape);
+    return () => { window.clearInterval(timer); window.removeEventListener('blur', hide); window.removeEventListener('keydown', escape); };
+  }, [apply, room]);
+
+  const remember = (code: string, id: string) => {
+    window.localStorage.setItem(`court-player-${code}`, id);
+    window.localStorage.setItem('court-active-remote', JSON.stringify({ code, playerId: id }));
+  };
+
+  const createRemote = async () => {
+    if (!cloudReady) return setNotice('测试站尚未配置 CloudBase 环境变量。');
+    if (!ownerName.trim()) return setNotice('请先填写你的称呼。');
+    setBusy(true);
+    try {
+      const next = createCourtRoom(ownerName);
+      await getCloudStore().createCourtRoom(next);
+      remember(next.code, next.ownerId);
+      setPlayerId(next.ownerId);
+      setRoom(next);
+      setNotice(`房间 ${next.code} 已创建。请朋友从离谱法堂页面输入编号加入。`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : '创建房间失败');
+    } finally { setBusy(false); }
+  };
+
+  const joinRemote = async () => {
+    const code = joinCode.trim().toUpperCase();
+    if (!cloudReady) return setNotice('测试站尚未配置 CloudBase 环境变量。');
+    if (!joinName.trim() || code.length !== 6) return setNotice('请填写称呼和六位房间编号。');
+    setBusy(true);
+    try {
+      const requestedId = window.localStorage.getItem(`court-player-${code}`) ?? makeId('court-player');
+      const joined = await getCloudStore().joinRoom(code, requestedId, joinName.trim());
+      if ((joined.room as unknown as { gameType?: string }).gameType !== 'absurd_court') throw new Error('该编号属于其他游戏房间');
+      const next = joined.room as unknown as AbsurdCourtRoom;
+      remember(code, joined.playerId);
+      setPlayerId(joined.playerId);
+      setRoom(next);
+      if (next.status !== 'lobby') await loadAssignment(code, next.round);
+      setNotice(`已加入房间 ${code}。`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : '加入房间失败');
+    } finally { setBusy(false); }
+  };
+
+  const leaveView = () => {
+    window.localStorage.removeItem('court-active-remote');
+    setRoom(null); setPlayerId(''); setKeywords([]); setKeywordRound(0); setShowKeys(false);
+    setDefense(''); setSupplement(''); setChoices([]); setNotice('已返回离谱法堂首页。');
+  };
+
+  const startRound = () => {
+    void apply('start_court_game').then(async (next) => {
+      if (next) await loadAssignment(next.code, next.round);
+    });
+  };
+
+  const currentId = playerId;
+  const myEntry = room?.publicEntries.find((entry) => entry.submissionId === `s-${currentId}-${room.round}`) ?? null;
+  const entries = room?.publicEntries ?? [];
+  const voteNeeded = room && room.expectedPlayerIds.length >= 5 ? 2 : 1;
+  const isOwner = room?.ownerId === playerId;
+
+  const submitDefense = () => {
+    if (!room) return;
+    try {
+      validateDefense(defense, keywords);
+      void apply('submit_court_defense', { defense: defense.trim() }).then((next) => {
+        if (next) { setDefense(''); setShowKeys(false); setNotice('已匿名提交，公开前其他人看不到正文和关键词。'); }
+      });
+    } catch (error) { setNotice(error instanceof Error ? error.message : '提交失败'); }
+  };
+
+  const submitSupplement = () => {
+    const text = supplement.trim();
+    if (text.length > 30) return setNotice('补充说明不能超过 30 字。');
+    void apply('submit_court_supplement', { supplement: text }).then((next) => { if (next) setSupplement(''); });
+  };
+
+  const submitVote = () => {
+    if (!room) return;
+    try {
+      validateVote(myEntry?.submissionId ?? null, choices, entries.map((entry) => entry.submissionId), room.expectedPlayerIds.length);
+      void apply('submit_court_vote', { submissionIds: choices }).then((next) => {
+        if (next) { setChoices([]); setNotice('选票已提交：等待评选本轮最佳狡辩。'); }
+      });
+    } catch (error) { setNotice(error instanceof Error ? error.message : '投票失败'); }
+  };
+
+  return <main className="sheet-app court-sheet">
+    <header className="sheet-titlebar">
+      <button className="sheet-filemark" onClick={leaveView}>表</button>
+      <div><strong>{room ? `离谱法堂 · ${room.code}` : '离谱法堂 · 案件管理工作簿'}</strong><span>独立游戏 · 匿名狡辩评选</span></div>
+      <div className="sheet-title-actions">{room && <><button onClick={() => navigator.clipboard?.writeText(room.code)}>复制房间编号</button><button onClick={leaveView}>返回首页</button></>}</div>
+    </header>
+    <nav className="sheet-ribbon"><button className="is-current">开始</button><button>案件</button><button>评选</button><span /><button onClick={() => setShowKeys(false)}>隐藏私密附件</button></nav>
+    <div className="sheet-formula"><span className="sheet-namebox">A1</span><span className="sheet-fx">fx</span><output>{room ? `${statusName[room.status]} · 第 ${room.round}/3 轮 · ${remaining(room.phaseDeadlineAt, now)} 秒` : '不是找卧底，是选出最会圆谎的人'}</output></div>
+    <section className="sheet-workspace"><div className="sheet-canvas">
+      <div className="sheet-commandbar">
+        {!room ? <span>独立游戏入口 · 创建新房间或加入朋友的离谱法堂</span> : room.status === 'lobby' ? <>{isOwner ? <button className="sheet-primary-action" disabled={room.players.length < 3 || busy} onClick={startRound}>开始第一轮</button> : <span>等待房主开始</span>}<span>当前 {room.players.length}/8 人，至少 3 人开始</span></> : <span>系统自动推进 · 当前阶段剩余 {remaining(room.phaseDeadlineAt, now)} 秒</span>}
+      </div>
+      <div className="sheet-grid-scroll"><table className="sheet-grid">
+        <thead><tr><th /><th>A</th><th>B</th><th>C</th><th>D</th><th>E</th><th>F</th></tr></thead>
+        <tbody>{!room ? <>
+          <tr><th>1</th><td>操作类型</td><td>你的称呼</td><td>六位房间编号</td><td>人数</td><td>执行</td><td>说明</td></tr>
+          <tr><th>2</th><td>创建离谱法堂</td><td><input value={ownerName} onChange={(event) => setOwnerName(event.target.value.slice(0, 12))} placeholder="填写房主称呼" /></td><td>自动生成</td><td>3–8 人</td><td><button className="sheet-action" disabled={busy} onClick={createRemote}>创建联机房间</button></td><td>房主只需开始一次</td></tr>
+          <tr><th>3</th><td>加入离谱法堂</td><td><input value={joinName} onChange={(event) => setJoinName(event.target.value.slice(0, 12))} placeholder="填写你的称呼" /></td><td><input value={joinCode} maxLength={6} onChange={(event) => setJoinCode(event.target.value.toUpperCase().replace(/[^A-Z2-9]/g, ''))} placeholder="例如 Q7K2P8" /></td><td>自动识别</td><td><button className="sheet-action" disabled={busy} onClick={joinRemote}>加入房间</button></td><td>只接受离谱法堂编号</td></tr>
+          <tr><th>5</th><td>怎么玩</td><td colSpan={5}>同一离谱罪名 → 使用两个私密关键词匿名辩护 → 公布突发证据 → 补充圆谎 → 匿名投票选最佳狡辩</td></tr>
+          <tr><th>6</th><td>投票标准</td><td colSpan={5}>不是判断谁可疑；请把票投给最精彩、最合理或最离谱地把话圆回来的人。</td></tr>
+        </> : <>
+          <tr><th>1</th><td>成员列表</td><td>座位</td><td>称呼</td><td>状态</td><td colSpan={2}>房间编号 {room.code}</td></tr>
+          {room.status === 'lobby' && room.players.map((player, index) => <tr key={player.id}><th>{2 + index}</th><td>{player.id === room.ownerId ? '房主' : '成员'}</td><td>{player.seat}</td><td>{player.name}{player.id === playerId ? '（你）' : ''}</td><td>{player.away ? '暂离' : '已加入'}</td><td colSpan={2}>等待开始</td></tr>)}
+          {room.status !== 'lobby' && <><tr><th>2</th><td>案件登记</td><td>第 {room.round}/3 轮</td><td colSpan={2}>{room.caseText ?? '等待案件'}</td><td>{statusName[room.status]}</td><td>{room.status === 'defense' ? `${room.defenseSubmittedCount}/${room.expectedPlayerIds.length} 已辩护` : room.status === 'voting' ? `${room.voteSubmittedCount}/${room.expectedPlayerIds.length} 已投票` : '自动推进'}</td></tr>
+          <tr><th>4</th><td>私密附件</td><td>本人关键词</td><td colSpan={3}>{showKeys ? keywords.join('、') : '···'}</td><td><button onClick={() => setShowKeys((value) => !value)}>{showKeys ? '遮挡' : '查看'}</button></td></tr>
+          {room.status === 'defense' && <tr><th>5</th><td>匿名辩护</td><td colSpan={4}><input value={defense} onChange={(event) => setDefense(event.target.value.slice(0, 40))} placeholder="同时自然包含两个关键词，最多 40 字" /><small>{defense.length}/40 · 命中 {keywords.filter((keyword) => defense.includes(keyword)).length}/2</small></td><td><button className="sheet-action" onClick={submitDefense}>匿名提交</button></td></tr>}
+          {room.status === 'defense_reveal' && <tr><th>5</th><td>匿名陈述</td><td colSpan={5}>{entries.map((entry) => <p key={entry.submissionId}><b>{entry.displayCode}</b>：{entry.defense}</p>)}</td></tr>}
+          {room.status === 'supplement' && <><tr><th>5</th><td>突发证据</td><td colSpan={5}>{room.twistText}</td></tr><tr><th>6</th><td>补充圆谎</td><td colSpan={4}><input value={supplement} onChange={(event) => setSupplement(event.target.value.slice(0, 30))} placeholder="继续把话圆回来，最多 30 字" /></td><td><button className="sheet-action" disabled={!myEntry} onClick={submitSupplement}>提交补充</button></td></tr></>}
+          {room.status === 'voting' && <>{entries.map((entry, index) => <tr key={entry.submissionId}><th>{6 + index}</th><td>{entry.displayCode}{entry.submissionId === myEntry?.submissionId ? '（你的陈述）' : ''}</td><td colSpan={4}>{entry.defense}<br />{entry.supplement ?? '未补充说明'}</td><td>{entry.submissionId !== myEntry?.submissionId && <button onClick={() => setChoices((current) => current.includes(entry.submissionId) ? current.filter((id) => id !== entry.submissionId) : current.length < voteNeeded ? [...current, entry.submissionId] : current)}>{choices.includes(entry.submissionId) ? '已选择' : '投给这条'}</button>}</td></tr>)}<tr><th>20</th><td>最佳狡辩评选</td><td colSpan={4}>请选择 {voteNeeded} 条最精彩的陈述；不能投自己，不显示实时票型。</td><td><button className="sheet-action" onClick={submitVote}>提交选票</button></td></tr></>}
+          {['result', 'finished'].includes(room.status) && <><tr><th>5</th><td>判决统计</td><td colSpan={4}>{room.players.map((player) => `${player.name} ${room.totalScores[player.id] ?? 0} 票`).join('；')}</td><td>{room.status === 'finished' ? '三轮完成' : '10 秒后进入下一轮'}</td></tr><tr><th>6</th><td>评选说明</td><td colSpan={5}>最高票获得“本轮最佳狡辩”；并列时共享称号。</td></tr></>}
+          </>}</>}
+        </tbody>
+      </table></div>
+      {notice && <div className="sheet-toast sheet-toast--info">{notice}</div>}
+    </div></section>
+    <footer className="sheet-tabs"><button>＋</button><button className="is-current">法堂首页</button><button>成员列表</button><button>案件登记</button><button>私密附件</button><button>匿名陈述</button><button>判决统计</button><button>玩法说明</button></footer>
+  </main>;
 }

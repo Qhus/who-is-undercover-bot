@@ -108,7 +108,6 @@ export interface SpreadsheetModeProps {
   onCandidate: (id: string | null) => void;
   onToggleAway: (playerId: string) => void;
   onExitPlayer: (playerId: string) => void;
-  onOpenCourt?: () => void;
 }
 
 const columns = ['A', 'B', 'C', 'D', 'E', 'F'];
@@ -507,7 +506,6 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
     ? [
         ['操作', '称呼', '协作表编号', '状态', '执行', '备注'],
         ['创建房间（房主入口）', props.ownerName, '自动生成', '可用', <button key="create" className="sheet-action" onClick={props.onOpenSetup} aria-label="创建谁是卧底游戏房间">打开配置</button>, '成员识别表 · 3–10 人'],
-        ['情况说明表（实验）', '离谱法堂', '自动生成', '3–8 人', <button key="court" className="sheet-action" onClick={props.onOpenCourt} aria-label="创建离谱法堂游戏房间">创建房间</button>, '统一入口 · 匿名辩护与投票'],
         ['玩法与完整规则', '新手推荐先读', '六步游玩流程', '核心规则', <button key="guide" className="sheet-action" onClick={openGuideSheet} aria-label="在表格中查看谁是卧底游玩步骤与核心规则">查看说明</button>, '开局前可随时查看'],
         ['加入房间（玩家入口）', <input key="join-name" value={props.joinName} onChange={(event) => props.onJoinName(event.target.value.slice(0, 12))} placeholder="① 填写你的称呼" aria-label="加入游戏时使用的玩家称呼" />, <input key="join-code" value={props.joinCode} onChange={(event) => props.onJoinCode(event.target.value.toUpperCase().replace(/[^A-Z2-9]/g, ''))} maxLength={6} placeholder="② 填写六位编号" aria-label="谁是卧底游戏房间码" />, props.cloudReady ? '联机可用' : '本机可用', <button key="join" className="sheet-action" disabled={props.busy} onClick={props.onJoin} aria-label="加入谁是卧底游戏房间">③ 加入</button>, 'A4 · 按 B4 → C4 → E4'],
         ['', '', '', '', '', ''],

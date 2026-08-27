@@ -103,3 +103,17 @@ test('Excel 主界面使用非弹窗通知栏并将沉浸模式降级为兼容�
   assert.doesNotMatch(notificationStyles, /position:\s*fixed/);
   assert.doesNotMatch(spreadsheetSource, /aria-modal="true"[^]*sheet-notification-panel/);
 });
+
+test('离谱法堂与谁是卧底使用独立页面和独立入口', () => {
+  const rootPage = readFileSync(new URL('../app/page.tsx', import.meta.url), 'utf8');
+  const undercoverSheet = readFileSync(new URL('../app/spreadsheet-mode.tsx', import.meta.url), 'utf8');
+  const courtPage = readFileSync(new URL('../app/court/page.tsx', import.meta.url), 'utf8');
+  const courtApp = readFileSync(new URL('../app/court-spreadsheet-mode.tsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(rootPage, /CourtSpreadsheetMode|onOpenCourt|onJoinCourt/);
+  assert.doesNotMatch(undercoverSheet, /离谱法堂|情况说明表（实验）/);
+  assert.match(courtPage, /CourtSpreadsheetMode/);
+  assert.match(courtApp, /创建离谱法堂/);
+  assert.match(courtApp, /加入离谱法堂/);
+  assert.match(courtApp, /不是找卧底，是选出最会圆谎的人/);
+  assert.doesNotMatch(courtApp, /demo-b|demo-c|创建本机演示/);
+});

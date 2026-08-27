@@ -8,13 +8,6 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
-    version: 'V1.4',
-    date: '2026-08-27',
-    title: '离谱法堂联机 MVP',
-    summary: '模板中心新增三轮匿名辩护玩法，使用独立私密数据与受控并发接口。',
-    details: ['统一入口可创建“情况说明表”，并通过六位编号识别玩法。', '支持私密关键词、匿名陈述、公共突发证据、补充说明与三轮累计投票。', '离谱法堂使用独立状态机和 V4 迁移，不修改谁是卧底的 V2/V3 数据路径。'],
-  },
-  {
     version: 'V1.3',
     date: '2026-08-27',
     title: '特殊角色与表格交互修复',
