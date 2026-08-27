@@ -61,6 +61,8 @@ test('并发迁移使用房间锁、操作幂等和受控状态合并', () => {
   assert.doesNotMatch(versionedRpcMigration, /public\.apply_game_action_v2\s*\(/i);
   assert.match(versionedRpcVerification, /versioned RPC exists/i);
   assert.match(versionedRpcVerification, /targetPlayerId/i);
+  assert.match(versionedRpcVerification, /actual as ok/i);
+  assert.doesNotMatch(versionedRpcVerification, /expected\s*=\s*actual/i);
 });
 
 test('联机客户端使用同一操作 ID 重试并以服务端状态为准', () => {

@@ -1,6 +1,3 @@
--- V3.2 版本化裁判 RPC 只读核验。
--- 在执行 concurrency-v3-2-versioned-rpc.sql 后运行；每行 ok 均应为 true。
-
 with checks(expected, actual) as (
   values
     ('versioned RPC exists',
@@ -19,4 +16,4 @@ with checks(expected, actual) as (
     ('versioned RPC accepts targetPlayerId',
       position('targetPlayerId' in pg_get_functiondef('public.apply_game_action_v31(text,text,text,text,integer,integer,bigint,jsonb)'::regprocedure)) > 0)
 )
-select expected, actual, expected = actual as ok from checks;
+select expected, actual, actual as ok from checks;
