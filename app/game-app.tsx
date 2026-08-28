@@ -156,10 +156,13 @@ export default function GameApp() {
   }, [revealed]);
 
   useEffect(() => {
+    const invitedCode = new URLSearchParams(window.location.search).get('room')?.toUpperCase().replace(/[^A-Z2-9]/g, '').slice(0, 6) ?? '';
+    if (invitedCode) window.queueMicrotask(() => setJoinCode(invitedCode));
     const activeRemote = window.localStorage.getItem('undercover-active-remote');
     if (activeRemote && cloudReady) {
       try {
         const { code, playerId } = JSON.parse(activeRemote) as { code: string; playerId: string };
+        if (invitedCode && code !== invitedCode) return;
         getCloudStore().getRoom(code).then((restored) => {
           if (restored) { setRoom(restored); setCurrentPlayerId(playerId); setRemoteMode(true); setScreen('game'); }
         }).catch(() => window.localStorage.removeItem('undercover-active-remote'));
@@ -608,6 +611,7 @@ export default function GameApp() {
     setPrivacyGate(true);
   }
   async function copyRoomCode() { if (!room) return; try { await navigator.clipboard.writeText(room.code); } catch { /* clipboard may be unavailable */ } setNotice({ kind: 'info', text: `房间码 ${room.code} 已复制` }); }
+  async function copyInviteLink() { if (!room) return; const invite = new URL(window.location.href); invite.search = ''; invite.hash = ''; invite.searchParams.set('room', room.code); try { await navigator.clipboard.writeText(invite.toString()); setNotice({ kind: 'info', text: '邀请链接已复制，群友打开后只需填写称呼' }); } catch { setNotice({ kind: 'error', text: '浏览器未允许复制，请复制地址栏链接并附上房间码' }); } }
   async function copyCurrentRule() { if (!room) return; const text = `本局设置：${challengeModeLabel(room.challengeMode ?? 'off')}挑战｜描述方式：${descriptionModeLabel(room.descriptionRevealMode ?? 'all_submitted')}｜猜词翻盘${room.undercoverComebackEnabled ? '开启' : '关闭'}｜猜词爆灯${room.buzzerEnabled ? '开启' : '关闭'}｜自动下一轮${(room.autoAdvanceEnabled ?? true) ? '开启' : '关闭'}\nRound_${String(room.round).padStart(2, '0')}：${getRoundChallenge(room, room.round)?.text ?? '无附加规则'}\n挑战规则由玩家自觉遵守。`; try { await navigator.clipboard.writeText(text); } catch { /* clipboard may be unavailable */ } setNotice({ kind: 'info', text: '本轮公共规则已复制' }); }
   function reset() { setScreen('home'); setRoom(null); setRemoteMode(false); setCurrentPlayerId(null); setRevealPlayerId(null); setVotePlayerId(null); setDiscussionPlayerId(null); setRoundContentDraft(''); setComebackDraft(''); setWordReviewPlayerId(null); setAccuseActorId(null); setAccuseTargetId(null); setPrivacyGate(true); window.localStorage.removeItem('undercover-demo-room'); window.localStorage.removeItem('undercover-active-remote'); }
 
@@ -617,7 +621,7 @@ export default function GameApp() {
     roundContentDraft={roundContentDraft} discussionRemainingSeconds={discussionRemainingSeconds} votingOpenRemainingSeconds={votingOpenRemainingSeconds} comebackDraft={comebackDraft} comebackRemainingSeconds={comebackRemainingSeconds} nextRoundRemainingSeconds={nextRoundRemainingSeconds} canOpenVoting={room ? canBeginVoting(room, clockNow) : false}
     ownerName={ownerName} playerLimit={playerLimit} undercoverCount={undercoverCount} civilianWord={civilianWord} undercoverWord={undercoverWord}
     customWords={customWords} challengeMode={challengeMode} undercoverComebackEnabled={undercoverComebackEnabled} descriptionRevealMode={descriptionRevealMode} buzzerEnabled={buzzerEnabled} autoAdvanceEnabled={autoAdvanceEnabled} joinCode={joinCode} joinName={joinName} onSwitchMode={switchDisplayMode} onOpenSetup={openSetup} onReviewWord={setWordReviewPlayerId}
-    onBackHome={() => setScreen('home')} onReset={reset} onCopyRoomCode={() => void copyRoomCode()} onCopyCurrentRule={() => void copyCurrentRule()} onJoin={() => void tryRemoteJoin()}
+    onBackHome={() => setScreen('home')} onReset={reset} onCopyRoomCode={() => void copyRoomCode()} onCopyInviteLink={() => void copyInviteLink()} onCopyCurrentRule={() => void copyCurrentRule()} onJoin={() => void tryRemoteJoin()}
     onCreateDemo={createDemo} onCreateRemote={() => void createRemote()} onStartDealing={startDealing} onConfirmCard={confirmCard}
     onRoundContentDraft={(value) => setRoundContentDraft(value.slice(0, ROUND_CONTENT_MAX_LENGTH))} onSubmitRoundContent={submitCurrentRoundContent}
     onBeginVoting={beginVoting} onSkipDescription={skipCurrentDescription} onBuzzer={startBuzzer} onSubmitVote={submitVote} onComebackDraft={setComebackDraft} onSubmitComeback={submitComeback} onContinue={continueGame} onToggleAutoAdvance={toggleAutoAdvance} onRematch={rematch} onOwnerName={setOwnerName}
@@ -630,7 +634,7 @@ export default function GameApp() {
   />;
 
   return <main className="app-shell">
-    <header className="topbar"><button className="brand" onClick={reset} aria-label="返回首页"><span className="brand__mark">卧</span><span>卧底裁判局</span></button><div className="topbar__right"><button className="mode-switch" onClick={switchDisplayMode} aria-label="切换到表格低干扰模式">表格模式</button><span className={`connection ${cloudReady ? 'is-online' : ''}`}><i />{cloudReady ? '联机已就绪' : '本机演示模式'}</span>{room && <button className="room-code" onClick={copyRoomCode}>房间 {room.code} · 复制</button>}</div></header>
+    <header className="topbar"><button className="brand" onClick={reset} aria-label="返回谁是卧底首页"><span className="brand__mark">卧</span><span>卧底裁判局</span></button><div className="topbar__right"><a className="mode-switch" href="../">游戏目录</a><button className="mode-switch" onClick={switchDisplayMode} aria-label="切换到表格低干扰模式">表格模式</button><span className={`connection ${cloudReady ? 'is-online' : ''}`}><i />{cloudReady ? '联机已就绪' : '本机演示模式'}</span>{room && <button className="room-code" onClick={copyRoomCode}>房间 {room.code} · 复制</button>}</div></header>
 
     {screen === 'home' && <div className="home"><section className="hero"><div className="hero__copy"><p className="eyebrow">WHO IS THE UNDERCOVER · DESKTOP</p><h1>偷偷发牌，<br /><em>认真数票。</em></h1><p className="lede">不需要主持人。群里或线下照常聊，裁判器只在该出手的时候出现。</p><div className="hero__actions"><button className="button button--primary" onClick={openSetup}>创建一局 <span>→</span></button><button className="button button--outline" onClick={() => setGuideOpen(true)}>怎么玩？查看完整规则</button><span className="microcopy">3–10 人 · 匿名投票 · 自动判胜</span></div></div><div className="join-panel"><span className="panel-kicker">已有房间</span><h2>加入朋友的牌局</h2><label htmlFor="join-name">你的称呼</label><input className="plain-input" id="join-name" value={joinName} onChange={(event) => setJoinName(event.target.value.slice(0, 12))} placeholder="例如：小王" /><label htmlFor="room-code">输入 6 位房间码</label><div className="code-input"><input id="room-code" maxLength={6} value={joinCode} onChange={(event) => setJoinCode(event.target.value.toUpperCase().replace(/[^A-Z2-9]/g, ''))} placeholder="Q7K2P8" /><button disabled={busy} onClick={tryRemoteJoin}>{busy ? '连接中' : '加入'}</button></div><p>{cloudReady ? '连接到 CloudBase 实时房间' : '联机功能等待 CloudBase 参数，本机演示可立即使用。'}</p></div></section><section className="feature-strip">{steps.slice(1).map(([number, label, description]) => <div key={number}><span>{number}</span><b>{label}</b><p>{description}</p></div>)}</section></div>}
 

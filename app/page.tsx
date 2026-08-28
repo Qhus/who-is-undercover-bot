@@ -1,5 +1,5 @@
-import GameApp from './game-app';
+import GameHub from './game-hub';
 
 export default function Home() {
-  return <GameApp />;
+  return <GameHub />;
 }

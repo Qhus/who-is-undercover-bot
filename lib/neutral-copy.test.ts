@@ -106,14 +106,33 @@ test('Excel 主界面使用非弹窗通知栏并将沉浸模式降级为兼容�
 
 test('离谱法堂与谁是卧底使用独立页面和独立入口', () => {
   const rootPage = readFileSync(new URL('../app/page.tsx', import.meta.url), 'utf8');
+  const hubPage = readFileSync(new URL('../app/game-hub.tsx', import.meta.url), 'utf8');
+  const undercoverPage = readFileSync(new URL('../app/undercover/page.tsx', import.meta.url), 'utf8');
   const undercoverSheet = readFileSync(new URL('../app/spreadsheet-mode.tsx', import.meta.url), 'utf8');
   const courtPage = readFileSync(new URL('../app/court/page.tsx', import.meta.url), 'utf8');
   const courtApp = readFileSync(new URL('../app/court-spreadsheet-mode.tsx', import.meta.url), 'utf8');
-  assert.doesNotMatch(rootPage, /CourtSpreadsheetMode|onOpenCourt|onJoinCourt/);
+  assert.match(rootPage, /GameHub/);
+  assert.match(hubPage, /A2 · 谁是卧底/);
+  assert.match(hubPage, /A4 · 离谱法堂/);
+  assert.match(hubPage, /\.\/undercover\//);
+  assert.match(hubPage, /\.\/court\//);
+  assert.match(undercoverPage, /GameApp/);
   assert.doesNotMatch(undercoverSheet, /离谱法堂|情况说明表（实验）/);
   assert.match(courtPage, /CourtSpreadsheetMode/);
   assert.match(courtApp, /创建离谱法堂/);
   assert.match(courtApp, /加入离谱法堂/);
   assert.match(courtApp, /不是找卧底，是选出最会圆谎的人/);
   assert.doesNotMatch(courtApp, /demo-b|demo-c|创建本机演示/);
+});
+
+test('两个游戏都支持返回目录和带房间编号的邀请链接', () => {
+  const undercoverApp = readFileSync(new URL('../app/game-app.tsx', import.meta.url), 'utf8');
+  const undercoverSheet = readFileSync(new URL('../app/spreadsheet-mode.tsx', import.meta.url), 'utf8');
+  const courtApp = readFileSync(new URL('../app/court-spreadsheet-mode.tsx', import.meta.url), 'utf8');
+  assert.match(undercoverSheet, /返回摸鱼游戏工作台/);
+  assert.match(courtApp, /返回摸鱼游戏工作台/);
+  assert.match(undercoverApp, /searchParams\.set\('room', room\.code\)/);
+  assert.match(courtApp, /searchParams\.set\('room', room\.code\)/);
+  assert.match(undercoverApp, /URLSearchParams\(window\.location\.search\)/);
+  assert.match(courtApp, /URLSearchParams\(window\.location\.search\)/);
 });
