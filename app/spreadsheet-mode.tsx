@@ -552,7 +552,7 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
       <button className="sheet-filemark" onClick={props.onReset} aria-label="返回谁是卧底游戏首页">表</button>
       <div><strong>{props.room ? `协作数据表 · ${props.room.code}` : '协作数据表'}</strong><span>{props.remoteMode ? '已同步' : '已保存到本机'} · {CURRENT_RELEASE.version}</span></div>
       <div className="sheet-title-actions">
-        <a href="../" aria-label="返回摸鱼游戏工作台">游戏目录</a>
+        <a href="../" aria-label="返回摸鱼游戏工作台">目录</a>
         <button onClick={openGuideSheet} aria-label="在表格中查看谁是卧底游玩步骤与核心规则">帮助</button>
         <button className={notificationOpen ? 'is-active' : ''} aria-expanded={notificationOpen} aria-controls="sheet-notification-panel" onClick={() => { privacy.current?.mask('sheet-change'); setNotificationOpen((open) => !open); }}>通知 · {CURRENT_RELEASE.version}</button>
         {props.room && <><button onClick={props.onCopyRoomCode} aria-label="复制谁是卧底游戏房间码">复制编号</button><button onClick={props.onCopyInviteLink} aria-label="复制带房间编号的谁是卧底邀请链接">复制邀请链接</button><button onClick={props.onCopyCurrentRule} aria-label="复制谁是卧底本轮公共规则">复制备注</button></>}

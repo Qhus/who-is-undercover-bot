@@ -249,7 +249,7 @@ export default function CourtSpreadsheetMode() {
     <header className="sheet-titlebar">
       <button className="sheet-filemark" onClick={leaveView}>表</button>
       <div><strong>{room ? `离谱法堂 · ${room.code}` : '离谱法堂 · 案件管理工作簿'}</strong><span>独立游戏 · 匿名狡辩评选</span></div>
-      <div className="sheet-title-actions"><a href="../" aria-label="返回摸鱼游戏工作台">游戏目录</a>{room && <><button onClick={() => navigator.clipboard?.writeText(room.code)}>复制房间编号</button><button onClick={copyInviteLink}>复制邀请链接</button><button onClick={leaveView}>返回法堂首页</button></>}</div>
+      <div className="sheet-title-actions"><a href="../" aria-label="返回摸鱼游戏工作台">目录</a>{room && <><button onClick={() => navigator.clipboard?.writeText(room.code)}>复制房间编号</button><button onClick={copyInviteLink}>复制邀请链接</button><button onClick={leaveView}>返回法堂首页</button></>}</div>
     </header>
     <nav className="sheet-ribbon"><button className="is-current">开始</button><button>案件</button><button>评选</button><span />{room && <button onClick={() => void apply('change_court_presence', { away: !me?.away })}>{me?.away ? '结束暂离' : '暂离'}</button>}</nav>
     <div className="sheet-formula"><span className="sheet-namebox">A1</span><span className="sheet-fx">fx</span><output>{room ? `${statusName[room.status]} · 第 ${room.round}/3 轮 · 局次 ${room.sessionNo} · ${remaining(room.phaseDeadlineAt, now)} 秒` : '不是找卧底，是选出最会圆谎的人'}</output></div>

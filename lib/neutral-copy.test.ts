@@ -112,8 +112,10 @@ test('离谱法堂与谁是卧底使用独立页面和独立入口', () => {
   const courtPage = readFileSync(new URL('../app/court/page.tsx', import.meta.url), 'utf8');
   const courtApp = readFileSync(new URL('../app/court-spreadsheet-mode.tsx', import.meta.url), 'utf8');
   assert.match(rootPage, /GameHub/);
-  assert.match(hubPage, /A2 · 谁是卧底/);
-  assert.match(hubPage, /A4 · 离谱法堂/);
+  assert.match(hubPage, /\['A2', '3–10 人'/);
+  assert.match(hubPage, /\['A4', '3–8 人'/);
+  assert.match(hubPage, /'摘要'/);
+  assert.doesNotMatch(hubPage, /A2 · 谁是卧底|A4 · 离谱法堂|>谁是卧底<|>离谱法堂</);
   assert.match(hubPage, /\.\/undercover\//);
   assert.match(hubPage, /\.\/court\//);
   assert.match(undercoverPage, /GameApp/);
