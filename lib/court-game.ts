@@ -4,13 +4,29 @@ import { makeRoomCode, type Player, type RandomSource } from './game.ts';
 export type CourtStatus = 'lobby' | 'statement' | 'statement_reveal' | 'evidence' | 'response' | 'voting' | 'result' | 'finished';
 export type CourtPhaseStatus = 'writing' | 'confirmed' | 'unconfirmed' | 'unvoted' | 'away';
 export interface CourtPlayer extends Player { eligibleFromRound?: number; }
-export interface CourtPublicEntry { submissionId: string; displayCode: string; statement: string; response: string | null; authorId?: string; authorName?: string; roundVotes?: number; }
-export interface CourtRoundResult { round: number; winnerIds: string[]; highestVotes: number; }
+export interface CourtPublicEntry {
+  submissionId: string;
+  displayCode: string;
+  statement: string;
+  response: string | null;
+  isReference?: boolean;
+  authorId?: string;
+  authorName?: string;
+  bestVotes?: number;
+  truthVotes?: number;
+}
+export interface CourtRoundResult {
+  round: number;
+  bestWinnerSubmissionIds: string[];
+  truthWinnerSubmissionIds: string[];
+  bestHighestVotes: number;
+  truthHighestVotes: number;
+}
 export interface CourtPrivateSubmission { sessionNo: number; round: number; submissionId: string | null; statement: string; statementConfirmed: boolean; response: string; responseConfirmed: boolean; }
 export interface AbsurdCourtRoom {
   code: string;
   gameType: 'absurd_court';
-  courtVersion: 5;
+  courtVersion: 6;
   sessionNo: number;
   ownerId: string;
   players: CourtPlayer[];
@@ -39,10 +55,11 @@ export interface AbsurdCourtRoom {
   voteConfirmedCount: number;
   publicEntries: CourtPublicEntry[];
   roundResults: CourtRoundResult[];
-  totalScores: Record<string, number>;
+  totalBestScores: Record<string, number>;
+  totalTruthScores: Record<string, number>;
 }
 
-export const COURT_MIN_PLAYERS = 3;
+export const COURT_MIN_PLAYERS = 2;
 export const COURT_MAX_PLAYERS = 8;
 export const COURT_DURATIONS: Record<Exclude<CourtStatus, 'lobby' | 'finished'>, number> = {
   statement: 120_000,
@@ -66,7 +83,7 @@ export function createCourtRoom(ownerName: string, now = Date.now(), random: Ran
   return {
     code: makeRoomCode(random),
     gameType: 'absurd_court',
-    courtVersion: 5,
+    courtVersion: 6,
     sessionNo: 1,
     ownerId: id,
     players: [{ id, name: ownerName.trim() || '房主', seat: 1, alive: true, cardReady: false, away: false, eligibleFromRound: 1 }],
@@ -95,7 +112,8 @@ export function createCourtRoom(ownerName: string, now = Date.now(), random: Ran
     voteConfirmedCount: 0,
     publicEntries: [],
     roundResults: [],
-    totalScores: {},
+    totalBestScores: {},
+    totalTruthScores: {},
   };
 }
 
@@ -109,9 +127,10 @@ export function validateResponse(text: string) {
   if (!clean || clean.length > 80) throw new Error('当庭补述须为 1–80 字');
 }
 
-export function validateVote(voterSubmissionId: string | null, choice: string | null, entryIds: string[]) {
-  if (!choice || !entryIds.includes(choice)) throw new Error('请选择一条有效陈述');
-  if (choice === voterSubmissionId) throw new Error('不能投给自己的陈述');
+export function validateVote(voterSubmissionId: string | null, bestChoice: string | null, truthChoice: string | null, entryIds: string[]) {
+  if (!bestChoice || !entryIds.includes(bestChoice)) throw new Error('请选择“最会狡辩”');
+  if (!truthChoice || !entryIds.includes(truthChoice)) throw new Error('请选择“最像真的”');
+  if (bestChoice === voterSubmissionId || truthChoice === voterSubmissionId) throw new Error('不能投给自己的陈述');
 }
 
 export function startCourtRound(room: AbsurdCourtRoom, now = Date.now(), random: RandomSource = Math.random): AbsurdCourtRoom {
@@ -188,7 +207,8 @@ export function restartCourtGame(room: AbsurdCourtRoom, now = Date.now()): Absur
     voteConfirmedCount: 0,
     publicEntries: [],
     roundResults: [],
-    totalScores: {},
+    totalBestScores: {},
+    totalTruthScores: {},
     caseId: null,
     caseTitle: null,
     charge: null,

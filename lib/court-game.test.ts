@@ -22,11 +22,13 @@ function threePlayerRoom() {
   return room;
 }
 
-test('Draft 0.2 至少提供 15 个字段完整且 ID 唯一的案件包', () => {
+test('Draft 0.3 至少提供 15 个含卷宗参考答辩且 ID 唯一的案件包', () => {
   assert.ok(COURT_CASE_PACKS.length >= 15);
   assert.equal(new Set(COURT_CASE_PACKS.map((item) => item.id)).size, COURT_CASE_PACKS.length);
   for (const item of COURT_CASE_PACKS) {
-    assert.ok(item.title && item.charge && item.evidenceTitle && item.evidence && item.verdictTemplate);
+    assert.ok(item.title && item.charge && item.evidenceTitle && item.evidence && item.referenceStatement && item.referenceResponse && item.verdictTemplate);
+    assert.ok(item.referenceStatement.length <= 80);
+    assert.ok(item.referenceResponse.length <= 80);
   }
 });
 
@@ -40,10 +42,21 @@ test('首次陈词和当庭补述均为 120 秒且最多 80 字', () => {
   assert.throws(() => validateResponse('甲'.repeat(81)));
 });
 
-test('每名玩家每轮只能选择一条且不能投自己', () => {
-  assert.throws(() => validateVote('mine', null, ['mine', 'other']));
-  assert.throws(() => validateVote('mine', 'mine', ['mine', 'other']));
-  assert.doesNotThrow(() => validateVote('mine', 'other', ['mine', 'other']));
+test('双项投票均必选、不能投自己且允许投给同一条', () => {
+  const entries = ['mine', 'other', 'reference'];
+  assert.throws(() => validateVote('mine', null, 'other', entries));
+  assert.throws(() => validateVote('mine', 'other', null, entries));
+  assert.throws(() => validateVote('mine', 'mine', 'other', entries));
+  assert.throws(() => validateVote('mine', 'other', 'mine', entries));
+  assert.doesNotThrow(() => validateVote('mine', 'other', 'reference', entries));
+  assert.doesNotThrow(() => validateVote('mine', 'reference', 'reference', entries));
+});
+
+test('两名有效玩家即可开始离谱法堂', () => {
+  const room = createCourtRoom('甲', 0, () => 0.2);
+  assert.equal(startCourtRound(room, 1, () => 0).status, 'finished');
+  room.players.push({ id: 'b', name: '乙', seat: 2, alive: true, cardReady: false, away: false, eligibleFromRound: 1 });
+  assert.equal(startCourtRound(room, 1, () => 0).status, 'statement');
 });
 
 test('同一局三轮不重复案件且新局优先排除上一局案件', () => {
@@ -75,14 +88,15 @@ test('完整状态机包含证据阶段并在第三轮结束', () => {
 });
 
 test('再来一局保留成员并递增局次，清空本局结果', () => {
-  const room = { ...threePlayerRoom(), status: 'finished' as const, round: 3, sessionNo: 4, usedCaseIds: ['a', 'b', 'c'], totalScores: { b: 2 } };
+  const room = { ...threePlayerRoom(), status: 'finished' as const, round: 3, sessionNo: 4, usedCaseIds: ['a', 'b', 'c'], totalBestScores: { b: 2 }, totalTruthScores: { c: 1 } };
   const restarted = restartCourtGame(room, 10);
   assert.equal(restarted.sessionNo, 5);
   assert.equal(restarted.status, 'lobby');
   assert.equal(restarted.players.length, 3);
   assert.deepEqual(restarted.previousSessionCaseIds, ['a', 'b', 'c']);
   assert.deepEqual(restarted.usedCaseIds, []);
-  assert.deepEqual(restarted.totalScores, {});
+  assert.deepEqual(restarted.totalBestScores, {});
+  assert.deepEqual(restarted.totalTruthScores, {});
   assert.deepEqual(restarted.roundResults, []);
 });
 

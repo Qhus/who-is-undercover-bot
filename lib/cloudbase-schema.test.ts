@@ -15,6 +15,8 @@ const courtV5Migration = readFileSync(new URL('../cloudbase/concurrency-v5-court
 const courtV5Verification = readFileSync(new URL('../cloudbase/verify-v5-court-draft-02.sql', import.meta.url), 'utf8');
 const courtV5JoinHotfix = readFileSync(new URL('../cloudbase/hotfix-v5-court-join.sql', import.meta.url), 'utf8');
 const courtV5JoinHotfixVerification = readFileSync(new URL('../cloudbase/verify-v5-court-join-hotfix.sql', import.meta.url), 'utf8');
+const courtV6Migration = readFileSync(new URL('../cloudbase/concurrency-v6-court-dual-vote.sql', import.meta.url), 'utf8');
+const courtV6Verification = readFileSync(new URL('../cloudbase/verify-v6-court-dual-vote.sql', import.meta.url), 'utf8');
 const concurrencySource = `${concurrencyBase}\n${concurrencyMigration}\n${concurrencyHotfix}\n${versionedRpcMigration}`;
 const storeSource = readFileSync(new URL('./cloudbase-store.ts', import.meta.url), 'utf8');
 const appSource = readFileSync(new URL('../app/game-app.tsx', import.meta.url), 'utf8');
@@ -124,15 +126,32 @@ test('离谱法堂 Draft 0.2 服务端实现两段确认、自动推进和每轮
   }
 });
 
-test('离谱法堂客户端仅调用 V5 RPC，页面不再出现私密关键词机制', () => {
-  assert.match(storeSource, /rpc\('create_court_game_v5'/);
-  assert.match(storeSource, /rpc\('join_court_game_v5'/);
-  assert.match(storeSource, /rpc\('apply_court_action_v5'/);
+test('离谱法堂客户端仅调用 V6 RPC，页面不再出现私密关键词机制', () => {
+  assert.match(storeSource, /rpc\('create_court_game_v6'/);
+  assert.match(storeSource, /rpc\('join_court_game_v6'/);
+  assert.match(storeSource, /rpc\('apply_court_action_v6'/);
+  assert.match(storeSource, /rpc\('get_my_court_submission_v6'/);
   assert.match(storeSource, /p_expected_session:\s*input\.room\.sessionNo/);
   assert.match(courtAppSource, /确认首次陈词/);
   assert.match(courtAppSource, /确认当庭补述/);
   assert.match(courtAppSource, /再来一局/);
   assert.doesNotMatch(courtAppSource, /私密关键词|本人关键词|关键词读取|getMyCourtAssignment/);
+});
+
+test('离谱法堂 Draft 0.3 使用 V6 双项选票、卷宗参考答辩和两人局', () => {
+  for (const rpc of ['create_court_game_v6', 'join_court_game_v6', 'get_my_court_submission_v6', 'apply_court_action_v6']) assert.match(courtV6Migration, new RegExp(rpc));
+  for (const table of ['court_v6_votes', 'court_v6_actions']) assert.match(courtV6Migration, new RegExp(`create table if not exists public\\.${table}`));
+  assert.match(courtV6Migration, /jsonb_array_length\(expected\)<2/);
+  assert.match(courtV6Migration, /if n<2 then raise exception '至少需要 2 名未暂离成员'/);
+  assert.match(courtV6Migration, /reference_statement[\s\S]*reference_response/);
+  assert.match(courtV6Migration, /bestSubmissionId[\s\S]*truthSubmissionId/);
+  assert.match(courtV6Migration, /totalBestScores[\s\S]*totalTruthScores/);
+  assert.doesNotMatch(courtV6Migration, /best_target\s*(?:<>|is distinct from)\s*truth_target/i);
+  assert.doesNotMatch(courtV6Migration, /drop\s+(?:table|function)|truncate\s+/i);
+  for (const expected of ['at least 18 case packs have reference defenses', 'V6 rooms require only two active players', 'reference defense appears only when voting opens', 'same candidate may receive both category votes']) assert.match(courtV6Verification, new RegExp(expected));
+  assert.match(courtAppSource, /最会狡辩/);
+  assert.match(courtAppSource, /最像真的/);
+  assert.match(courtAppSource, /确认两项选票/);
 });
 
 test('CloudBase 连接初始化并发复用且重复组件注册可安全恢复', () => {

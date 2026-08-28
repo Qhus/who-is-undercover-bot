@@ -60,7 +60,7 @@ export default function GameHub() {
       ['入口', '建议人数', '预计时长', '摘要', '操作', '状态'],
       ['A2', '3–10 人', '10–20 分钟', '查看私密词语、轮流描述、匿名投票找出特殊成员', <a className="sheet-action hub-launch" href="./undercover/" key="undercover" aria-label="打开 A2">{undercoverRoom ? '继续 / 打开' : '打开'}</a>, undercoverRoom ? `可恢复编号 ${undercoverRoom}` : '可创建或加入'],
       ['', '', '', '', '', ''],
-      ['A4', '3–8 人', '15–25 分钟', '围绕同一离谱案件匿名陈词，证据突袭后评选最佳狡辩', <a className="sheet-action hub-launch" href="./court/" key="court" aria-label="打开 A4">{courtRoom ? '继续 / 打开' : '打开'}</a>, courtRoom ? `可恢复编号 ${courtRoom}` : '可创建或加入'],
+      ['A4', '2–8 人', '15–25 分钟', '围绕同一离谱案件匿名陈词，评选最会狡辩和最像真的答案', <a className="sheet-action hub-launch" href="./court/" key="court" aria-label="打开 A4">{courtRoom ? '继续 / 打开' : '打开'}</a>, courtRoom ? `可恢复编号 ${courtRoom}` : '可创建或加入'],
       ['', '', '', '', '', ''],
       ['页面调整', '根页面现为目录', 'A2 与 A4 使用独立页面', '返回目录不影响进行中的流程', '收藏本页即可', '两项数据相互隔离'],
       ['使用建议', '第一次先读“玩法说明”', '负责人只需创建和开始', '其余阶段按表格提示操作', '邀请链接可直接发送', '刷新可恢复联机状态'],

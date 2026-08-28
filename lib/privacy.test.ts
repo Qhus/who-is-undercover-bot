@@ -45,12 +45,12 @@ test('Esc 和窗口失焦会立即遮挡', () => {
   guard.dispose();
 });
 
-test('离谱法堂 V5 公共房间初始状态不包含私密正文、作者映射或选票', () => {
+test('离谱法堂 V6 公共房间初始状态不包含私密正文、参考答辩、作者映射或选票', () => {
   const room = createCourtRoom('房主', 1, () => 0.2);
   const publicState = JSON.stringify(room);
-  for (const privateField of ['statementConfirmedAt', 'responseConfirmedAt', 'submissionId', 'authorId', 'playerVotes']) {
+  for (const privateField of ['statementConfirmedAt', 'responseConfirmedAt', 'referenceStatement', 'referenceResponse', 'submissionId', 'authorId', 'playerVotes']) {
     assert.doesNotMatch(publicState, new RegExp(`"${privateField}"`));
   }
   assert.equal(room.gameType, 'absurd_court');
-  assert.equal(room.courtVersion, 5);
+  assert.equal(room.courtVersion, 6);
 });
