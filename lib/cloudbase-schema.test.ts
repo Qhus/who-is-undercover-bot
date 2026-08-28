@@ -11,9 +11,12 @@ const versionedRpcMigration = readFileSync(new URL('../cloudbase/concurrency-v3-
 const versionedRpcVerification = readFileSync(new URL('../cloudbase/verify-v3-2-versioned-rpc.sql', import.meta.url), 'utf8');
 const courtPlayableMigration = readFileSync(new URL('../cloudbase/concurrency-v4-1-court-playable.sql', import.meta.url), 'utf8');
 const courtPlayableVerification = readFileSync(new URL('../cloudbase/verify-v4-1-court-playable.sql', import.meta.url), 'utf8');
+const courtV5Migration = readFileSync(new URL('../cloudbase/concurrency-v5-court-draft-02.sql', import.meta.url), 'utf8');
+const courtV5Verification = readFileSync(new URL('../cloudbase/verify-v5-court-draft-02.sql', import.meta.url), 'utf8');
 const concurrencySource = `${concurrencyBase}\n${concurrencyMigration}\n${concurrencyHotfix}\n${versionedRpcMigration}`;
 const storeSource = readFileSync(new URL('./cloudbase-store.ts', import.meta.url), 'utf8');
 const appSource = readFileSync(new URL('../app/game-app.tsx', import.meta.url), 'utf8');
+const courtAppSource = readFileSync(new URL('../app/court-spreadsheet-mode.tsx', import.meta.url), 'utf8');
 
 test('CloudBase auth.uid() 文本标识使用 text 字段', () => {
   assert.match(schema, /owner_uid\s+text\s+not null\s+default auth\.uid\(\)/i);
@@ -87,4 +90,45 @@ test('离谱法堂 V4.1 使用服务端内容池和完整即时推进状态机',
   assert.match(courtPlayableMigration, /court_finish_voting[\s\S]*authorName[\s\S]*roundVotes/);
   assert.doesNotMatch(courtPlayableMigration, /proposedState|p_player_id/);
   for (const expected of ['20 court cases', '30 court twists', '60 court keywords', 'immediate defense advance', 'result reveals author']) assert.match(courtPlayableVerification, new RegExp(expected));
+});
+
+test('离谱法堂 V5 是保留 V4 的增量迁移并使用独立版本化 RPC', () => {
+  for (const table of ['court_case_packs', 'court_v5_submissions', 'court_v5_votes', 'court_v5_actions']) {
+    assert.match(courtV5Migration, new RegExp(`create table if not exists public\\.${table}`));
+  }
+  for (const rpc of ['create_court_game_v5', 'join_court_game_v5', 'get_my_court_submission_v5', 'apply_court_action_v5']) {
+    assert.match(courtV5Migration, new RegExp(rpc));
+  }
+  assert.doesNotMatch(courtV5Migration, /drop\s+(?:table|function)|truncate\s+/i);
+  assert.doesNotMatch(courtV5Migration, /create\s+or\s+replace\s+function\s+public\.apply_court_action\s*\(/i);
+  assert.match(courtV5Migration, /primary key \(game_code, session_no, action_id\)/i);
+  assert.match(courtV5Migration, /p_expected_session/i);
+  assert.match(courtV5Migration, /restart_court_game/i);
+  assert.match(courtV5Migration, /previousSessionCaseIds/i);
+});
+
+test('离谱法堂 Draft 0.2 服务端实现两段确认、自动推进和每轮一票', () => {
+  for (const action of ['confirm_court_statement', 'confirm_court_response', 'confirm_court_vote', 'advance_court_phase']) {
+    assert.match(courtV5Migration, new RegExp(action));
+  }
+  assert.ok((courtV5Migration.match(/p_now_ms\+120000/g) ?? []).length >= 2);
+  assert.match(courtV5Migration, /statementStatuses[\s\S]*responseStatuses[\s\S]*voteStatuses/);
+  assert.match(courtV5Migration, /eligible>0 and n>=eligible[\s\S]*court_v5_reveal_statements/);
+  assert.match(courtV5Migration, /eligible>0 and n>=eligible[\s\S]*court_v5_open_voting/);
+  assert.match(courtV5Migration, /court_v5_votes[\s\S]*primary key \(game_code, session_no, round_no, player_id\)/i);
+  assert.doesNotMatch(courtV5Migration, /court_private_assignments|court_keywords|submissionIds/);
+  for (const expected of ['at least 15 complete case packs', 'both writing stages use 120 seconds', 'restart creates a new session']) {
+    assert.match(courtV5Verification, new RegExp(expected));
+  }
+});
+
+test('离谱法堂客户端仅调用 V5 RPC，页面不再出现私密关键词机制', () => {
+  assert.match(storeSource, /rpc\('create_court_game_v5'/);
+  assert.match(storeSource, /rpc\('join_court_game_v5'/);
+  assert.match(storeSource, /rpc\('apply_court_action_v5'/);
+  assert.match(storeSource, /p_expected_session:\s*input\.room\.sessionNo/);
+  assert.match(courtAppSource, /确认首次陈词/);
+  assert.match(courtAppSource, /确认当庭补述/);
+  assert.match(courtAppSource, /再来一局/);
+  assert.doesNotMatch(courtAppSource, /私密关键词|本人关键词|关键词读取|getMyCourtAssignment/);
 });

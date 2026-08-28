@@ -1,17 +1,211 @@
-import { COURT_CASES, COURT_KEYWORDS, COURT_TWISTS } from './court-content.ts';
-import { makeRoomCode, shuffle, type Player, type RandomSource } from './game.ts';
+import { COURT_CASE_PACKS } from './court-content.ts';
+import { makeRoomCode, type Player, type RandomSource } from './game.ts';
 
-export type CourtStatus = 'lobby' | 'defense' | 'defense_reveal' | 'supplement' | 'voting' | 'result' | 'finished';
-export interface CourtPublicEntry { submissionId: string; displayCode: string; defense: string; supplement: string | null; authorId?: string; authorName?: string; roundVotes?: number; }
+export type CourtStatus = 'lobby' | 'statement' | 'statement_reveal' | 'evidence' | 'response' | 'voting' | 'result' | 'finished';
+export type CourtPhaseStatus = 'writing' | 'confirmed' | 'unconfirmed' | 'unvoted' | 'away';
+export interface CourtPlayer extends Player { eligibleFromRound?: number; }
+export interface CourtPublicEntry { submissionId: string; displayCode: string; statement: string; response: string | null; authorId?: string; authorName?: string; roundVotes?: number; }
 export interface CourtRoundResult { round: number; winnerIds: string[]; highestVotes: number; }
-export interface AbsurdCourtRoom { code: string; gameType: 'absurd_court'; ownerId: string; players: Player[]; playerLimit: number; version: number; createdAt: number; updatedAt: number; status: CourtStatus; round: number; totalRounds: 3; phaseDeadlineAt: number | null; caseId: string | null; caseText: string | null; twistId: string | null; twistText: string | null; usedCaseIds: string[]; usedTwistIds: string[]; expectedPlayerIds: string[]; defenseSubmittedCount: number; supplementSubmittedCount: number; voteSubmittedCount: number; publicEntries: CourtPublicEntry[]; roundResults: CourtRoundResult[]; totalScores: Record<string, number>; }
-export const COURT_MIN_PLAYERS = 3, COURT_MAX_PLAYERS = 8;
-export const COURT_DURATIONS: Record<Exclude<CourtStatus, 'lobby' | 'finished'>, number> = { defense: 30_000, defense_reveal: 5_000, supplement: 15_000, voting: 30_000, result: 10_000 };
-export function createCourtRoom(ownerName: string, now = Date.now(), random: RandomSource = Math.random): AbsurdCourtRoom { const id = `p_${Math.floor(random()*1e12).toString(36)}`; return { code: makeRoomCode(random), gameType: 'absurd_court', ownerId: id, players:[{id,name:ownerName.trim() || '房主',seat:1,alive:true,cardReady:false}],playerLimit:COURT_MAX_PLAYERS,version:1,createdAt:now,updatedAt:now,status:'lobby',round:0,totalRounds:3,phaseDeadlineAt:null,caseId:null,caseText:null,twistId:null,twistText:null,usedCaseIds:[],usedTwistIds:[],expectedPlayerIds:[],defenseSubmittedCount:0,supplementSubmittedCount:0,voteSubmittedCount:0,publicEntries:[],roundResults:[],totalScores:{} }; }
-export function courtVoteCount(players: number) { return players >= 5 ? 2 : 1; }
-export function validateDefense(text: string, keywords: readonly string[]) { const clean = text.trim(); if (!clean || clean.length > 40) throw new Error('辩护须为 1–40 字'); const absent = keywords.filter(k => !clean.includes(k)); if (absent.length) throw new Error(`请包含关键词：${absent.join('、')}`); }
-export function validateVote(voterSubmissionId: string | null, choices: string[], entryIds: string[], voters: number) { if (choices.length !== courtVoteCount(voters) || new Set(choices).size !== choices.length) throw new Error('请选择数量正确且不同的陈述'); if (choices.some(id => !entryIds.includes(id) || id === voterSubmissionId)) throw new Error('不能投给自己的陈述'); }
-export function startCourtRound(room: AbsurdCourtRoom, now = Date.now(), random: RandomSource = Math.random): AbsurdCourtRoom { const expected = room.players.filter(p => p.alive && !p.away).map(p=>p.id); if (expected.length < COURT_MIN_PLAYERS) return {...room,status:'finished',phaseDeadlineAt:null,updatedAt:now,version:room.version+1}; const candidates = COURT_CASES.filter(c => !(room.usedCaseIds ?? []).includes(c.id)); const c = candidates[Math.floor(random()*candidates.length)] ?? COURT_CASES[0]; return {...room,status:'defense',round:room.round+1,caseId:c.id,caseText:c.text,twistId:null,twistText:null,usedCaseIds:[...(room.usedCaseIds ?? []),c.id],expectedPlayerIds:expected,defenseSubmittedCount:0,supplementSubmittedCount:0,voteSubmittedCount:0,publicEntries:[],phaseDeadlineAt:now+COURT_DURATIONS.defense,updatedAt:now,version:room.version+1}; }
-export function nextCourtStatus(room: AbsurdCourtRoom, now = Date.now(), random: RandomSource = Math.random): AbsurdCourtRoom { const to = (status:CourtStatus, patch:Partial<AbsurdCourtRoom>={}) => ({...room,...patch,status,phaseDeadlineAt: status === 'finished' ? null : now + COURT_DURATIONS[status as keyof typeof COURT_DURATIONS],updatedAt:now,version:room.version+1}); if (room.status==='defense') return to('defense_reveal'); if (room.status==='defense_reveal') { const twists=COURT_TWISTS.filter(t => !(room.usedTwistIds ?? []).includes(t.id)); const t=twists[Math.floor(random()*twists.length)] ?? COURT_TWISTS[0]; return to('supplement',{twistId:t.id,twistText:t.text,usedTwistIds:[...(room.usedTwistIds ?? []),t.id]}); } if(room.status==='supplement') return to('voting'); if(room.status==='voting') return to('result'); if(room.status==='result') return room.round >= room.totalRounds ? to('finished') : startCourtRound(room,now,random); return room; }
-export function assignKeywords(playerIds: string[], random: RandomSource = Math.random) { const words=shuffle(COURT_KEYWORDS,random).slice(0,playerIds.length*2); return Object.fromEntries(playerIds.map((id,index)=>[id,[words[index*2].text,words[index*2+1].text]])); }
-export function rankScores(scores: Record<string,number>) { return Object.entries(scores).sort((a,b)=>b[1]-a[1]).map(([playerId,score],i,all)=>({playerId,score,rank:i>0 && score===all[i-1][1] ? all.findIndex(x=>x[1]===score)+1 : i+1})); }
+export interface CourtPrivateSubmission { sessionNo: number; round: number; submissionId: string | null; statement: string; statementConfirmed: boolean; response: string; responseConfirmed: boolean; }
+export interface AbsurdCourtRoom {
+  code: string;
+  gameType: 'absurd_court';
+  courtVersion: 5;
+  sessionNo: number;
+  ownerId: string;
+  players: CourtPlayer[];
+  playerLimit: number;
+  version: number;
+  createdAt: number;
+  updatedAt: number;
+  status: CourtStatus;
+  round: number;
+  totalRounds: 3;
+  phaseDeadlineAt: number | null;
+  caseId: string | null;
+  caseTitle: string | null;
+  charge: string | null;
+  evidenceTitle: string | null;
+  evidence: string | null;
+  verdictTemplate: string | null;
+  usedCaseIds: string[];
+  previousSessionCaseIds: string[];
+  expectedPlayerIds: string[];
+  statementStatuses: Record<string, CourtPhaseStatus>;
+  responseStatuses: Record<string, CourtPhaseStatus>;
+  voteStatuses: Record<string, CourtPhaseStatus>;
+  statementConfirmedCount: number;
+  responseConfirmedCount: number;
+  voteConfirmedCount: number;
+  publicEntries: CourtPublicEntry[];
+  roundResults: CourtRoundResult[];
+  totalScores: Record<string, number>;
+}
+
+export const COURT_MIN_PLAYERS = 3;
+export const COURT_MAX_PLAYERS = 8;
+export const COURT_DURATIONS: Record<Exclude<CourtStatus, 'lobby' | 'finished'>, number> = {
+  statement: 120_000,
+  statement_reveal: 5_000,
+  evidence: 5_000,
+  response: 120_000,
+  voting: 30_000,
+  result: 10_000,
+};
+
+function makePlayerId(random: RandomSource) {
+  return `p_${Math.floor(random() * 1e12).toString(36)}`;
+}
+
+function phaseMap(ids: string[], status: CourtPhaseStatus): Record<string, CourtPhaseStatus> {
+  return Object.fromEntries(ids.map((id) => [id, status]));
+}
+
+export function createCourtRoom(ownerName: string, now = Date.now(), random: RandomSource = Math.random): AbsurdCourtRoom {
+  const id = makePlayerId(random);
+  return {
+    code: makeRoomCode(random),
+    gameType: 'absurd_court',
+    courtVersion: 5,
+    sessionNo: 1,
+    ownerId: id,
+    players: [{ id, name: ownerName.trim() || '房主', seat: 1, alive: true, cardReady: false, away: false, eligibleFromRound: 1 }],
+    playerLimit: COURT_MAX_PLAYERS,
+    version: 1,
+    createdAt: now,
+    updatedAt: now,
+    status: 'lobby',
+    round: 0,
+    totalRounds: 3,
+    phaseDeadlineAt: null,
+    caseId: null,
+    caseTitle: null,
+    charge: null,
+    evidenceTitle: null,
+    evidence: null,
+    verdictTemplate: null,
+    usedCaseIds: [],
+    previousSessionCaseIds: [],
+    expectedPlayerIds: [],
+    statementStatuses: {},
+    responseStatuses: {},
+    voteStatuses: {},
+    statementConfirmedCount: 0,
+    responseConfirmedCount: 0,
+    voteConfirmedCount: 0,
+    publicEntries: [],
+    roundResults: [],
+    totalScores: {},
+  };
+}
+
+export function validateStatement(text: string) {
+  const clean = text.trim();
+  if (!clean || clean.length > 80) throw new Error('首次陈词须为 1–80 字');
+}
+
+export function validateResponse(text: string) {
+  const clean = text.trim();
+  if (!clean || clean.length > 80) throw new Error('当庭补述须为 1–80 字');
+}
+
+export function validateVote(voterSubmissionId: string | null, choice: string | null, entryIds: string[]) {
+  if (!choice || !entryIds.includes(choice)) throw new Error('请选择一条有效陈述');
+  if (choice === voterSubmissionId) throw new Error('不能投给自己的陈述');
+}
+
+export function startCourtRound(room: AbsurdCourtRoom, now = Date.now(), random: RandomSource = Math.random): AbsurdCourtRoom {
+  const nextRound = room.round + 1;
+  const expected = room.players
+    .filter((player) => player.alive && !player.away && (player.eligibleFromRound ?? 1) <= nextRound)
+    .map((player) => player.id);
+  if (expected.length < COURT_MIN_PLAYERS) {
+    return { ...room, status: 'finished', phaseDeadlineAt: null, updatedAt: now, version: room.version + 1 };
+  }
+  const preferred = COURT_CASE_PACKS.filter((item) => item.enabled && !room.usedCaseIds.includes(item.id) && !room.previousSessionCaseIds.includes(item.id));
+  const fallback = COURT_CASE_PACKS.filter((item) => item.enabled && !room.usedCaseIds.includes(item.id));
+  const candidates = preferred.length ? preferred : fallback.length ? fallback : COURT_CASE_PACKS.filter((item) => item.enabled);
+  const selected = candidates[Math.floor(random() * candidates.length)] ?? COURT_CASE_PACKS[0];
+  return {
+    ...room,
+    status: 'statement',
+    round: nextRound,
+    phaseDeadlineAt: now + COURT_DURATIONS.statement,
+    caseId: selected.id,
+    caseTitle: selected.title,
+    charge: selected.charge,
+    evidenceTitle: selected.evidenceTitle,
+    evidence: selected.evidence,
+    verdictTemplate: selected.verdictTemplate,
+    usedCaseIds: [...room.usedCaseIds, selected.id],
+    expectedPlayerIds: expected,
+    statementStatuses: phaseMap(expected, 'writing'),
+    responseStatuses: {},
+    voteStatuses: {},
+    statementConfirmedCount: 0,
+    responseConfirmedCount: 0,
+    voteConfirmedCount: 0,
+    publicEntries: [],
+    updatedAt: now,
+    version: room.version + 1,
+  };
+}
+
+export function nextCourtStatus(room: AbsurdCourtRoom, now = Date.now(), random: RandomSource = Math.random): AbsurdCourtRoom {
+  const to = (status: CourtStatus, patch: Partial<AbsurdCourtRoom> = {}) => ({
+    ...room,
+    ...patch,
+    status,
+    phaseDeadlineAt: status === 'finished' ? null : now + COURT_DURATIONS[status as keyof typeof COURT_DURATIONS],
+    updatedAt: now,
+    version: room.version + 1,
+  });
+  if (room.status === 'statement') return to('statement_reveal');
+  if (room.status === 'statement_reveal') return to('evidence');
+  if (room.status === 'evidence') return to('response');
+  if (room.status === 'response') return to('voting');
+  if (room.status === 'voting') return to('result');
+  if (room.status === 'result') return room.round >= room.totalRounds ? to('finished') : startCourtRound(room, now, random);
+  return room;
+}
+
+export function restartCourtGame(room: AbsurdCourtRoom, now = Date.now()): AbsurdCourtRoom {
+  return {
+    ...room,
+    sessionNo: room.sessionNo + 1,
+    status: 'lobby',
+    round: 0,
+    phaseDeadlineAt: null,
+    players: room.players.map((player) => ({ ...player, eligibleFromRound: 1 })),
+    previousSessionCaseIds: [...room.usedCaseIds],
+    usedCaseIds: [],
+    expectedPlayerIds: [],
+    statementStatuses: {},
+    responseStatuses: {},
+    voteStatuses: {},
+    statementConfirmedCount: 0,
+    responseConfirmedCount: 0,
+    voteConfirmedCount: 0,
+    publicEntries: [],
+    roundResults: [],
+    totalScores: {},
+    caseId: null,
+    caseTitle: null,
+    charge: null,
+    evidenceTitle: null,
+    evidence: null,
+    verdictTemplate: null,
+    updatedAt: now,
+    version: room.version + 1,
+  };
+}
+
+export function rankScores(scores: Record<string, number>) {
+  return Object.entries(scores)
+    .sort((a, b) => b[1] - a[1])
+    .map(([id, score], index, all) => ({
+      playerId: id,
+      score,
+      rank: index > 0 && score === all[index - 1][1] ? all.findIndex((item) => item[1] === score) + 1 : index + 1,
+    }));
+}

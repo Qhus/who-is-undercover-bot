@@ -1,7 +1,7 @@
 import cloudbase from '@cloudbase/js-sdk';
 import { registerMySQL, type IPgClient } from '@cloudbase/mysql';
 import type { GameRoom } from './game';
-import type { AbsurdCourtRoom } from './court-game';
+import type { AbsurdCourtRoom, CourtPrivateSubmission } from './court-game';
 
 type GameRow = { state: GameRoom; version: number };
 type PgClient = ReturnType<IPgClient>;
@@ -15,7 +15,15 @@ export interface GameActionResult {
   state: GameRoom;
   version: number;
 }
-export type CourtActionType = 'start_court_game' | 'submit_court_defense' | 'submit_court_supplement' | 'submit_court_vote' | 'advance_court_phase' | 'end_court_game';
+export type CourtActionType =
+  | 'start_court_game'
+  | 'confirm_court_statement'
+  | 'confirm_court_response'
+  | 'confirm_court_vote'
+  | 'advance_court_phase'
+  | 'change_court_presence'
+  | 'end_court_game'
+  | 'restart_court_game';
 export interface CourtActionResult { outcome: GameActionOutcome; code: string; message: string; state: AbsurdCourtRoom; version: number; }
 
 function publicConfig() {
@@ -53,20 +61,51 @@ export class CloudBaseRoomStore {
     if (error) throw error;
   }
 
-  async createCourtRoom(room: AbsurdCourtRoom): Promise<void> {
+  async createCourtRoom(room: AbsurdCourtRoom): Promise<AbsurdCourtRoom> {
     await this.connect();
-    const { error } = await this.db().rpc('create_game', { p_code: room.code, p_owner_player_id: room.ownerId, p_state: room });
+    const { data, error } = await this.db().rpc('create_court_game_v5', {
+      p_code: room.code,
+      p_owner_player_id: room.ownerId,
+      p_owner_name: room.players[0]?.name ?? '房主',
+    }).single();
     if (error) throw error;
+    return data as unknown as AbsurdCourtRoom;
+  }
+
+  async joinCourtRoom(code: string, playerId: string, nickname: string): Promise<{ room: AbsurdCourtRoom; playerId: string }> {
+    await this.connect();
+    const { data, error } = await this.db().rpc('join_court_game_v5', {
+      p_code: code,
+      p_player_id: playerId,
+      p_nickname: nickname,
+    }).single();
+    if (error) throw error;
+    const result = data as unknown as { state: AbsurdCourtRoom; playerId: string };
+    return { room: result.state, playerId: result.playerId };
   }
 
   async applyCourtAction(input: { room: AbsurdCourtRoom; actionId: string; actionType: CourtActionType; payload?: Record<string, unknown> }): Promise<CourtActionResult> {
     await this.connect();
-    const { data, error } = await this.db().rpc('apply_court_action', { p_code: input.room.code, p_action_id: input.actionId, p_action_type: input.actionType, p_expected_status: input.room.status, p_expected_round: input.room.round, p_expected_version: input.room.version, p_payload: input.payload ?? {} }).single();
+    const { data, error } = await this.db().rpc('apply_court_action_v5', {
+      p_code: input.room.code,
+      p_action_id: input.actionId,
+      p_action_type: input.actionType,
+      p_expected_status: input.room.status,
+      p_expected_round: input.room.round,
+      p_expected_session: input.room.sessionNo,
+      p_expected_version: input.room.version,
+      p_payload: input.payload ?? {},
+    }).single();
     if (error) throw error;
     return data as unknown as CourtActionResult;
   }
 
-  async getMyCourtAssignment(code: string): Promise<{ round: number; keywords: string[] } | null> { await this.connect(); const { data, error } = await this.db().rpc('get_my_court_assignment', { p_code: code }).single(); if (error) throw error; return data as { round: number; keywords: string[] } | null; }
+  async getMyCourtSubmission(code: string): Promise<CourtPrivateSubmission | null> {
+    await this.connect();
+    const { data, error } = await this.db().rpc('get_my_court_submission_v5', { p_code: code }).single();
+    if (error) throw error;
+    return data as CourtPrivateSubmission | null;
+  }
 
   async joinRoom(code: string, playerId: string, nickname: string): Promise<{ room: GameRoom; playerId: string }> {
     await this.connect();

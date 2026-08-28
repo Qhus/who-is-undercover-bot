@@ -332,6 +332,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgb(200 77 49 / 3
 .sheet-tabs small { flex:0 0 auto; align-self:center; padding:0 13px; color:#707070; font-size:10px; white-space:nowrap; }
 .sheet-toast { position:fixed; z-index:40; right:18px; bottom:51px; max-width:min(420px,calc(100vw - 36px)); padding:10px 14px; color:#fff; background:#555; border-left:4px solid var(--sheet-green); box-shadow:0 2px 8px rgb(0 0 0 / 20%); }
 .sheet-toast--error { border-left-color:#b3261e; }
+.court-mobile-controls { display:none; }
 
 .presence-actions { width:min(1180px,calc(100% - 48px)); margin:0 auto 16px; display:flex; flex-wrap:wrap; gap:8px; }
 .presence-actions>div { display:flex; align-items:center; gap:6px; padding:6px 8px; border:1px solid var(--line); background:#fff; }
@@ -394,6 +395,12 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgb(200 77 49 / 3
   .sheet-release-list { max-height:130px; }
   .sheet-commandbar { overflow-x:auto; }
   .sheet-commandbar span { white-space:nowrap; }
+  .court-mobile-controls { display:grid; gap:6px; padding:7px 9px; border-bottom:1px solid #cfcfcf; background:#f7f7f7; }
+  .court-mobile-controls>div { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:6px; }
+  .court-mobile-controls>div:has(input+input) { grid-template-columns:minmax(0,.8fr) minmax(0,1fr) auto; }
+  .court-mobile-controls input,.court-mobile-controls select { min-width:0; height:32px; padding:4px 7px; border:1px solid #aaa; background:#fff; }
+  .court-mobile-controls button { min-height:32px; padding:0 10px; color:#fff; border:1px solid var(--sheet-green); background:var(--sheet-green); font-weight:700; }
+  .court-mobile-controls button:disabled { opacity:.45; }
   .sheet-rule-banner { grid-template-columns:auto 1fr; }
   .sheet-rule-banner>small { grid-column:1/3; white-space:normal; }
   .sheet-grid { min-width:760px; }
