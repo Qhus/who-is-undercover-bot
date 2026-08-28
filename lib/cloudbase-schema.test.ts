@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { COURT_CASE_PACKS } from './court-content.ts';
 
 const schema = readFileSync(new URL('../cloudbase/schema.sql', import.meta.url), 'utf8');
 const verification = readFileSync(new URL('../cloudbase/verify.sql', import.meta.url), 'utf8');
@@ -17,6 +18,8 @@ const courtV5JoinHotfix = readFileSync(new URL('../cloudbase/hotfix-v5-court-joi
 const courtV5JoinHotfixVerification = readFileSync(new URL('../cloudbase/verify-v5-court-join-hotfix.sql', import.meta.url), 'utf8');
 const courtV6Migration = readFileSync(new URL('../cloudbase/concurrency-v6-court-dual-vote.sql', import.meta.url), 'utf8');
 const courtV6Verification = readFileSync(new URL('../cloudbase/verify-v6-court-dual-vote.sql', import.meta.url), 'utf8');
+const courtCopyMigration = readFileSync(new URL('../cloudbase/content-v6-1-court-copy.sql', import.meta.url), 'utf8');
+const courtCopyVerification = readFileSync(new URL('../cloudbase/verify-v6-1-court-copy.sql', import.meta.url), 'utf8');
 const concurrencySource = `${concurrencyBase}\n${concurrencyMigration}\n${concurrencyHotfix}\n${versionedRpcMigration}`;
 const storeSource = readFileSync(new URL('./cloudbase-store.ts', import.meta.url), 'utf8');
 const appSource = readFileSync(new URL('../app/game-app.tsx', import.meta.url), 'utf8');
@@ -152,6 +155,22 @@ test('离谱法堂 Draft 0.3 使用 V6 双项选票、卷宗参考答辩和两�
   assert.match(courtAppSource, /最会狡辩/);
   assert.match(courtAppSource, /最像真的/);
   assert.match(courtAppSource, /确认两项选票/);
+});
+
+test('离谱法堂内容增量提供三十套案件和最近二十一轮避重', () => {
+  assert.match(courtCopyMigration, /insert into public\.court_case_packs/);
+  assert.match(courtCopyMigration, /create or replace function public\.court_v6_restart/);
+  assert.match(courtCopyMigration, /limit 21/);
+  assert.match(courtCopyMigration, /previousSessionCaseIds[\s\S]*usedCaseIds/);
+  assert.match(courtCopyMigration, /where id='borrowed-charger'/);
+  assert.doesNotMatch(courtCopyMigration, /create or replace function public\.apply_court_action_v6/i);
+  assert.doesNotMatch(courtCopyMigration, /drop\s+(?:table|function)|truncate\s+/i);
+  for (const item of COURT_CASE_PACKS) {
+    for (const value of [item.id, item.title, item.charge, item.evidenceTitle, item.evidence, item.verdictTemplate, item.referenceStatement, item.referenceResponse]) {
+      assert.ok(courtCopyMigration.includes(value.replaceAll("'", "''")), `数据库迁移缺少案件内容：${item.id}`);
+    }
+  }
+  for (const expected of ['at least 30 enabled case packs', 'all live reference lines fit quick input', 'sample restart drops the oldest three cases']) assert.match(courtCopyVerification, new RegExp(expected));
 });
 
 test('CloudBase 连接初始化并发复用且重复组件注册可安全恢复', () => {

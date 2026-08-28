@@ -61,6 +61,7 @@ export interface AbsurdCourtRoom {
 
 export const COURT_MIN_PLAYERS = 2;
 export const COURT_MAX_PLAYERS = 8;
+export const COURT_RECENT_CASE_LIMIT = 21;
 export const COURT_DURATIONS: Record<Exclude<CourtStatus, 'lobby' | 'finished'>, number> = {
   statement: 120_000,
   statement_reveal: 5_000,
@@ -76,6 +77,19 @@ function makePlayerId(random: RandomSource) {
 
 function phaseMap(ids: string[], status: CourtPhaseStatus): Record<string, CourtPhaseStatus> {
   return Object.fromEntries(ids.map((id) => [id, status]));
+}
+
+function recentDistinctCaseIds(ids: string[]) {
+  const seen = new Set<string>();
+  const recent: string[] = [];
+  for (let index = ids.length - 1; index >= 0 && recent.length < COURT_RECENT_CASE_LIMIT; index -= 1) {
+    const id = ids[index];
+    if (!seen.has(id)) {
+      seen.add(id);
+      recent.unshift(id);
+    }
+  }
+  return recent;
 }
 
 export function createCourtRoom(ownerName: string, now = Date.now(), random: RandomSource = Math.random): AbsurdCourtRoom {
@@ -196,7 +210,7 @@ export function restartCourtGame(room: AbsurdCourtRoom, now = Date.now()): Absur
     round: 0,
     phaseDeadlineAt: null,
     players: room.players.map((player) => ({ ...player, eligibleFromRound: 1 })),
-    previousSessionCaseIds: [...room.usedCaseIds],
+    previousSessionCaseIds: recentDistinctCaseIds([...room.previousSessionCaseIds, ...room.usedCaseIds]),
     usedCaseIds: [],
     expectedPlayerIds: [],
     statementStatuses: {},

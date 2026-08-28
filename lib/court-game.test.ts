@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { COURT_CASE_PACKS } from './court-content.ts';
 import {
   COURT_DURATIONS,
+  COURT_RECENT_CASE_LIMIT,
   createCourtRoom,
   nextCourtStatus,
   rankScores,
@@ -22,13 +23,16 @@ function threePlayerRoom() {
   return room;
 }
 
-test('Draft 0.3 至少提供 15 个含卷宗参考答辩且 ID 唯一的案件包', () => {
-  assert.ok(COURT_CASE_PACKS.length >= 15);
+test('内容版至少提供 30 个短口语参考答辩且 ID 唯一的案件包', () => {
+  assert.ok(COURT_CASE_PACKS.length >= 30);
   assert.equal(new Set(COURT_CASE_PACKS.map((item) => item.id)).size, COURT_CASE_PACKS.length);
+  const formalPhrases = /风险评估|统一基线|治理方案|保障工作|独立性|预判|效率选择|定义顺序|响应时间/;
   for (const item of COURT_CASE_PACKS) {
     assert.ok(item.title && item.charge && item.evidenceTitle && item.evidence && item.referenceStatement && item.referenceResponse && item.verdictTemplate);
-    assert.ok(item.referenceStatement.length <= 80);
-    assert.ok(item.referenceResponse.length <= 80);
+    assert.match(item.charge, /^被控/);
+    assert.ok(item.referenceStatement.length <= 42);
+    assert.ok(item.referenceResponse.length <= 42);
+    assert.doesNotMatch(`${item.referenceStatement}${item.referenceResponse}`, formalPhrases);
   }
 });
 
@@ -69,6 +73,23 @@ test('同一局三轮不重复案件且新局优先排除上一局案件', () =>
   assert.deepEqual(room.previousSessionCaseIds, previousCases);
   room = startCourtRound(room, 4, () => 0);
   assert.ok(!previousCases.includes(room.caseId ?? ''));
+});
+
+test('连续七局共二十一轮不重复题干', () => {
+  let room = threePlayerRoom();
+  const selected: string[] = [];
+  for (let session = 0; session < 8; session += 1) {
+    for (let round = 0; round < 3; round += 1) {
+      room = startCourtRound(room, selected.length + 1, () => 0);
+      selected.push(room.caseId ?? '');
+      room = { ...room, status: round === 2 ? 'finished' : 'result' };
+    }
+    if (session < 7) room = restartCourtGame(room, selected.length + 1);
+  }
+  for (let end = COURT_RECENT_CASE_LIMIT; end <= selected.length; end += 1) {
+    assert.equal(new Set(selected.slice(end - COURT_RECENT_CASE_LIMIT, end)).size, COURT_RECENT_CASE_LIMIT);
+  }
+  assert.equal(room.previousSessionCaseIds.length, COURT_RECENT_CASE_LIMIT);
 });
 
 test('完整状态机包含证据阶段并在第三轮结束', () => {

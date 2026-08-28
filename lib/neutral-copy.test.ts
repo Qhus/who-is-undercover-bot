@@ -87,7 +87,7 @@ test('Excel 词语查看只占用 D 列且平民指认是表格内二次确认',
 
 test('版本通知由统一数据生成且当前版本始终位于首项', () => {
   assert.equal(CURRENT_RELEASE, RELEASE_NOTES[0]);
-  assert.match(CURRENT_RELEASE.version, /^V\d+\.\d+$/);
+  assert.match(CURRENT_RELEASE.version, /^V\d+\.\d+(?:\.\d+)?$/);
   assert.equal(new Set(RELEASE_NOTES.map((release) => release.version)).size, RELEASE_NOTES.length);
   assert.ok(RELEASE_NOTES.every((release) => release.details.length >= 3));
 });
