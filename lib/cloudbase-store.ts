@@ -5,6 +5,24 @@ import type { AbsurdCourtRoom, CourtPrivateSubmission } from './court-game';
 
 type GameRow = { state: GameRoom; version: number };
 type PgClient = ReturnType<IPgClient>;
+let mysqlRegistered = false;
+
+function errorText(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (!error || typeof error !== 'object') return String(error ?? '');
+  const value = error as { code?: unknown; message?: unknown; msg?: unknown };
+  return [value.code, value.message, value.msg].filter((item): item is string => typeof item === 'string').join(' ');
+}
+
+function ensureMySqlRegistered() {
+  if (mysqlRegistered) return;
+  try {
+    registerMySQL(cloudbase as unknown as Parameters<typeof registerMySQL>[0]);
+  } catch (error) {
+    if (!errorText(error).includes('Duplicate component mysql')) throw error;
+  }
+  mysqlRegistered = true;
+}
 
 export type GameActionType = 'confirm_card' | 'submit_description' | 'submit_vote' | 'advance_phase' | 'trigger_buzzer' | 'submit_special' | 'change_presence' | 'update_lobby_settings' | 'accuse_undercover';
 export type GameActionOutcome = 'applied' | 'duplicate' | 'stale' | 'rejected';
@@ -36,10 +54,17 @@ function publicConfig() {
 
 export class CloudBaseRoomStore {
   private database: PgClient | null = null;
+  private connectionPromise: Promise<void> | null = null;
 
   async connect() {
     if (this.database) return;
-    registerMySQL(cloudbase as unknown as Parameters<typeof registerMySQL>[0]);
+    this.connectionPromise ??= this.initialize().finally(() => { this.connectionPromise = null; });
+    await this.connectionPromise;
+  }
+
+  private async initialize() {
+    if (this.database) return;
+    ensureMySqlRegistered();
     const app = cloudbase.init({ ...publicConfig(), auth: { detectSessionInUrl: true } });
     const { error } = await app.auth.signInAnonymously();
     if (error) throw error;

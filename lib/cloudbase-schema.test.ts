@@ -132,3 +132,11 @@ test('离谱法堂客户端仅调用 V5 RPC，页面不再出现私密关键词�
   assert.match(courtAppSource, /再来一局/);
   assert.doesNotMatch(courtAppSource, /私密关键词|本人关键词|关键词读取|getMyCourtAssignment/);
 });
+
+test('CloudBase 连接初始化并发复用且重复组件注册可安全恢复', () => {
+  assert.match(storeSource, /connectionPromise/);
+  assert.match(storeSource, /this\.connectionPromise \?\?= this\.initialize\(\)/);
+  assert.match(storeSource, /Duplicate component mysql/);
+  assert.match(storeSource, /ensureMySqlRegistered/);
+  assert.match(courtAppSource, /readableError\(error, '加入房间失败'\)/);
+});

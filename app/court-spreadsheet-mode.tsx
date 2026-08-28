@@ -36,6 +36,15 @@ function phaseStatusLabel(value: CourtPhaseStatus | undefined, voting = false) {
   return '填写中';
 }
 
+function readableError(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message) return error.message;
+  if (!error || typeof error !== 'object') return fallback;
+  const value = error as { code?: unknown; message?: unknown; msg?: unknown };
+  const message = typeof value.message === 'string' ? value.message : typeof value.msg === 'string' ? value.msg : '';
+  const code = typeof value.code === 'string' ? value.code : '';
+  return message ? `${message}${code && !message.includes(code) ? `（${code}）` : ''}` : code || fallback;
+}
+
 export default function CourtSpreadsheetMode() {
   const [ownerName, setOwnerName] = useState('');
   const [joinName, setJoinName] = useState('');
@@ -87,7 +96,7 @@ export default function CourtSpreadsheetMode() {
     if (!activeCode || !playerId || !cloudReady) return;
     return getCloudStore().watchCourtRoom(activeCode, (next) => {
       setRoom(next);
-    }, (error) => setNotice(error instanceof Error ? error.message : '房间同步失败'));
+    }, (error) => setNotice(readableError(error, '房间同步失败')));
   }, [activeCode, cloudReady, playerId]);
 
   useEffect(() => {
@@ -117,7 +126,7 @@ export default function CourtSpreadsheetMode() {
       setNotice(result.outcome === 'stale' ? '房间状态已经更新，请重新操作。' : result.message);
       return result.state;
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : '操作失败');
+      setNotice(readableError(error, '操作失败'));
       return null;
     }
   }, [room]);
@@ -152,7 +161,7 @@ export default function CourtSpreadsheetMode() {
       setRoom(next);
       setNotice(`房间 ${next.code} 已创建。请朋友从离谱法堂页面输入编号加入。`);
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : '创建房间失败');
+      setNotice(readableError(error, '创建房间失败'));
     } finally {
       setBusy(false);
     }
@@ -172,7 +181,7 @@ export default function CourtSpreadsheetMode() {
       if (joined.room.round > 0) await loadSubmission(code);
       setNotice(joined.room.status === 'lobby' ? `已加入房间 ${code}。` : `已加入房间 ${code}，你将从下一轮参与。`);
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : '加入房间失败');
+      setNotice(readableError(error, '加入房间失败'));
     } finally {
       setBusy(false);
     }
@@ -211,7 +220,7 @@ export default function CourtSpreadsheetMode() {
         if (next) await loadSubmission(next.code);
       });
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : '确认失败');
+      setNotice(readableError(error, '确认失败'));
     }
   };
 
@@ -222,7 +231,7 @@ export default function CourtSpreadsheetMode() {
         if (next) await loadSubmission(next.code);
       });
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : '确认失败');
+      setNotice(readableError(error, '确认失败'));
     }
   };
 
@@ -231,7 +240,7 @@ export default function CourtSpreadsheetMode() {
       validateVote(privateSubmission?.submissionId ?? null, choice, room?.publicEntries.map((entry) => entry.submissionId) ?? []);
       void apply('confirm_court_vote', { submissionId: choice });
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : '确认失败');
+      setNotice(readableError(error, '确认失败'));
     }
   };
 
