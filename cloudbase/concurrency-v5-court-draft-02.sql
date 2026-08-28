@@ -111,7 +111,7 @@ create or replace function public.join_court_game_v5(p_code text,p_player_id tex
 returns jsonb language plpgsql security definer set search_path=public,pg_temp as $$
 declare
   g public.games%rowtype;
-  state jsonb;
+  v_state jsonb;
   players jsonb;
   existing_id text;
   eligible_round integer;
@@ -132,12 +132,12 @@ begin
     'alive',true,'cardReady',false,'away',false,'eligibleFromRound',eligible_round
   ));
   ver := g.version+1;
-  state := jsonb_set(g.state,'{players}',players);
-  state := jsonb_set(state,'{version}',to_jsonb(ver));
-  state := jsonb_set(state,'{updatedAt}',to_jsonb(now_ms));
-  update public.games set state=join_court_game_v5.state,version=ver,updated_at=now() where code=g.code;
+  v_state := jsonb_set(g.state,'{players}',players);
+  v_state := jsonb_set(v_state,'{version}',to_jsonb(ver));
+  v_state := jsonb_set(v_state,'{updatedAt}',to_jsonb(now_ms));
+  update public.games set state=v_state,version=ver,updated_at=now() where code=g.code;
   insert into public.game_members(game_code,user_uid,player_id) values(g.code,auth.uid(),p_player_id);
-  return jsonb_build_object('state',state,'playerId',p_player_id);
+  return jsonb_build_object('state',v_state,'playerId',p_player_id);
 end $$;
 
 create or replace function public.get_my_court_submission_v5(p_code text)

@@ -13,6 +13,8 @@ const courtPlayableMigration = readFileSync(new URL('../cloudbase/concurrency-v4
 const courtPlayableVerification = readFileSync(new URL('../cloudbase/verify-v4-1-court-playable.sql', import.meta.url), 'utf8');
 const courtV5Migration = readFileSync(new URL('../cloudbase/concurrency-v5-court-draft-02.sql', import.meta.url), 'utf8');
 const courtV5Verification = readFileSync(new URL('../cloudbase/verify-v5-court-draft-02.sql', import.meta.url), 'utf8');
+const courtV5JoinHotfix = readFileSync(new URL('../cloudbase/hotfix-v5-court-join.sql', import.meta.url), 'utf8');
+const courtV5JoinHotfixVerification = readFileSync(new URL('../cloudbase/verify-v5-court-join-hotfix.sql', import.meta.url), 'utf8');
 const concurrencySource = `${concurrencyBase}\n${concurrencyMigration}\n${concurrencyHotfix}\n${versionedRpcMigration}`;
 const storeSource = readFileSync(new URL('./cloudbase-store.ts', import.meta.url), 'utf8');
 const appSource = readFileSync(new URL('../app/game-app.tsx', import.meta.url), 'utf8');
@@ -139,4 +141,15 @@ test('CloudBase 连接初始化并发复用且重复组件注册可安全恢复'
   assert.match(storeSource, /Duplicate component mysql/);
   assert.match(storeSource, /ensureMySqlRegistered/);
   assert.match(courtAppSource, /readableError\(error, '加入房间失败'\)/);
+});
+
+test('离谱法堂 V5 加入函数使用无歧义的本地状态变量', () => {
+  for (const source of [courtV5Migration, courtV5JoinHotfix]) {
+    assert.match(source, /function public\.join_court_game_v5[\s\S]*?declare[\s\S]*?v_state jsonb;[\s\S]*?v_state := jsonb_set/);
+    assert.match(source, /function public\.join_court_game_v5[\s\S]*?update public\.games set state=v_state/);
+    assert.doesNotMatch(source, /join_court_game_v5\.state/);
+  }
+  assert.match(courtV5JoinHotfixVerification, /join RPC writes the local v_state variable/);
+  assert.match(courtV5JoinHotfixVerification, /body !~ 'join_court_game_v5\\\.state'/);
+  assert.match(courtV5JoinHotfixVerification, /has_function_privilege\('anon'/);
 });
