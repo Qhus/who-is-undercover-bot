@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   createCourtRoom,
+  validateQuestionChoice,
   validateResponse,
   validateStatement,
   validateVote,
@@ -16,7 +17,7 @@ import { makeId } from '@/lib/game';
 const statusName: Record<string, string> = {
   lobby: '等待成员',
   statement: '首次陈词',
-  statement_reveal: '匿名公开',
+  questioning: '选择质询',
   evidence: '证据突袭',
   response: '当庭补述',
   voting: '陪审团表决',
@@ -47,6 +48,7 @@ function phaseStatusLabel(value: CourtPhaseStatus | undefined, voting = false) {
   if (value === 'confirmed') return voting ? '已确认双项选票' : '已确认';
   if (value === 'unconfirmed') return voting ? '未投票' : '未确认';
   if (value === 'unvoted') return '未投票';
+  if (value === 'choosing') return '选择中';
   return '填写中';
 }
 
@@ -68,6 +70,7 @@ export default function CourtSpreadsheetMode() {
   const [privateSubmission, setPrivateSubmission] = useState<CourtPrivateSubmission | null>(null);
   const [statement, setStatement] = useState('');
   const [response, setResponse] = useState('');
+  const [questionChoice, setQuestionChoice] = useState<string | null>(null);
   const [bestChoice, setBestChoice] = useState<string | null>(null);
   const [truthChoice, setTruthChoice] = useState<string | null>(null);
   const [activeSheet, setActiveSheet] = useState<CourtSheetId>('home');
@@ -83,6 +86,7 @@ export default function CourtSpreadsheetMode() {
     setPrivateSubmission(found);
     if (found?.statementConfirmed) setStatement(found.statement);
     if (found?.responseConfirmed) setResponse(found.response);
+    if (found?.selectedQuestionId) setQuestionChoice(found.selectedQuestionId);
   }, []);
 
   useEffect(() => {
@@ -96,7 +100,7 @@ export default function CourtSpreadsheetMode() {
         const active = JSON.parse(saved) as { code: string; playerId: string };
         if (invitedCode && active.code !== invitedCode) return;
         const found = await getCloudStore().getCourtRoom(active.code);
-        if (!found || found.courtVersion !== 6) return;
+        if (!found || found.courtVersion !== 7) return;
         setPlayerId(active.playerId);
         setRoom(found);
         if (found.round > 0) await loadSubmission(found.code);
@@ -126,9 +130,20 @@ export default function CourtSpreadsheetMode() {
     setResponse(draft.response ?? '');
     setBestChoice(null);
     setTruthChoice(null);
+    setQuestionChoice(null);
     setPrivateSubmission(null);
     void loadSubmission(room.code).catch(() => setNotice('本人已确认内容暂时无法读取，请刷新重试。'));
   }, [loadSubmission, playerId, room]);
+
+  const activeCourtPhase = room?.status ?? '';
+  const activeCourtRound = room?.round ?? 0;
+  const activeCourtSession = room?.sessionNo ?? 0;
+  useEffect(() => {
+    if (!activeCode || !playerId || activeCourtRound <= 0) return;
+    window.queueMicrotask(() => {
+      void loadSubmission(activeCode).catch(() => setNotice('本阶段个人资料暂时无法读取，请刷新重试。'));
+    });
+  }, [activeCode, activeCourtPhase, activeCourtRound, activeCourtSession, loadSubmission, playerId]);
 
   useEffect(() => {
     if (!room || !playerId || room.round <= 0 || !draftScope.current) return;
@@ -138,7 +153,7 @@ export default function CourtSpreadsheetMode() {
   const apply = useCallback(async (actionType: CourtActionType, payload: Record<string, unknown> = {}) => {
     if (!room) return null;
     try {
-      const result = await getCloudStore().applyCourtAction({ room, actionId: makeId('court-v6-action'), actionType, payload });
+      const result = await getCloudStore().applyCourtAction({ room, actionId: makeId('court-v7-action'), actionType, payload });
       setRoom(result.state);
       setNotice(result.outcome === 'stale' ? '房间状态已经更新，请重新操作。' : result.message);
       return result.state;
@@ -211,6 +226,7 @@ export default function CourtSpreadsheetMode() {
     setPrivateSubmission(null);
     setStatement('');
     setResponse('');
+    setQuestionChoice(null);
     setBestChoice(null);
     setTruthChoice(null);
     setActiveSheet('home');
@@ -236,6 +252,23 @@ export default function CourtSpreadsheetMode() {
     try {
       validateStatement(statement);
       void apply('confirm_court_statement', { statement: statement.trim() }).then(async (next) => {
+        if (next) await loadSubmission(next.code);
+      });
+    } catch (error) {
+      setNotice(readableError(error, '确认失败'));
+    }
+  };
+
+  const rerollTactic = () => {
+    void apply('reroll_court_tactic').then(async (next) => {
+      if (next) await loadSubmission(next.code);
+    });
+  };
+
+  const confirmQuestion = () => {
+    try {
+      validateQuestionChoice(questionChoice, privateSubmission?.questionOptions ?? []);
+      void apply('confirm_court_question', { questionId: questionChoice }).then(async (next) => {
         if (next) await loadSubmission(next.code);
       });
     } catch (error) {
@@ -269,16 +302,17 @@ export default function CourtSpreadsheetMode() {
   const entries = room?.publicEntries ?? [];
   const latestResult = room?.roundResults.at(-1) ?? null;
   const statementLocked = room?.statementStatuses[playerId] === 'confirmed' || privateSubmission?.statementConfirmed;
+  const questionLocked = room?.questionStatuses[playerId] === 'confirmed' || privateSubmission?.questionConfirmed;
   const responseLocked = room?.responseStatuses[playerId] === 'confirmed' || privateSubmission?.responseConfirmed;
   const voteLocked = room?.voteStatuses[playerId] === 'confirmed';
-  const currentStatuses = room?.status === 'statement' ? room.statementStatuses : room?.status === 'response' ? room.responseStatuses : room?.status === 'voting' ? room.voteStatuses : null;
+  const currentStatuses = room?.status === 'statement' ? room.statementStatuses : room?.status === 'questioning' ? room.questionStatuses : room?.status === 'response' ? room.responseStatuses : room?.status === 'voting' ? room.voteStatuses : null;
   const evidenceVisible = Boolean(room && ['evidence', 'response', 'voting', 'result', 'finished'].includes(room.status));
 
   const worksheetRows = () => {
     if (activeSheet === 'guide') return <>
-      <tr><th>1</th><td>流程</td><td colSpan={5}>读案件 → 限时首次陈词 → 查看新证据 → 当庭补述 → 两项匿名投票 → 查看判决</td></tr>
-      <tr><th>2</th><td>输入时间</td><td colSpan={5}>首次陈词和当庭补述各有 5 分钟；全部有效玩家提前确认后会立即推进，不必等倒计时结束。</td></tr>
-      <tr><th>3</th><td>匿名规则</td><td colSpan={5}>公开前看不到他人正文；投票时陈述顺序随机，结果阶段才揭晓作者和书记员席。</td></tr>
+      <tr><th>1</th><td>流程</td><td colSpan={5}>读案件 → 按私密招式陈词 → 给匿名对手选质询 → 面对证据补述 → 双项投票 → 揭晓攻防关系</td></tr>
+      <tr><th>2</th><td>输入时间</td><td colSpan={5}>首次陈词和当庭补述各 5 分钟，选择质询 45 秒；全部有效玩家提前确认后立即推进。</td></tr>
+      <tr><th>3</th><td>匿名规则</td><td colSpan={5}>招式在陈词公开时一并展示，作者和质询者在结果阶段才揭晓；三人以上没有标准答案。</td></tr>
       <tr><th>4</th><td>投票规则</td><td colSpan={5}>“最会狡辩”和“最像真的”各投一票，可以投同一条，但不能投自己的陈述。</td></tr>
       <tr><th>5</th><td>临时离开</td><td colSpan={5}>来不及参与时点击顶部“暂离”，本阶段不会继续等待你；回来后点击“结束暂离”。</td></tr>
     </>;
@@ -292,8 +326,8 @@ export default function CourtSpreadsheetMode() {
       <tr><th>2</th><td>{room.sessionNo}</td><td>{room.round}/3</td><td>{room.caseTitle ?? '等待案件'}</td><td colSpan={2}>{room.charge ?? '房主开始后受理案件'}</td><td>{statusName[room.status]}</td></tr>
     </>;
     if (activeSheet === 'statements') return <>
-      <tr><th>1</th><td>编号</td><td colSpan={3}>首次陈词</td><td colSpan={2}>当庭补述</td></tr>
-      {entries.length ? entries.map((entry, index) => <tr key={entry.submissionId}><th>{2 + index}</th><td>{entry.displayCode}{entry.submissionId === privateSubmission?.submissionId ? '（你的陈述）' : ''}</td><td colSpan={3}>{entry.statement}</td><td colSpan={2}>{entry.response ?? (room.status === 'voting' || ['result', 'finished'].includes(room.status) ? '未作补充说明' : '尚未公开')}</td></tr>) : <tr><th>2</th><td>等待公开</td><td colSpan={5}>首次陈词全部确认或倒计时结束后，这里会显示完整匿名内容。</td></tr>}
+      <tr><th>1</th><td>编号</td><td>辩护招式</td><td colSpan={2}>首次陈词</td><td>收到的质询</td><td>当庭补述</td></tr>
+      {entries.length ? entries.map((entry, index) => <tr key={entry.submissionId}><th>{2 + index}</th><td>{entry.displayCode}{entry.submissionId === privateSubmission?.submissionId ? '（你的陈述）' : ''}</td><td>{entry.tacticName ?? '尚未公开'}</td><td colSpan={2}>{entry.statement}</td><td>{entry.question ?? '尚未公开'}</td><td>{entry.response ?? (room.status === 'voting' || ['result', 'finished'].includes(room.status) ? '未作补充说明' : '尚未公开')}</td></tr>) : <tr><th>2</th><td>等待公开</td><td colSpan={5}>首次陈词全部确认或倒计时结束后，这里会显示匿名陈词与招式。</td></tr>}
     </>;
     if (activeSheet === 'evidence') return <>
       <tr><th>1</th><td>附件状态</td><td>证据名称</td><td colSpan={4}>完整内容</td></tr>
@@ -301,14 +335,14 @@ export default function CourtSpreadsheetMode() {
     </>;
     if (activeSheet === 'voting') return <>
       <tr><th>1</th><td>编号</td><td colSpan={3}>完整陈词</td><td>最会狡辩</td><td>最像真的</td></tr>
-      {room.status === 'voting' ? entries.map((entry, index) => <tr key={entry.submissionId}><th>{2 + index}</th><td>{entry.displayCode}{entry.submissionId === privateSubmission?.submissionId ? '（你的陈述）' : ''}</td><td colSpan={3}>首次陈词：{entry.statement}<br />当庭补述：{entry.response ?? '未作补充说明'}</td><td><button disabled={voteLocked || entry.submissionId === privateSubmission?.submissionId} onClick={() => setBestChoice(entry.submissionId)}>{bestChoice === entry.submissionId ? '已选' : '选择'}</button></td><td><button disabled={voteLocked || entry.submissionId === privateSubmission?.submissionId} onClick={() => setTruthChoice(entry.submissionId)}>{truthChoice === entry.submissionId ? '已选' : '选择'}</button></td></tr>) : <tr><th>2</th><td>尚未开放</td><td colSpan={5}>进入陪审团表决后，这里会完整展示所有匿名陈词。</td></tr>}
+      {room.status === 'voting' ? entries.map((entry, index) => <tr key={entry.submissionId}><th>{2 + index}</th><td>{entry.displayCode}{entry.submissionId === privateSubmission?.submissionId ? '（你的陈述）' : ''}</td><td colSpan={3}>招式：{entry.tacticName}<br />首次陈词：{entry.statement}<br />质询：{entry.question}<br />当庭补述：{entry.response ?? '未作补充说明'}</td><td><button disabled={voteLocked || entry.submissionId === privateSubmission?.submissionId} onClick={() => setBestChoice(entry.submissionId)}>{bestChoice === entry.submissionId ? '已选' : '选择'}</button></td><td><button disabled={voteLocked || entry.submissionId === privateSubmission?.submissionId} onClick={() => setTruthChoice(entry.submissionId)}>{truthChoice === entry.submissionId ? '已选' : '选择'}</button></td></tr>) : <tr><th>2</th><td>尚未开放</td><td colSpan={5}>进入陪审团表决后，这里会完整展示所有匿名攻防记录。</td></tr>}
       {room.status === 'voting' && <tr><th>20</th><td>确认</td><td colSpan={4}>两项都选好后统一确认；确认后不能修改。</td><td><button className="sheet-action" disabled={voteLocked || !isRoundPlayer || me?.away || !bestChoice || !truthChoice} onClick={confirmVote}>{voteLocked ? '双项选票已确认' : '确认两项选票'}</button></td></tr>}
     </>;
     if (activeSheet === 'results') return <>
       <tr><th>1</th><td>分类</td><td>对象</td><td colSpan={3}>统计</td><td>说明</td></tr>
       <tr><th>2</th><td>狡辩排行榜</td><td colSpan={4}>{[...room.players].sort((a, b) => (room.totalBestScores[b.id] ?? 0) - (room.totalBestScores[a.id] ?? 0)).map((player) => `${player.name} ${room.totalBestScores[player.id] ?? 0} 票`).join('；') || '等待首轮判决'}</td><td>按累计票数</td></tr>
-      <tr><th>3</th><td>可信排行榜</td><td colSpan={4}>{[...room.players].sort((a, b) => (room.totalTruthScores[b.id] ?? 0) - (room.totalTruthScores[a.id] ?? 0)).map((player) => `${player.name} ${room.totalTruthScores[player.id] ?? 0} 票`).join('；') || '等待首轮判决'}</td><td>书记员席不累计</td></tr>
-      {['result', 'finished'].includes(room.status) && entries.map((entry, index) => <tr key={entry.submissionId}><th>{4 + index}</th><td>{entry.displayCode}</td><td>{entry.isReference ? '书记员席' : entry.authorName}</td><td colSpan={3}>狡辩 {entry.bestVotes ?? 0} 票 · 可信 {entry.truthVotes ?? 0} 票</td><td>{entry.statement}</td></tr>)}
+      <tr><th>3</th><td>可信排行榜</td><td colSpan={4}>{[...room.players].sort((a, b) => (room.totalTruthScores[b.id] ?? 0) - (room.totalTruthScores[a.id] ?? 0)).map((player) => `${player.name} ${room.totalTruthScores[player.id] ?? 0} 票`).join('；') || '等待首轮判决'}</td><td>卷宗旧案不累计</td></tr>
+      {['result', 'finished'].includes(room.status) && entries.map((entry, index) => <tr key={entry.submissionId}><th>{4 + index}</th><td>{entry.displayCode}</td><td>{entry.isArchive ? '卷宗旧案' : entry.authorName}</td><td colSpan={3}>招式：{entry.tacticName} · 质询者：{entry.questionerName ?? '系统检方'} · 狡辩 {entry.bestVotes ?? 0} 票 · 可信 {entry.truthVotes ?? 0} 票</td><td>{entry.statement}</td></tr>)}
     </>;
     return <>
       <tr><th>1</th><td>时间</td><td>房间</td><td>局次/轮次</td><td>当前阶段</td><td colSpan={2}>最近状态</td></tr>
@@ -332,8 +366,9 @@ export default function CourtSpreadsheetMode() {
         {!room ? <>
           <div><input value={ownerName} onChange={(event) => setOwnerName(event.target.value.slice(0, 12))} placeholder="填写房主称呼" /><button disabled={busy} onClick={createRemote}>创建房间</button></div>
           <div><input value={joinName} onChange={(event) => setJoinName(event.target.value.slice(0, 12))} placeholder="你的称呼" /><input value={joinCode} maxLength={6} onChange={(event) => setJoinCode(event.target.value.toUpperCase().replace(/[^A-Z2-9]/g, ''))} placeholder="六位编号" /><button disabled={busy} onClick={joinRemote}>加入</button></div>
-        </> : room.status === 'statement' ? <div><input disabled={!isRoundPlayer || Boolean(statementLocked) || me?.away} value={statement} onChange={(event) => setStatement(event.target.value.slice(0, 80))} placeholder={isRoundPlayer ? '首次陈词，最多 80 字' : '本轮旁听，无需提交'} /><button disabled={!isRoundPlayer || Boolean(statementLocked) || me?.away} onClick={confirmStatement}>{statementLocked ? '已确认' : '确认首次陈词'}</button></div>
-          : room.status === 'response' ? <div><input disabled={!privateSubmission?.statementConfirmed || Boolean(responseLocked) || me?.away} value={response} onChange={(event) => setResponse(event.target.value.slice(0, 80))} placeholder={privateSubmission?.statementConfirmed ? '当庭补述，最多 80 字' : '本阶段无需提交'} /><button disabled={!privateSubmission?.statementConfirmed || Boolean(responseLocked) || me?.away} onClick={confirmResponse}>{responseLocked ? '已确认' : '确认当庭补述'}</button></div>
+        </> : room.status === 'statement' ? <div className="court-statement-controls"><span className="court-tactic-tip"><strong>招式：{privateSubmission?.tacticName ?? '读取中'}</strong>{privateSubmission?.tacticInstruction ? ` · ${privateSubmission.tacticInstruction}` : ''}</span><button disabled={!privateSubmission?.rerollAvailable || Boolean(statementLocked) || me?.away} onClick={rerollTactic}>{privateSubmission ? (privateSubmission.rerollAvailable ? '换个招式' : '换招已使用') : '读取中'}</button><input disabled={!isRoundPlayer || Boolean(statementLocked) || me?.away} value={statement} onChange={(event) => setStatement(event.target.value.slice(0, 80))} placeholder={isRoundPlayer ? '首次陈词，最多 80 字' : '本轮旁听，无需提交'} /><button disabled={!isRoundPlayer || Boolean(statementLocked) || me?.away} onClick={confirmStatement}>{statementLocked ? '已确认' : '确认首次陈词'}</button></div>
+          : room.status === 'questioning' ? <div><select disabled={questionLocked || !privateSubmission?.questionTargetSubmissionId || me?.away} value={questionChoice ?? ''} onChange={(event) => setQuestionChoice(event.target.value || null)}><option value="">选择一条质询</option>{privateSubmission?.questionOptions.map((option) => <option key={option.id} value={option.id}>{option.text}</option>)}</select><button disabled={questionLocked || !privateSubmission?.questionTargetSubmissionId || !questionChoice || me?.away} onClick={confirmQuestion}>{questionLocked ? '质询已确认' : '确认质询'}</button></div>
+          : room.status === 'response' ? <div><span>质询：{privateSubmission?.receivedQuestion ?? '读取中'}</span><input disabled={!privateSubmission?.statementConfirmed || Boolean(responseLocked) || me?.away} value={response} onChange={(event) => setResponse(event.target.value.slice(0, 120))} placeholder={privateSubmission?.statementConfirmed ? '当庭补述，最多 120 字' : '本阶段无需提交'} /><button disabled={!privateSubmission?.statementConfirmed || Boolean(responseLocked) || me?.away} onClick={confirmResponse}>{responseLocked ? '已确认' : '确认当庭补述'}</button></div>
             : room.status === 'voting' ? <div className="court-vote-selects"><label>最会狡辩<select disabled={voteLocked || !isRoundPlayer || me?.away} value={bestChoice ?? ''} onChange={(event) => setBestChoice(event.target.value || null)}><option value="">选择一条陈述</option>{entries.filter((entry) => entry.submissionId !== privateSubmission?.submissionId).map((entry) => <option key={entry.submissionId} value={entry.submissionId}>{entry.displayCode}</option>)}</select></label><label>最像真的<select disabled={voteLocked || !isRoundPlayer || me?.away} value={truthChoice ?? ''} onChange={(event) => setTruthChoice(event.target.value || null)}><option value="">选择一条陈述</option>{entries.filter((entry) => entry.submissionId !== privateSubmission?.submissionId).map((entry) => <option key={entry.submissionId} value={entry.submissionId}>{entry.displayCode}</option>)}</select></label><button disabled={voteLocked || !isRoundPlayer || me?.away || !bestChoice || !truthChoice} onClick={confirmVote}>{voteLocked ? '双项选票已确认' : '确认两项选票'}</button></div> : null}
       </div>
       <div className="sheet-grid-scroll"><table className="sheet-grid">
@@ -342,18 +377,18 @@ export default function CourtSpreadsheetMode() {
           <tr><th>1</th><td>操作类型</td><td>你的称呼</td><td>六位房间编号</td><td>人数</td><td>执行</td><td>说明</td></tr>
           <tr><th>2</th><td>创建离谱法堂</td><td><input value={ownerName} onChange={(event) => setOwnerName(event.target.value.slice(0, 12))} placeholder="填写房主称呼" /></td><td>自动生成</td><td>2–8 人</td><td><button className="sheet-action" disabled={busy} onClick={createRemote}>创建联机房间</button></td><td>房主只需开始一次</td></tr>
           <tr><th>3</th><td>加入离谱法堂</td><td><input value={joinName} onChange={(event) => setJoinName(event.target.value.slice(0, 12))} placeholder="填写你的称呼" /></td><td><input value={joinCode} maxLength={6} onChange={(event) => setJoinCode(event.target.value.toUpperCase().replace(/[^A-Z2-9]/g, ''))} placeholder="例如 Q7K2P8" /></td><td>自动识别</td><td><button className="sheet-action" disabled={busy} onClick={joinRemote}>加入房间</button></td><td>进行中的房间从下一轮参与</td></tr>
-          <tr><th>5</th><td>怎么玩</td><td colSpan={5}>同一案件 → 首次陈词 → 证据突袭 → 当庭补述 → 最会狡辩与最像真的各投一票</td></tr>
+          <tr><th>5</th><td>怎么玩</td><td colSpan={5}>领取私密招式 → 首次陈词 → 给匿名对手选质询 → 面对证据补述 → 双项投票</td></tr>
           <tr><th>6</th><td>确认规则</td><td colSpan={5}>确认前可以修改，确认后锁定；所有人可见确认状态，但公开前看不到正文。</td></tr>
         </> : <>
           <tr><th>1</th><td>案件登记</td><td>第 {room.round}/3 轮</td><td>{room.caseTitle ?? '等待案件'}</td><td colSpan={2}>{room.charge ?? '房主开始后受理案件'}</td><td>{statusName[room.status]}</td></tr>
           {room.status === 'lobby' && room.players.map((player, index) => <tr key={player.id}><th>{2 + index}</th><td>{player.id === room.ownerId ? '房主' : '成员'}</td><td>{player.seat}</td><td>{player.name}{player.id === playerId ? '（你）' : ''}</td><td>{player.away ? '暂离' : '已加入'}</td><td>{(player.eligibleFromRound ?? 1) > 1 ? `第 ${player.eligibleFromRound} 轮参与` : '本局参与'}</td><td>房间 {room.code}</td></tr>)}
           {currentStatuses && room.players.filter((player) => room.expectedPlayerIds.includes(player.id)).map((player, index) => <tr key={player.id}><th>{2 + index}</th><td>{room.status === 'voting' ? '投票状态' : '确认状态'}</td><td>{player.seat}</td><td>{player.name}{player.id === playerId ? '（你）' : ''}</td><td>{phaseStatusLabel(currentStatuses[player.id], room.status === 'voting')}</td><td colSpan={2}>正文与票型不公开</td></tr>)}
-          {room.status === 'statement' && <tr><th>12</th><td>首次陈词</td><td colSpan={4}><input disabled={!isRoundPlayer || Boolean(statementLocked) || me?.away} value={statement} onChange={(event) => setStatement(event.target.value.slice(0, 80))} placeholder={isRoundPlayer ? '围绕案件为自己辩护，最多 80 字' : '本轮旁听，无需提交'} /><small>{statement.length}/80 · 确认后锁定</small></td><td><button className="sheet-action" disabled={!isRoundPlayer || Boolean(statementLocked) || me?.away} onClick={confirmStatement}>{statementLocked ? '首次陈词已确认' : '确认首次陈词'}</button></td></tr>}
-          {room.status === 'statement_reveal' && <tr><th>12</th><td>匿名陈词</td><td colSpan={5}>{entries.length ? entries.map((entry) => <p key={entry.submissionId}><b>{entry.displayCode}{entry.submissionId === privateSubmission?.submissionId ? '（你的陈述）' : ''}</b>：{entry.statement}</p>) : '本轮无人确认首次陈词'}</td></tr>}
+          {room.status === 'statement' && <><tr><th>12</th><td>你的辩护招式</td><td>{privateSubmission?.tacticName ?? '读取中'}</td><td colSpan={3}>{privateSubmission?.tacticInstruction ?? '招式仅本人可见，陈词公开后才显示招式名称。'}</td><td><button disabled={!privateSubmission?.rerollAvailable || Boolean(statementLocked) || me?.away} onClick={rerollTactic}>{privateSubmission ? (privateSubmission.rerollAvailable ? '换个招式' : '换招已使用') : '读取中'}</button></td></tr><tr><th>13</th><td>首次陈词</td><td colSpan={4}><input disabled={!isRoundPlayer || Boolean(statementLocked) || me?.away} value={statement} onChange={(event) => setStatement(event.target.value.slice(0, 80))} placeholder={isRoundPlayer ? '按照你的招式为自己辩护，最多 80 字' : '本轮旁听，无需提交'} /><small>{statement.length}/80 · 确认后锁定</small></td><td><button className="sheet-action" disabled={!isRoundPlayer || Boolean(statementLocked) || me?.away} onClick={confirmStatement}>{statementLocked ? '首次陈词已确认' : '确认首次陈词'}</button></td></tr></>}
+          {room.status === 'questioning' && <><tr><th>12</th><td>你的质询对象</td><td>{entries.find((entry) => entry.submissionId === privateSubmission?.questionTargetSubmissionId)?.displayCode ?? '系统分配中'}</td><td>{entries.find((entry) => entry.submissionId === privateSubmission?.questionTargetSubmissionId)?.tacticName}</td><td colSpan={3}>{entries.find((entry) => entry.submissionId === privateSubmission?.questionTargetSubmissionId)?.statement ?? '本轮没有可质询的其他陈述'}</td></tr><tr><th>13</th><td>三选一质询</td><td colSpan={4}>{privateSubmission?.questionOptions.map((option) => <button key={option.id} disabled={questionLocked || !privateSubmission?.questionTargetSubmissionId || me?.away} className={questionChoice === option.id ? 'sheet-action' : ''} onClick={() => setQuestionChoice(option.id)}>{option.text}</button>)}</td><td><button className="sheet-action" disabled={questionLocked || !privateSubmission?.questionTargetSubmissionId || !questionChoice || me?.away} onClick={confirmQuestion}>{questionLocked ? '质询已确认' : '确认所选质询'}</button></td></tr></>}
           {room.status === 'evidence' && <><tr><th>12</th><td>证据突袭</td><td>{room.evidenceTitle}</td><td colSpan={4}>{room.evidence}</td></tr><tr><th>13</th><td>提示</td><td colSpan={5}>5 秒后开放当庭补述，请把新证据圆回来。</td></tr></>}
-          {room.status === 'response' && <><tr><th>12</th><td>证据突袭</td><td>{room.evidenceTitle}</td><td colSpan={4}>{room.evidence}</td></tr><tr><th>13</th><td>当庭补述</td><td colSpan={4}><input disabled={!privateSubmission?.statementConfirmed || Boolean(responseLocked) || me?.away} value={response} onChange={(event) => setResponse(event.target.value.slice(0, 80))} placeholder={privateSubmission?.statementConfirmed ? '面对新证据继续圆谎，最多 80 字' : '首次陈词未确认，本阶段无需提交'} /><small>{response.length}/80 · 确认后锁定</small></td><td><button className="sheet-action" disabled={!privateSubmission?.statementConfirmed || Boolean(responseLocked) || me?.away} onClick={confirmResponse}>{responseLocked ? '当庭补述已确认' : '确认当庭补述'}</button></td></tr></>}
-          {room.status === 'voting' && <><tr><th>12</th><td>共同证据</td><td>{room.evidenceTitle}</td><td colSpan={4}>{room.evidence}</td></tr>{entries.map((entry, index) => <tr key={entry.submissionId}><th>{13 + index}</th><td>{entry.displayCode}{entry.submissionId === privateSubmission?.submissionId ? '（你的陈述）' : ''}</td><td colSpan={3}>首次陈词：{entry.statement}<br />当庭补述：{entry.response ?? '未作补充说明'}</td><td><button disabled={voteLocked || entry.submissionId === privateSubmission?.submissionId} onClick={() => setBestChoice(entry.submissionId)}>{bestChoice === entry.submissionId ? '已选狡辩' : '最会狡辩'}</button></td><td><button disabled={voteLocked || entry.submissionId === privateSubmission?.submissionId} onClick={() => setTruthChoice(entry.submissionId)}>{truthChoice === entry.submissionId ? '已选可信' : '最像真的'}</button></td></tr>)}<tr><th>25</th><td>陪审团表决</td><td colSpan={4}>两项各选一条，可以选择同一条；不能投自己。书记员也交了一份匿名临场答辩。</td><td><button className="sheet-action" disabled={voteLocked || !isRoundPlayer || me?.away || !bestChoice || !truthChoice} onClick={confirmVote}>{voteLocked ? '双项选票已确认' : '确认两项选票'}</button></td></tr></>}
-          {['result', 'finished'].includes(room.status) && <>{entries.map((entry, index) => { const bestWinner = Boolean(latestResult?.bestWinnerSubmissionIds.includes(entry.submissionId)); const truthWinner = Boolean(latestResult?.truthWinnerSubmissionIds.includes(entry.submissionId)); return <tr key={entry.submissionId}><th>{12 + index}</th><td>{bestWinner && truthWinner ? '双项胜出' : bestWinner ? '最会狡辩' : truthWinner ? '最像真的' : entry.displayCode}</td><td>{entry.isReference ? '书记员席' : entry.authorName ?? '待揭晓'}</td><td colSpan={2}>首次陈词：{entry.statement}<br />当庭补述：{entry.response ?? '未作补充说明'}</td><td>狡辩 {entry.bestVotes ?? 0} · 可信 {entry.truthVotes ?? 0}</td><td>{bestWinner || truthWinner ? room.verdictTemplate : '本轮结果'}</td></tr>; })}<tr><th>25</th><td>狡辩排行榜</td><td colSpan={4}>{[...room.players].sort((a, b) => (room.totalBestScores[b.id] ?? 0) - (room.totalBestScores[a.id] ?? 0)).map((player) => `${player.name} ${room.totalBestScores[player.id] ?? 0} 票`).join('；')}</td><td>{room.status === 'finished' ? '三轮完成' : '10 秒后进入下一轮'}</td></tr><tr><th>26</th><td>可信排行榜</td><td colSpan={4}>{[...room.players].sort((a, b) => (room.totalTruthScores[b.id] ?? 0) - (room.totalTruthScores[a.id] ?? 0)).map((player) => `${player.name} ${room.totalTruthScores[player.id] ?? 0} 票`).join('；')}</td><td>书记员席不计入累计榜</td></tr></>}
+          {room.status === 'response' && <><tr><th>12</th><td>证据突袭</td><td>{room.evidenceTitle}</td><td colSpan={4}>{room.evidence}</td></tr><tr><th>13</th><td>你收到的质询</td><td colSpan={5}>{privateSubmission?.receivedQuestion ?? '系统检方正在整理质询'}</td></tr><tr><th>14</th><td>当庭补述</td><td colSpan={4}><input disabled={!privateSubmission?.statementConfirmed || Boolean(responseLocked) || me?.away} value={response} onChange={(event) => setResponse(event.target.value.slice(0, 120))} placeholder={privateSubmission?.statementConfirmed ? '同时回应证据和质询，最多 120 字' : '首次陈词未确认，本阶段无需提交'} /><small>{response.length}/120 · 确认后锁定</small></td><td><button className="sheet-action" disabled={!privateSubmission?.statementConfirmed || Boolean(responseLocked) || me?.away} onClick={confirmResponse}>{responseLocked ? '当庭补述已确认' : '确认当庭补述'}</button></td></tr></>}
+          {room.status === 'voting' && <><tr><th>12</th><td>共同证据</td><td>{room.evidenceTitle}</td><td colSpan={4}>{room.evidence}</td></tr>{entries.map((entry, index) => <tr key={entry.submissionId}><th>{13 + index}</th><td>{entry.displayCode}{entry.submissionId === privateSubmission?.submissionId ? '（你的陈述）' : ''}</td><td colSpan={3}>招式：{entry.tacticName}<br />首次陈词：{entry.statement}<br />质询：{entry.question}<br />当庭补述：{entry.response ?? '未作补充说明'}</td><td><button disabled={voteLocked || entry.submissionId === privateSubmission?.submissionId} onClick={() => setBestChoice(entry.submissionId)}>{bestChoice === entry.submissionId ? '已选狡辩' : '最会狡辩'}</button></td><td><button disabled={voteLocked || entry.submissionId === privateSubmission?.submissionId} onClick={() => setTruthChoice(entry.submissionId)}>{truthChoice === entry.submissionId ? '已选可信' : '最像真的'}</button></td></tr>)}<tr><th>25</th><td>陪审团表决</td><td colSpan={4}>两项各选一条，可以选同一条且不能投自己。只有两人局会匿名混入一份卷宗旧案。</td><td><button className="sheet-action" disabled={voteLocked || !isRoundPlayer || me?.away || !bestChoice || !truthChoice} onClick={confirmVote}>{voteLocked ? '双项选票已确认' : '确认两项选票'}</button></td></tr></>}
+          {['result', 'finished'].includes(room.status) && <>{entries.map((entry, index) => { const bestWinner = Boolean(latestResult?.bestWinnerSubmissionIds.includes(entry.submissionId)); const truthWinner = Boolean(latestResult?.truthWinnerSubmissionIds.includes(entry.submissionId)); return <tr key={entry.submissionId}><th>{12 + index}</th><td>{bestWinner && truthWinner ? '离谱但可信' : bestWinner ? '最会狡辩' : truthWinner ? '最像真的' : entry.displayCode}</td><td>{entry.isArchive ? '卷宗旧案' : entry.authorName ?? '待揭晓'}</td><td colSpan={2}>招式：{entry.tacticName}<br />首次陈词：{entry.statement}<br />质询：{entry.question}（{entry.questionerName ?? '系统检方'}）<br />当庭补述：{entry.response ?? '未作补充说明'}</td><td>狡辩 {entry.bestVotes ?? 0} · 可信 {entry.truthVotes ?? 0}</td><td>{bestWinner || truthWinner ? room.verdictTemplate : '本轮结果'}</td></tr>; })}<tr><th>25</th><td>狡辩排行榜</td><td colSpan={4}>{[...room.players].sort((a, b) => (room.totalBestScores[b.id] ?? 0) - (room.totalBestScores[a.id] ?? 0)).map((player) => `${player.name} ${room.totalBestScores[player.id] ?? 0} 票`).join('；')}</td><td>{room.status === 'finished' ? '三轮完成' : '10 秒后进入下一轮'}</td></tr><tr><th>26</th><td>可信排行榜</td><td colSpan={4}>{[...room.players].sort((a, b) => (room.totalTruthScores[b.id] ?? 0) - (room.totalTruthScores[a.id] ?? 0)).map((player) => `${player.name} ${room.totalTruthScores[player.id] ?? 0} 票`).join('；')}</td><td>卷宗旧案不计入累计榜</td></tr></>}
         </>}</tbody>
       </table></div>
       {notice && <div className="sheet-toast sheet-toast--info">{notice}</div>}

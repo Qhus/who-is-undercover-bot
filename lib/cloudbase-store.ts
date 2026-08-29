@@ -35,7 +35,9 @@ export interface GameActionResult {
 }
 export type CourtActionType =
   | 'start_court_game'
+  | 'reroll_court_tactic'
   | 'confirm_court_statement'
+  | 'confirm_court_question'
   | 'confirm_court_response'
   | 'confirm_court_vote'
   | 'advance_court_phase'
@@ -88,7 +90,7 @@ export class CloudBaseRoomStore {
 
   async createCourtRoom(room: AbsurdCourtRoom): Promise<AbsurdCourtRoom> {
     await this.connect();
-    const { data, error } = await this.db().rpc('create_court_game_v6', {
+    const { data, error } = await this.db().rpc('create_court_game_v7', {
       p_code: room.code,
       p_owner_player_id: room.ownerId,
       p_owner_name: room.players[0]?.name ?? '房主',
@@ -99,7 +101,7 @@ export class CloudBaseRoomStore {
 
   async joinCourtRoom(code: string, playerId: string, nickname: string): Promise<{ room: AbsurdCourtRoom; playerId: string }> {
     await this.connect();
-    const { data, error } = await this.db().rpc('join_court_game_v6', {
+    const { data, error } = await this.db().rpc('join_court_game_v7', {
       p_code: code,
       p_player_id: playerId,
       p_nickname: nickname,
@@ -111,7 +113,7 @@ export class CloudBaseRoomStore {
 
   async applyCourtAction(input: { room: AbsurdCourtRoom; actionId: string; actionType: CourtActionType; payload?: Record<string, unknown> }): Promise<CourtActionResult> {
     await this.connect();
-    const { data, error } = await this.db().rpc('apply_court_action_v6', {
+    const { data, error } = await this.db().rpc('apply_court_action_v7', {
       p_code: input.room.code,
       p_action_id: input.actionId,
       p_action_type: input.actionType,
@@ -127,7 +129,7 @@ export class CloudBaseRoomStore {
 
   async getMyCourtSubmission(code: string): Promise<CourtPrivateSubmission | null> {
     await this.connect();
-    const { data, error } = await this.db().rpc('get_my_court_submission_v6', { p_code: code }).single();
+    const { data, error } = await this.db().rpc('get_my_court_context_v7', { p_code: code }).single();
     if (error) throw error;
     return data as CourtPrivateSubmission | null;
   }
