@@ -20,6 +20,8 @@ const courtV6Migration = readFileSync(new URL('../cloudbase/concurrency-v6-court
 const courtV6Verification = readFileSync(new URL('../cloudbase/verify-v6-court-dual-vote.sql', import.meta.url), 'utf8');
 const courtCopyMigration = readFileSync(new URL('../cloudbase/content-v6-1-court-copy.sql', import.meta.url), 'utf8');
 const courtCopyVerification = readFileSync(new URL('../cloudbase/verify-v6-1-court-copy.sql', import.meta.url), 'utf8');
+const courtTimerMigration = readFileSync(new URL('../cloudbase/experience-v6-2-court-timers.sql', import.meta.url), 'utf8');
+const courtTimerVerification = readFileSync(new URL('../cloudbase/verify-v6-2-court-timers.sql', import.meta.url), 'utf8');
 const concurrencySource = `${concurrencyBase}\n${concurrencyMigration}\n${concurrencyHotfix}\n${versionedRpcMigration}`;
 const storeSource = readFileSync(new URL('./cloudbase-store.ts', import.meta.url), 'utf8');
 const appSource = readFileSync(new URL('../app/game-app.tsx', import.meta.url), 'utf8');
@@ -171,6 +173,15 @@ test('离谱法堂内容增量提供三十套案件和最近二十一轮避重',
     }
   }
   for (const expected of ['at least 30 enabled case packs', 'all live reference lines fit quick input', 'sample restart drops the oldest three cases']) assert.match(courtCopyVerification, new RegExp(expected));
+});
+
+test('离谱法堂节奏增量延长两段输入和双项投票但不替换公共 RPC', () => {
+  assert.match(courtTimerMigration, /court_v6_begin_round[\s\S]*p_now_ms\+300000/);
+  assert.match(courtTimerMigration, /court_v5_open_response[\s\S]*p_now_ms\+300000/);
+  assert.match(courtTimerMigration, /court_v6_open_voting[\s\S]*p_now_ms\+120000/);
+  assert.doesNotMatch(courtTimerMigration, /create or replace function public\.apply_court_action_v6/i);
+  assert.doesNotMatch(courtTimerMigration, /drop\s+(?:table|function)|truncate\s+/i);
+  for (const expected of ['statement allows five minutes', 'response allows five minutes', 'dual voting allows two minutes']) assert.match(courtTimerVerification, new RegExp(expected));
 });
 
 test('CloudBase 连接初始化并发复用且重复组件注册可安全恢复', () => {

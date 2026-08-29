@@ -63,11 +63,11 @@ export const COURT_MIN_PLAYERS = 2;
 export const COURT_MAX_PLAYERS = 8;
 export const COURT_RECENT_CASE_LIMIT = 21;
 export const COURT_DURATIONS: Record<Exclude<CourtStatus, 'lobby' | 'finished'>, number> = {
-  statement: 120_000,
+  statement: 300_000,
   statement_reveal: 5_000,
   evidence: 5_000,
-  response: 120_000,
-  voting: 30_000,
+  response: 300_000,
+  voting: 120_000,
   result: 10_000,
 };
 

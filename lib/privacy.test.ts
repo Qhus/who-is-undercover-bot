@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createPrivacyGuard, type PrivacyScheduler } from './privacy.ts';
 import { createCourtRoom } from './court-game.ts';
+import { readFileSync } from 'node:fs';
+
+const courtAppSource = readFileSync(new URL('../app/court-spreadsheet-mode.tsx', import.meta.url), 'utf8');
+const globalStyles = readFileSync(new URL('../app/globals.css', import.meta.url), 'utf8');
 
 function fakeScheduler() {
   let nextId = 1;
@@ -53,4 +57,14 @@ test('离谱法堂 V6 公共房间初始状态不包含私密正文、参考答�
   }
   assert.equal(room.gameType, 'absurd_court');
   assert.equal(room.courtVersion, 6);
+});
+
+test('离谱法堂工作表标签可切换且长陈述完整换行', () => {
+  for (const sheet of ['成员列表', '案件登记', '陈述记录', '证据附件', '陪审投票', '判决统计', '玩法说明', '操作记录']) {
+    assert.match(courtAppSource, new RegExp(`'${sheet}'`));
+  }
+  assert.match(courtAppSource, /onClick=\{\(\) => setActiveSheet\(id\)\}/);
+  assert.match(courtAppSource, /activeSheet !== 'home' \? worksheetRows\(\)/);
+  assert.match(globalStyles, /\.court-sheet \.sheet-grid td[\s\S]*white-space:normal/);
+  assert.match(globalStyles, /\.court-sheet \.sheet-grid td[\s\S]*overflow-wrap:anywhere/);
 });

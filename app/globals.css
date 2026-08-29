@@ -344,6 +344,9 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgb(200 77 49 / 3
 .hub-mobile-launcher { display:none; }
 .hub-sheet .sheet-grid td:nth-child(5) { white-space:normal; line-height:1.4; }
 .hub-sheet .sheet-grid td:nth-child(2) { font-weight:700; }
+.court-sheet .sheet-grid td { height:auto; min-height:34px; overflow:visible; text-overflow:clip; white-space:normal; overflow-wrap:anywhere; line-height:1.5; vertical-align:top; }
+.court-sheet .sheet-grid td button { min-height:27px; padding:2px 9px; border:1px solid #aaa; background:#fff; }
+.court-sheet .sheet-grid td .sheet-action { color:#fff; border-color:var(--sheet-green); background:var(--sheet-green); }
 
 .presence-actions { width:min(1180px,calc(100% - 48px)); margin:0 auto 16px; display:flex; flex-wrap:wrap; gap:8px; }
 .presence-actions>div { display:flex; align-items:center; gap:6px; padding:6px 8px; border:1px solid var(--line); background:#fff; }

@@ -36,9 +36,10 @@ test('内容版至少提供 30 个短口语参考答辩且 ID 唯一的案件包
   }
 });
 
-test('首次陈词和当庭补述均为 120 秒且最多 80 字', () => {
-  assert.equal(COURT_DURATIONS.statement, 120_000);
-  assert.equal(COURT_DURATIONS.response, 120_000);
+test('两段输入各有五分钟且双项投票有两分钟', () => {
+  assert.equal(COURT_DURATIONS.statement, 300_000);
+  assert.equal(COURT_DURATIONS.response, 300_000);
+  assert.equal(COURT_DURATIONS.voting, 120_000);
   assert.throws(() => validateStatement(''));
   assert.throws(() => validateStatement('甲'.repeat(81)));
   assert.doesNotThrow(() => validateStatement('我可以解释'));
