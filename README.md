@@ -1,13 +1,14 @@
 # 摸鱼游戏工作台
 
-一个 Excel 风格的轻量联机游戏工作台。根地址提供统一游戏目录，当前包含“谁是卧底”和“离谱法堂”两个相互独立的游戏。
+一个 Excel 风格的轻量联机游戏工作台。根地址提供统一游戏目录，当前包含三个相互独立的游戏。
 
 ## 页面入口
 
-- `/`：游戏目录，通过 A2 进入谁是卧底、通过 A4 进入离谱法堂；
+- `/`：游戏目录，通过 A2、A3、A4 进入三项独立玩法；
 - `/undercover/`：谁是卧底，负责私密发词、描述、匿名投票与自动判胜；
+- `/clue/`：提示大王，每人轮流猜题，提示不去重，猜中后匿名评分并生成双榜单；
 - `/court/`：离谱法堂，围绕成套案件进行匿名陈词、证据突袭、补述与陪审投票；
-- 两个游戏都可复制带房间编号的邀请链接，群友打开后只需填写称呼；
+- 三个游戏都可复制带房间编号的邀请链接，群友打开后只需填写称呼；
 - 返回游戏目录不会自动退出仍在进行的联机房间，重新进入时可恢复。
 
 ## 已实现
@@ -43,6 +44,7 @@
 - 联机关键操作通过数据库房间锁和唯一操作 ID 合并；同时确认、提交描述或投票不会再覆盖其他玩家的结果，重复请求保持幂等。
 - 游戏目录标题栏提供显示当前版本号的通知入口；更新说明在目录工作簿右侧窗格内展开，可查看完整版本内容，不使用弹窗、不记录已读状态且不发送推送；具体游戏页不再重复展示通知。
 - 离谱法堂当前使用 V6 简易流程：案件、首次陈词、证据突袭、当庭补述和双项评选；陈词与补述各 5 分钟、投票 2 分钟，不包含辩护招式或玩家质询。
+- 提示大王支持 3–8 人，每人轮流猜一次；提示不去重，可选随机提示限制；猜中后为匿名提示评 1–3 分，最终生成提示分和猜题速度双榜单。
 
 ## 本地运行
 
@@ -51,7 +53,7 @@ npm install
 npm run dev -- --hostname localhost --port 43210
 ```
 
-访问 `http://localhost:43210/` 查看游戏目录；谁是卧底和离谱法堂分别位于 `/undercover/` 与 `/court/`。没有云参数时，谁是卧底仍可使用本机预览。
+访问 `http://localhost:43210/` 查看游戏目录；三个游戏分别位于 `/undercover/`、`/clue/` 与 `/court/`。没有云参数时，谁是卧底仍可使用本机预览。
 
 ## CloudBase PostgreSQL
 
@@ -60,8 +62,9 @@ npm run dev -- --hostname localhost --port 43210
 3. 执行 [`cloudbase/concurrency-v2.sql`](cloudbase/concurrency-v2.sql)，创建并发操作表和受控操作函数；先不要执行文件末尾注释掉的权限收紧语句。
 4. 执行 [`cloudbase/verify.sql`](cloudbase/verify.sql)，确认所有核验项均为 `true`。
 5. 已有环境升级 V1.7.1 时，执行 [`cloudbase/experience-v3-3-undercover-ux.sql`](cloudbase/experience-v3-3-undercover-ux.sql)，再运行 [`cloudbase/verify-v3-3-undercover-ux.sql`](cloudbase/verify-v3-3-undercover-ux.sql)，将谁是卧底称呼上限同步提高到 24 字。
-6. 复制 `.env.example` 为 `.env.local`，填写环境 ID、上海地域和 Publishable Key。
-7. 安全来源中加入本地地址和最终 GitHub Pages 域名。
+6. 新增提示大王时，执行 [`cloudbase/concurrency-v8-clue-king.sql`](cloudbase/concurrency-v8-clue-king.sql)，再运行 [`cloudbase/verify-v8-clue-king.sql`](cloudbase/verify-v8-clue-king.sql)，确认每行 `ok=true`。
+7. 复制 `.env.example` 为 `.env.local`，填写环境 ID、上海地域和 Publishable Key。
+8. 安全来源中加入本地地址和最终 GitHub Pages 域名。
 
 只允许将 Publishable Key 暴露到浏览器。不要把 CloudBase API Key、SecretId 或 SecretKey 写入环境文件或 GitHub。
 
@@ -91,6 +94,8 @@ npm run build:pages
 
 ## 信任边界
 
-这是熟人娱乐项目。正常界面只展示当前玩家的私牌和投票进度，但同房成员能够通过开发者工具或直接数据库请求读取完整 `games.state`，其中包含全员身份和未公开票型。数据库 RLS 只阻止非成员访问房间，并不对抗同房成员主动作弊；因此这里的“私密”和“匿名”仅指正常产品界面。
+这是熟人娱乐项目。谁是卧底与离谱法堂的部分旧状态仍保存在 `games.state`：正常界面只展示当前玩家应看到的信息，但同房成员可能通过开发者工具或直接数据库请求检查完整房间状态，因此这些模式不对抗同房成员主动作弊。
+
+提示大王采用更严格的分层：答案、未公开提示、评分和揭晓前的作者关系保存在启用 RLS 的专用私密表中，不写入公开房间状态，并仅由受控 RPC 按玩家身份与游戏阶段返回。这里仍以熟人娱乐为威胁模型，不承诺抵御数据库管理员或服务端权限持有者。
 
 表格模式只降低旁观者一眼识别游戏内容的概率，不承诺规避企业网络审计、终端监控、访问日志或管理制度。无障碍标签会如实说明按钮的游戏用途。

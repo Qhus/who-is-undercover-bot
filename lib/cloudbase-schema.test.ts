@@ -24,10 +24,13 @@ const courtCopyMigration = readFileSync(new URL('../cloudbase/content-v6-1-court
 const courtCopyVerification = readFileSync(new URL('../cloudbase/verify-v6-1-court-copy.sql', import.meta.url), 'utf8');
 const courtTimerMigration = readFileSync(new URL('../cloudbase/experience-v6-2-court-timers.sql', import.meta.url), 'utf8');
 const courtTimerVerification = readFileSync(new URL('../cloudbase/verify-v6-2-court-timers.sql', import.meta.url), 'utf8');
+const clueV1Migration = readFileSync(new URL('../cloudbase/concurrency-v8-clue-king.sql', import.meta.url), 'utf8');
+const clueV1Verification = readFileSync(new URL('../cloudbase/verify-v8-clue-king.sql', import.meta.url), 'utf8');
 const concurrencySource = `${concurrencyBase}\n${concurrencyMigration}\n${concurrencyHotfix}\n${versionedRpcMigration}`;
 const storeSource = readFileSync(new URL('./cloudbase-store.ts', import.meta.url), 'utf8');
 const appSource = readFileSync(new URL('../app/game-app.tsx', import.meta.url), 'utf8');
 const courtAppSource = readFileSync(new URL('../app/court-spreadsheet-mode.tsx', import.meta.url), 'utf8');
+const clueAppSource = readFileSync(new URL('../app/clue-spreadsheet-mode.tsx', import.meta.url), 'utf8');
 
 test('CloudBase auth.uid() 文本标识使用 text 字段', () => {
   assert.match(schema, /owner_uid\s+text\s+not null\s+default auth\.uid\(\)/i);
@@ -214,4 +217,29 @@ test('离谱法堂 V5 加入函数使用无歧义的本地状态变量', () => {
   assert.match(courtV5JoinHotfixVerification, /join RPC writes the local v_state variable/);
   assert.match(courtV5JoinHotfixVerification, /body !~ 'join_court_game_v5\\\.state'/);
   assert.match(courtV5JoinHotfixVerification, /has_function_privilege\('anon'/);
+});
+
+test('A3 提示大王使用独立私密表、版本化 RPC 与完整轮转状态机', () => {
+  for (const table of ['clue_word_bank_v1', 'clue_v1_round_secrets', 'clue_v1_clues', 'clue_v1_guesses', 'clue_v1_actions']) {
+    assert.match(clueV1Migration, new RegExp(`create table if not exists public\\.${table}`));
+  }
+  for (const rpc of ['create_clue_game_v1', 'join_clue_game_v1', 'get_my_clue_round_v1', 'apply_clue_action_v1']) {
+    assert.match(clueV1Migration, new RegExp(rpc));
+    assert.match(storeSource, new RegExp(`rpc\\('${rpc}'`));
+  }
+  for (const action of ['start_clue_game', 'confirm_clue', 'submit_clue_guess', 'confirm_clue_ratings', 'advance_clue_phase', 'restart_clue_game']) {
+    assert.match(clueV1Migration, new RegExp(action));
+  }
+  assert.match(clueV1Migration, /p_now_ms\+90000/);
+  assert.ok((clueV1Migration.match(/now_ms\+60000/g) ?? []).length >= 2);
+  assert.match(clueV1Migration, /p_now_ms\+10000/);
+  assert.match(clueV1Migration, /clueId.*clue_id/);
+  assert.doesNotMatch(clueV1Migration, /distinct\s+clue_text/i);
+  assert.doesNotMatch(clueV1Migration, /drop\s+(?:table|function)|truncate\s+/i);
+  for (const expected of ['at least 100 enabled clue words', 'duplicate clue text is preserved as separate clue ids', 'every player becomes guesser once before finish', 'restart creates a new session and clears scores']) {
+    assert.match(clueV1Verification, new RegExp(expected));
+  }
+  for (const copy of ['内容相同的提示会分别保留', '提示大王排名', '猜题速度排名', '确认全部评分', '再来一局']) {
+    assert.match(clueAppSource, new RegExp(copy));
+  }
 });

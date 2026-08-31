@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createPrivacyGuard, type PrivacyScheduler } from './privacy.ts';
 import { createCourtRoom } from './court-game.ts';
+import { createClueRoom } from './clue-game.ts';
 import { readFileSync } from 'node:fs';
 
 const courtAppSource = readFileSync(new URL('../app/court-spreadsheet-mode.tsx', import.meta.url), 'utf8');
@@ -67,4 +68,14 @@ test('离谱法堂工作表标签可切换且长陈述完整换行', () => {
   assert.match(courtAppSource, /activeSheet !== 'home' \? worksheetRows\(\)/);
   assert.match(globalStyles, /\.court-sheet \.sheet-grid td[\s\S]*white-space:normal/);
   assert.match(globalStyles, /\.court-sheet \.sheet-grid td[\s\S]*overflow-wrap:anywhere/);
+});
+
+test('A3 公开房间不包含私密答案、提示草稿或作者映射', () => {
+  const room = createClueRoom('房主', 'random', 1, () => 0.2);
+  const publicState = JSON.stringify(room);
+  for (const privateField of ['targetWord', 'clueText', 'confirmedAt', 'authorId']) {
+    assert.doesNotMatch(publicState, new RegExp(`"${privateField}"`));
+  }
+  assert.equal(room.gameType, 'clue_king');
+  assert.equal(room.clueVersion, 1);
 });

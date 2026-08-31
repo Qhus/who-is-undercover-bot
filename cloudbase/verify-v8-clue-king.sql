@@ -1,0 +1,35 @@
+-- A3 提示大王 V1 只读核验。期望每行 ok 均为 true。
+with checks(expected_check,actual,ok) as (
+  values
+    ('at least 100 enabled clue words',
+      (select count(*)::text from public.clue_word_bank_v1 where enabled),
+      (select count(*)>=100 from public.clue_word_bank_v1 where enabled)),
+    ('four private V1 tables exist',
+      (select count(*)::text from pg_class where oid in ('public.clue_v1_round_secrets'::regclass,'public.clue_v1_clues'::regclass,'public.clue_v1_guesses'::regclass,'public.clue_v1_actions'::regclass)),
+      (select count(*)=4 from pg_class where oid in ('public.clue_v1_round_secrets'::regclass,'public.clue_v1_clues'::regclass,'public.clue_v1_guesses'::regclass,'public.clue_v1_actions'::regclass))),
+    ('four public V1 RPCs exist',
+      (to_regprocedure('public.create_clue_game_v1(text,text,text,text)') is not null and to_regprocedure('public.join_clue_game_v1(text,text,text)') is not null and to_regprocedure('public.get_my_clue_round_v1(text)') is not null and to_regprocedure('public.apply_clue_action_v1(text,text,text,text,integer,integer,bigint,jsonb)') is not null)::text,
+      to_regprocedure('public.create_clue_game_v1(text,text,text,text)') is not null and to_regprocedure('public.join_clue_game_v1(text,text,text)') is not null and to_regprocedure('public.get_my_clue_round_v1(text)') is not null and to_regprocedure('public.apply_clue_action_v1(text,text,text,text,integer,integer,bigint,jsonb)') is not null),
+    ('anon can execute V1 RPCs',
+      (has_function_privilege('anon','public.create_clue_game_v1(text,text,text,text)','execute') and has_function_privilege('anon','public.join_clue_game_v1(text,text,text)','execute') and has_function_privilege('anon','public.get_my_clue_round_v1(text)','execute') and has_function_privilege('anon','public.apply_clue_action_v1(text,text,text,text,integer,integer,bigint,jsonb)','execute'))::text,
+      has_function_privilege('anon','public.create_clue_game_v1(text,text,text,text)','execute') and has_function_privilege('anon','public.join_clue_game_v1(text,text,text)','execute') and has_function_privilege('anon','public.get_my_clue_round_v1(text)','execute') and has_function_privilege('anon','public.apply_clue_action_v1(text,text,text,text,integer,integer,bigint,jsonb)','execute')),
+    ('private tables use RLS',
+      (select bool_and(relrowsecurity)::text from pg_class where oid in ('public.clue_v1_round_secrets'::regclass,'public.clue_v1_clues'::regclass,'public.clue_v1_guesses'::regclass,'public.clue_v1_actions'::regclass)),
+      (select bool_and(relrowsecurity) from pg_class where oid in ('public.clue_v1_round_secrets'::regclass,'public.clue_v1_clues'::regclass,'public.clue_v1_guesses'::regclass,'public.clue_v1_actions'::regclass))),
+    ('duplicate clue text is preserved as separate clue ids',
+      (pg_get_functiondef('public.clue_v1_open_guessing(text,jsonb,bigint)'::regprocedure) ~ 'clueId.*clue_id' and pg_get_functiondef('public.clue_v1_open_guessing(text,jsonb,bigint)'::regprocedure) !~ 'distinct.*clue_text')::text,
+      pg_get_functiondef('public.clue_v1_open_guessing(text,jsonb,bigint)'::regprocedure) ~ 'clueId.*clue_id' and pg_get_functiondef('public.clue_v1_open_guessing(text,jsonb,bigint)'::regprocedure) !~ 'distinct.*clue_text'),
+    ('optional challenge and 1 to 3 ratings are enforced',
+      (pg_get_functiondef('public.apply_clue_action_v1(text,text,text,text,integer,integer,bigint,jsonb)'::regprocedure) ~ 'max2' and pg_get_functiondef('public.apply_clue_action_v1(text,text,text,text,integer,integer,bigint,jsonb)'::regprocedure) ~ '\^\[1-3\]\$')::text,
+      pg_get_functiondef('public.apply_clue_action_v1(text,text,text,text,integer,integer,bigint,jsonb)'::regprocedure) ~ 'max2' and pg_get_functiondef('public.apply_clue_action_v1(text,text,text,text,integer,integer,bigint,jsonb)'::regprocedure) ~ '\^\[1-3\]\$'),
+    ('every player becomes guesser once before finish',
+      (pg_get_functiondef('public.apply_clue_action_v1(text,text,text,text,integer,integer,bigint,jsonb)'::regprocedure) ~ 'guesserOrder' and pg_get_functiondef('public.apply_clue_action_v1(text,text,text,text,integer,integer,bigint,jsonb)'::regprocedure) ~ 'totalRounds')::text,
+      pg_get_functiondef('public.apply_clue_action_v1(text,text,text,text,integer,integer,bigint,jsonb)'::regprocedure) ~ 'guesserOrder' and pg_get_functiondef('public.apply_clue_action_v1(text,text,text,text,integer,integer,bigint,jsonb)'::regprocedure) ~ 'totalRounds'),
+    ('writing guessing rating and result timers exist',
+      (pg_get_functiondef('public.clue_v1_begin_round(text,jsonb,integer,bigint)'::regprocedure) ~ '90000' and pg_get_functiondef('public.clue_v1_open_guessing(text,jsonb,bigint)'::regprocedure) ~ '60000' and pg_get_functiondef('public.apply_clue_action_v1(text,text,text,text,integer,integer,bigint,jsonb)'::regprocedure) ~ 'now_ms \+ 60000' and pg_get_functiondef('public.clue_v1_finish_round(text,jsonb,bigint,boolean,text,integer,jsonb)'::regprocedure) ~ '10000')::text,
+      pg_get_functiondef('public.clue_v1_begin_round(text,jsonb,integer,bigint)'::regprocedure) ~ '90000' and pg_get_functiondef('public.clue_v1_open_guessing(text,jsonb,bigint)'::regprocedure) ~ '60000' and pg_get_functiondef('public.apply_clue_action_v1(text,text,text,text,integer,integer,bigint,jsonb)'::regprocedure) ~ 'now_ms \+ 60000' and pg_get_functiondef('public.clue_v1_finish_round(text,jsonb,bigint,boolean,text,integer,jsonb)'::regprocedure) ~ '10000'),
+    ('restart creates a new session and clears scores',
+      (pg_get_functiondef('public.apply_clue_action_v1(text,text,text,text,integer,integer,bigint,jsonb)'::regprocedure) ~ 'restart_clue_game' and pg_get_functiondef('public.apply_clue_action_v1(text,text,text,text,integer,integer,bigint,jsonb)'::regprocedure) ~ '''\{hintScores\}''.*''\{\}''')::text,
+      pg_get_functiondef('public.apply_clue_action_v1(text,text,text,text,integer,integer,bigint,jsonb)'::regprocedure) ~ 'restart_clue_game' and pg_get_functiondef('public.apply_clue_action_v1(text,text,text,text,integer,integer,bigint,jsonb)'::regprocedure) ~ '''\{hintScores\}''.*''\{\}''')
+)
+select expected_check,actual,ok from checks;

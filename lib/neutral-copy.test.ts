@@ -121,19 +121,23 @@ test('目录页面使用非弹窗通知栏，谁是卧底将沉浸模式降级�
   assert.doesNotMatch(hubSource, /aria-modal="true"[^]*hub-notification-panel/);
 });
 
-test('离谱法堂与谁是卧底使用独立页面和独立入口', () => {
+test('三项游戏使用独立页面和独立入口', () => {
   const rootPage = readFileSync(new URL('../app/page.tsx', import.meta.url), 'utf8');
   const hubPage = readFileSync(new URL('../app/game-hub.tsx', import.meta.url), 'utf8');
   const undercoverPage = readFileSync(new URL('../app/undercover/page.tsx', import.meta.url), 'utf8');
   const undercoverSheet = readFileSync(new URL('../app/spreadsheet-mode.tsx', import.meta.url), 'utf8');
   const courtPage = readFileSync(new URL('../app/court/page.tsx', import.meta.url), 'utf8');
   const courtApp = readFileSync(new URL('../app/court-spreadsheet-mode.tsx', import.meta.url), 'utf8');
+  const cluePage = readFileSync(new URL('../app/clue/page.tsx', import.meta.url), 'utf8');
+  const clueApp = readFileSync(new URL('../app/clue-spreadsheet-mode.tsx', import.meta.url), 'utf8');
   assert.match(rootPage, /GameHub/);
   assert.match(hubPage, /\['A2', '3–10 人'/);
+  assert.match(hubPage, /\['A3', '3–8 人'/);
   assert.match(hubPage, /\['A4', '2–8 人'/);
   assert.match(hubPage, /'摘要'/);
   assert.doesNotMatch(hubPage, /A2 · 谁是卧底|A4 · 离谱法堂|>谁是卧底<|>离谱法堂</);
   assert.match(hubPage, /\.\/undercover\//);
+  assert.match(hubPage, /\.\/clue\//);
   assert.match(hubPage, /\.\/court\//);
   assert.match(undercoverPage, /GameApp/);
   assert.doesNotMatch(undercoverSheet, /离谱法堂|情况说明表（实验）/);
@@ -142,16 +146,23 @@ test('离谱法堂与谁是卧底使用独立页面和独立入口', () => {
   assert.match(courtApp, /加入离谱法堂/);
   assert.match(courtApp, /不是找卧底，是分别选出最会狡辩和最像真的答案/);
   assert.doesNotMatch(courtApp, /demo-b|demo-c|创建本机演示/);
+  assert.match(cluePage, /ClueSpreadsheetMode/);
+  assert.match(clueApp, /获奖联想机制改编/);
+  assert.match(clueApp, /提示不去重/);
 });
 
-test('两个游戏都支持返回目录和带房间编号的邀请链接', () => {
+test('三个游戏都支持返回目录和带房间编号的邀请链接', () => {
   const undercoverApp = readFileSync(new URL('../app/game-app.tsx', import.meta.url), 'utf8');
   const undercoverSheet = readFileSync(new URL('../app/spreadsheet-mode.tsx', import.meta.url), 'utf8');
   const courtApp = readFileSync(new URL('../app/court-spreadsheet-mode.tsx', import.meta.url), 'utf8');
+  const clueApp = readFileSync(new URL('../app/clue-spreadsheet-mode.tsx', import.meta.url), 'utf8');
   assert.match(undercoverSheet, /返回摸鱼游戏工作台/);
   assert.match(courtApp, /返回摸鱼游戏工作台/);
+  assert.match(clueApp, /返回摸鱼游戏工作台/);
   assert.match(undercoverApp, /searchParams\.set\('room', room\.code\)/);
   assert.match(courtApp, /searchParams\.set\('room', room\.code\)/);
+  assert.match(clueApp, /searchParams\.set\('room', room\.code\)/);
   assert.match(undercoverApp, /URLSearchParams\(window\.location\.search\)/);
   assert.match(courtApp, /URLSearchParams\(window\.location\.search\)/);
+  assert.match(clueApp, /URLSearchParams\(window\.location\.search\)/);
 });

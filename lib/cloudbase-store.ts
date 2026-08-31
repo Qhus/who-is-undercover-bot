@@ -2,6 +2,7 @@ import cloudbase from '@cloudbase/js-sdk';
 import { registerMySQL, type IPgClient } from '@cloudbase/mysql';
 import type { GameRoom } from './game';
 import type { AbsurdCourtRoom, CourtPrivateSubmission } from './court-game';
+import type { ClueKingRoom, CluePrivateRound, ClueRuleMode } from './clue-game';
 
 type GameRow = { state: GameRoom; version: number };
 type PgClient = ReturnType<IPgClient>;
@@ -43,6 +44,8 @@ export type CourtActionType =
   | 'end_court_game'
   | 'restart_court_game';
 export interface CourtActionResult { outcome: GameActionOutcome; code: string; message: string; state: AbsurdCourtRoom; version: number; }
+export type ClueActionType = 'start_clue_game' | 'confirm_clue' | 'submit_clue_guess' | 'confirm_clue_ratings' | 'advance_clue_phase' | 'restart_clue_game';
+export interface ClueActionResult { outcome: GameActionOutcome; code: string; message: string; state: ClueKingRoom; version: number; }
 
 function publicConfig() {
   const env = process.env.NEXT_PUBLIC_CLOUDBASE_ENV_ID;
@@ -132,6 +135,53 @@ export class CloudBaseRoomStore {
     return data as CourtPrivateSubmission | null;
   }
 
+  async createClueRoom(room: ClueKingRoom, ruleMode: ClueRuleMode): Promise<ClueKingRoom> {
+    await this.connect();
+    const { data, error } = await this.db().rpc('create_clue_game_v1', {
+      p_code: room.code,
+      p_owner_player_id: room.ownerId,
+      p_owner_name: room.players[0]?.name ?? '房主',
+      p_rule_mode: ruleMode,
+    }).single();
+    if (error) throw error;
+    return data as unknown as ClueKingRoom;
+  }
+
+  async joinClueRoom(code: string, playerId: string, nickname: string): Promise<{ room: ClueKingRoom; playerId: string }> {
+    await this.connect();
+    const { data, error } = await this.db().rpc('join_clue_game_v1', {
+      p_code: code,
+      p_player_id: playerId,
+      p_nickname: nickname,
+    }).single();
+    if (error) throw error;
+    const result = data as unknown as { state: ClueKingRoom; playerId: string };
+    return { room: result.state, playerId: result.playerId };
+  }
+
+  async applyClueAction(input: { room: ClueKingRoom; actionId: string; actionType: ClueActionType; payload?: Record<string, unknown> }): Promise<ClueActionResult> {
+    await this.connect();
+    const { data, error } = await this.db().rpc('apply_clue_action_v1', {
+      p_code: input.room.code,
+      p_action_id: input.actionId,
+      p_action_type: input.actionType,
+      p_expected_status: input.room.status,
+      p_expected_round: input.room.round,
+      p_expected_session: input.room.sessionNo,
+      p_expected_version: input.room.version,
+      p_payload: input.payload ?? {},
+    }).single();
+    if (error) throw error;
+    return data as unknown as ClueActionResult;
+  }
+
+  async getMyClueRound(code: string): Promise<CluePrivateRound | null> {
+    await this.connect();
+    const { data, error } = await this.db().rpc('get_my_clue_round_v1', { p_code: code }).single();
+    if (error) throw error;
+    return data as CluePrivateRound | null;
+  }
+
   async joinRoom(code: string, playerId: string, nickname: string): Promise<{ room: GameRoom; playerId: string }> {
     await this.connect();
     const { data, error } = await this.db().rpc('join_game', {
@@ -154,6 +204,11 @@ export class CloudBaseRoomStore {
   async getCourtRoom(code: string): Promise<AbsurdCourtRoom | null> {
     const room = await this.getRoom(code);
     return room && (room as unknown as { gameType?: string }).gameType === 'absurd_court' ? room as unknown as AbsurdCourtRoom : null;
+  }
+
+  async getClueRoom(code: string): Promise<ClueKingRoom | null> {
+    const room = await this.getRoom(code);
+    return room && (room as unknown as { gameType?: string }).gameType === 'clue_king' ? room as unknown as ClueKingRoom : null;
   }
 
   async applyGameAction(input: {
@@ -199,6 +254,12 @@ export class CloudBaseRoomStore {
   watchCourtRoom(code: string, onChange: (room: AbsurdCourtRoom) => void, onError: (error: unknown) => void) {
     return this.watchRoom(code, (room) => {
       if ((room as unknown as { gameType?: string }).gameType === 'absurd_court') onChange(room as unknown as AbsurdCourtRoom);
+    }, onError);
+  }
+
+  watchClueRoom(code: string, onChange: (room: ClueKingRoom) => void, onError: (error: unknown) => void) {
+    return this.watchRoom(code, (room) => {
+      if ((room as unknown as { gameType?: string }).gameType === 'clue_king') onChange(room as unknown as ClueKingRoom);
     }, onError);
   }
 }
