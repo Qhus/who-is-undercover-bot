@@ -27,6 +27,8 @@ function tabLabel(tab: HubTab): string {
 export default function GameHub() {
   const [tab, setTab] = useState<HubTab>('catalog');
   const [activeCell, setActiveCell] = useState('A2');
+  const [notificationOpen, setNotificationOpen] = useState(false);
+  const [selectedReleaseVersion, setSelectedReleaseVersion] = useState(CURRENT_RELEASE.version);
   const [undercoverRoom, setUndercoverRoom] = useState<string | null>(null);
   const [courtRoom, setCourtRoom] = useState<string | null>(null);
 
@@ -70,27 +72,38 @@ export default function GameHub() {
   const formula = tab === 'catalog'
     ? activeCell === 'A4' ? 'A4：同案匿名陈词，证据突袭后继续补充说明' : '目录：根据摘要从 A2 或 A4 选择一个项目'
     : tab === 'guide' ? '五步开始：选游戏 → 建房 → 加入 → 按提示操作 → 返回目录' : `自动更新说明 · 当前版本 ${CURRENT_RELEASE.version}`;
+  const selectedRelease = RELEASE_NOTES.find((release) => release.version === selectedReleaseVersion) ?? CURRENT_RELEASE;
 
   return <main className="sheet-app hub-sheet">
     <header className="sheet-titlebar">
       <span className="sheet-filemark" aria-hidden="true">表</span>
       <div><strong>协作工作簿 · 目录</strong><span>流程入口 · {CURRENT_RELEASE.version}</span></div>
-      <div className="sheet-title-actions"><a href="./undercover/" aria-label="打开 A2">A2</a><a href="./court/" aria-label="打开 A4">A4</a></div>
+      <div className="sheet-title-actions"><a href="./undercover/" aria-label="打开 A2">A2</a><a href="./court/" aria-label="打开 A4">A4</a><button className={notificationOpen ? 'is-active' : ''} aria-expanded={notificationOpen} aria-controls="hub-notification-panel" onClick={() => setNotificationOpen((open) => !open)}>通知 · {CURRENT_RELEASE.version}</button></div>
     </header>
     <nav className="sheet-ribbon" aria-label="游戏工作台工具栏"><button className="is-current" onClick={() => setTab('catalog')}>开始</button><button onClick={() => setTab('guide')}>帮助</button><button onClick={() => setTab('updates')}>更新</button><span /></nav>
     <div className="sheet-toolbar" aria-hidden="true"><span>撤销</span><span>重做</span><i /><b>系统字体</b><b>11</b><i /><strong>B</strong><em>I</em><u>U</u><i /><span>左对齐</span><span>自动换行</span><span>筛选</span></div>
     <div className="sheet-formula"><span className="sheet-namebox">{activeCell}</span><span className="sheet-fx">fx</span><output>{formula}</output></div>
-    <section className="hub-intro">
-      <div><span>工作簿说明</span><strong>{tabLabel(tab)}</strong><p>{tab === 'catalog' ? '根据摘要选择 A2 或 A4，再点击绿色按钮打开；已有记录会显示可恢复的编号。' : tab === 'guide' ? '照着表格从上往下做，不需要提前记住完整规则。' : '更新内容随网站版本自动展示，不记录已读状态，也不发送推送。'}</p></div>
-      <div className="hub-mobile-launcher"><a href="./undercover/" aria-label="打开 A2">打开 A2</a><a href="./court/" aria-label="打开 A4">打开 A4</a></div>
-    </section>
-    <div className="sheet-grid-scroll"><table className="sheet-grid" aria-label={tabLabel(tab)}>
-      <thead><tr><th className="sheet-corner" />{columns.map((column) => <th key={column}>{column}</th>)}</tr></thead>
-      <tbody>{rows.map((row, rowIndex) => <tr key={rowIndex}><th>{rowIndex + 1}</th>{columns.map((column, columnIndex) => {
-        const coordinate = `${column}${rowIndex + 1}`;
-        return <td className={coordinate === activeCell ? 'is-active-cell' : ''} onClick={() => setActiveCell(coordinate)} key={column}>{row[columnIndex] ?? ''}</td>;
-      })}</tr>)}</tbody>
-    </table></div>
+    <div className="sheet-workspace">
+      <div className="sheet-canvas">
+        <section className="hub-intro">
+          <div><span>工作簿说明</span><strong>{tabLabel(tab)}</strong><p>{tab === 'catalog' ? '根据摘要选择 A2 或 A4，再点击绿色按钮打开；已有记录会显示可恢复的编号。' : tab === 'guide' ? '照着表格从上往下做，不需要提前记住完整规则。' : '更新内容随网站版本自动展示，不记录已读状态，也不发送推送。'}</p></div>
+          <div className="hub-mobile-launcher"><a href="./undercover/" aria-label="打开 A2">打开 A2</a><a href="./court/" aria-label="打开 A4">打开 A4</a></div>
+        </section>
+        <div className="sheet-grid-scroll"><table className="sheet-grid" aria-label={tabLabel(tab)}>
+          <thead><tr><th className="sheet-corner" />{columns.map((column) => <th key={column}>{column}</th>)}</tr></thead>
+          <tbody>{rows.map((row, rowIndex) => <tr key={rowIndex}><th>{rowIndex + 1}</th>{columns.map((column, columnIndex) => {
+            const coordinate = `${column}${rowIndex + 1}`;
+            return <td className={coordinate === activeCell ? 'is-active-cell' : ''} onClick={() => setActiveCell(coordinate)} key={column}>{row[columnIndex] ?? ''}</td>;
+          })}</tr>)}</tbody>
+        </table></div>
+      </div>
+      {notificationOpen && <aside className="sheet-notification-panel" id="hub-notification-panel" aria-labelledby="hub-notification-title">
+        <header><div><span>版本通知</span><strong id="hub-notification-title">更新说明</strong><small>当前版本 {CURRENT_RELEASE.version}</small></div><button onClick={() => setNotificationOpen(false)} aria-label="关闭更新说明栏">×</button></header>
+        <p className="sheet-notification-policy">内容随版本发布自动更新；暂不记录已读状态，也不发送推送。</p>
+        <div className="sheet-release-list" aria-label="版本列表">{RELEASE_NOTES.map((release) => <button className={selectedRelease.version === release.version ? 'is-selected' : ''} onClick={() => setSelectedReleaseVersion(release.version)} key={release.version}><span>{release.version}</span><strong>{release.title}</strong><small>{release.date}</small><p>{release.summary}</p></button>)}</div>
+        <section className="sheet-release-detail" aria-live="polite"><span>{selectedRelease.version} · {selectedRelease.date}</span><h2>{selectedRelease.title}</h2><p>{selectedRelease.summary}</p><ul>{selectedRelease.details.map((detail) => <li key={detail}>{detail}</li>)}</ul></section>
+      </aside>}
+    </div>
     <footer className="sheet-tabs"><button aria-label="新增工作表">＋</button>{(['catalog', 'guide', 'updates'] as const).map((item) => <button className={tab === item ? 'is-current' : ''} onClick={() => setTab(item)} key={item}>{tabLabel(item)}</button>)}<a href="./undercover/" aria-label="打开 A2">A2</a><a href="./court/" aria-label="打开 A4">A4</a><span /><small>就绪 · 两项流程相互独立 · 收藏本页即可</small></footer>
   </main>;
 }

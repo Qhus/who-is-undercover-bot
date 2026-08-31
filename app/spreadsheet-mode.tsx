@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { blankCardOptions, canAccuseUndercover, canTriggerBuzzer, challengeModeLabel, descriptionModeLabel, descriptionsAreRevealed, eligibleCandidates, eligibleVoters, getAccuseUnavailableReason, getBuzzerUnavailableReason, getDescriptionTurnPlayer, getRoundChallenge, getRoundContents, isRoundContentVisible, LIGHT_CHALLENGE_RULES, PLAYER_LIMIT_OPTIONS, PLAYER_NAME_MAX_LENGTH, RANDOM_CHALLENGE_RULES, ROUND_CONTENT_MAX_LENGTH, undercoverOptions, validateRoleCounts, type ChallengeMode, type DescriptionRevealMode, type GameRoom, type Player } from '@/lib/game';
 import { neutralizeGameCopy } from '@/lib/neutral-copy';
 import { createPrivacyGuard, PRIVATE_REVEAL_MS, PRIVACY_IDLE_MS, type PrivacyGuard } from '@/lib/privacy';
-import { CURRENT_RELEASE, RELEASE_NOTES } from '@/lib/release-notes';
+import { CURRENT_RELEASE } from '@/lib/release-notes';
 import { wordPairHint } from '@/lib/words';
 
 type Screen = 'home' | 'setup' | 'game';
@@ -191,8 +191,6 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
   const [returnSheetTab, setReturnSheetTab] = useState<SheetTab>('members');
   const [cellSelection, setCellSelection] = useState<{ flowKey: string; cell: string } | null>(null);
   const [sensitiveVisible, setSensitiveVisible] = useState(false);
-  const [notificationOpen, setNotificationOpen] = useState(false);
-  const [selectedReleaseVersion, setSelectedReleaseVersion] = useState(CURRENT_RELEASE.version);
   const [lobbyEditing, setLobbyEditing] = useState(false);
   const [guessAcknowledgedKey, setGuessAcknowledgedKey] = useState<string | null>(null);
   const privacy = useRef<PrivacyGuard | null>(null);
@@ -240,7 +238,6 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
   }
 
   const currentAssignment = props.room && props.wordReviewPlayer ? props.room.assignments[props.wordReviewPlayer.id] : null;
-  const selectedRelease = RELEASE_NOTES.find((release) => release.version === selectedReleaseVersion) ?? CURRENT_RELEASE;
   const isOwner = !props.remoteMode || props.currentPlayerId === props.room?.ownerId;
   const lobbyDraft = props.lobbySettingsDraft ?? (props.room?.status === 'lobby' ? {
     playerLimit: props.room.playerLimit,
@@ -609,7 +606,6 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
       <div className="sheet-title-actions">
         <a href="../" aria-label="返回摸鱼游戏工作台">目录</a>
         <button onClick={openGuideSheet} aria-label="在表格中查看谁是卧底游玩步骤与核心规则">帮助</button>
-        <button className={notificationOpen ? 'is-active' : ''} aria-expanded={notificationOpen} aria-controls="sheet-notification-panel" onClick={() => { privacy.current?.mask('sheet-change'); setNotificationOpen((open) => !open); }}>通知 · {CURRENT_RELEASE.version}</button>
         {props.room && <><button onClick={props.onCopyRoomCode} aria-label="复制谁是卧底游戏房间码">复制编号</button><button onClick={props.onCopyInviteLink} aria-label="复制带房间编号的谁是卧底邀请链接">复制邀请链接</button><button onClick={props.onCopyCurrentRule} aria-label="复制谁是卧底本轮公共规则">复制备注</button></>}
         <button className="sheet-compatibility-action" onClick={() => { privacy.current?.mask('mode-change'); props.onSwitchMode(); }} aria-label="切换到兼容保留的沉浸式谁是卧底游戏界面">兼容视图</button>
       </div>
@@ -631,12 +627,6 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
         </aside>}
         <Grid rows={rows} activeCell={activeCell} emphasizedCells={workflowGuide.emphasizedCells} onActivate={(cell) => setCellSelection({ flowKey, cell })} />
       </div>
-      {notificationOpen && <aside className="sheet-notification-panel" id="sheet-notification-panel" aria-labelledby="sheet-notification-title">
-        <header><div><span>版本通知</span><strong id="sheet-notification-title">更新说明</strong><small>当前版本 {CURRENT_RELEASE.version}</small></div><button onClick={() => setNotificationOpen(false)} aria-label="关闭更新说明栏">×</button></header>
-        <p className="sheet-notification-policy">内容随版本发布自动更新；暂不记录已读状态，也不发送推送。</p>
-        <div className="sheet-release-list" aria-label="版本列表">{RELEASE_NOTES.map((release) => <button className={selectedRelease.version === release.version ? 'is-selected' : ''} onClick={() => setSelectedReleaseVersion(release.version)} key={release.version}><span>{release.version}</span><strong>{release.title}</strong><small>{release.date}</small><p>{release.summary}</p></button>)}</div>
-        <section className="sheet-release-detail" aria-live="polite"><span>{selectedRelease.version} · {selectedRelease.date}</span><h2>{selectedRelease.title}</h2><p>{selectedRelease.summary}</p><ul>{selectedRelease.details.map((detail) => <li key={detail}>{detail}</li>)}</ul></section>
-      </aside>}
     </div>
     <footer className="sheet-tabs"><button aria-label="新增工作表">＋</button>{sheetTabs.map((tab) => <button className={sheetTab === tab ? 'is-current' : ''} onClick={() => setSheetTab(tab)} key={tab}>{tabLabel(tab)}</button>)}<span /><small>就绪 · 自动同步 · 保护视图：闲置 {PRIVACY_IDLE_MS / 1000} 秒遮挡，显示 {PRIVATE_REVEAL_MS / 1000} 秒</small></footer>
     {props.notice && <div className={`sheet-toast sheet-toast--${props.notice.kind}`} role="status">{neutralizeGameCopy(props.notice.text)}</div>}

@@ -104,16 +104,19 @@ test('版本通知由统一数据生成且当前版本始终位于首项', () =>
   assert.ok(RELEASE_NOTES.every((release) => release.details.length >= 3));
 });
 
-test('Excel 主界面使用非弹窗通知栏并将沉浸模式降级为兼容视图', () => {
+test('目录页面使用非弹窗通知栏，谁是卧底将沉浸模式降级为兼容视图', () => {
+  const hubSource = readFileSync(new URL('../app/game-hub.tsx', import.meta.url), 'utf8');
   const spreadsheetSource = readFileSync(new URL('../app/spreadsheet-mode.tsx', import.meta.url), 'utf8');
   const styles = readFileSync(new URL('../app/globals.css', import.meta.url), 'utf8');
   const notificationStyles = styles.slice(styles.indexOf('.sheet-notification-panel'), styles.indexOf('.sheet-tabs'));
-  assert.match(spreadsheetSource, /通知 · \{CURRENT_RELEASE\.version\}/);
-  assert.match(spreadsheetSource, /sheet-notification-panel/);
-  assert.match(spreadsheetSource, /暂不记录已读状态，也不发送推送/);
+  assert.match(hubSource, /通知 · \{CURRENT_RELEASE\.version\}/);
+  assert.match(hubSource, /hub-notification-panel/);
+  assert.match(hubSource, /暂不记录已读状态，也不发送推送/);
+  assert.doesNotMatch(spreadsheetSource, /通知 · \{CURRENT_RELEASE\.version\}/);
+  assert.doesNotMatch(spreadsheetSource, /sheet-notification-panel/);
   assert.match(spreadsheetSource, />兼容视图<\/button>/);
   assert.doesNotMatch(notificationStyles, /position:\s*fixed/);
-  assert.doesNotMatch(spreadsheetSource, /aria-modal="true"[^]*sheet-notification-panel/);
+  assert.doesNotMatch(hubSource, /aria-modal="true"[^]*hub-notification-panel/);
 });
 
 test('离谱法堂与谁是卧底使用独立页面和独立入口', () => {
