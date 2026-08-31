@@ -23,12 +23,12 @@ test('个人词语不标注玩家角色，命中卧底时明确提示', () => {
   assert.match(spreadsheetSource, /成功找出卧底/);
 });
 
-test('表格模式在输入框外完整展示公共规则', () => {
+test('表格模式在输入框外和输入提示中同时展示公共规则', () => {
   const spreadsheetSource = readFileSync(new URL('../app/spreadsheet-mode.tsx', import.meta.url), 'utf8');
   assert.match(spreadsheetSource, /sheet-rule-banner/);
   assert.match(spreadsheetSource, /Round_.*公共规则/);
-  assert.match(spreadsheetSource, /placeholder="在此填写本轮内容"/);
-  assert.doesNotMatch(spreadsheetSource, /placeholder=\{`\$\{getRoundChallenge/);
+  assert.match(spreadsheetSource, /placeholder=\{`填写本轮描述｜规则：\$\{getRoundChallenge/);
+  assert.match(spreadsheetSource, /getRoundChallenge\(room, room\.round\)\?\.text \?\? '自由表达'/);
 });
 
 test('首页提供游玩步骤和完整规则入口', () => {
@@ -70,6 +70,18 @@ test('补充体验需求在 Excel 与沉浸模式都有操作入口', () => {
   assert.match(spreadsheetSource, /player\.alive && !player\.away \? getRoundContents\(room\)\[player\.id\].*'无需提交'/);
   assert.match(`${immersiveSource}\n${spreadsheetSource}`, /暂退/);
   assert.match(`${immersiveSource}\n${spreadsheetSource}`, /退出/);
+});
+
+test('谁是卧底体验增量包含空白牌提示、特殊操作确认和禁用原因', () => {
+  const immersiveSource = readFileSync(new URL('../app/game-app.tsx', import.meta.url), 'utf8');
+  const spreadsheetSource = readFileSync(new URL('../app/spreadsheet-mode.tsx', import.meta.url), 'utf8');
+  const gameSource = readFileSync(new URL('./game.ts', import.meta.url), 'utf8');
+  assert.match(gameSource, /PLAYER_NAME_MAX_LENGTH = 24/);
+  assert.match(gameSource, /AUTO_ADVANCE_DELAY_MS = 7_000/);
+  for (const copy of ['范围提示', '操作确认', '我已了解，继续', '输入多数玩家拿到的完整原词', '等待描述公开', '本局机会已使用']) {
+    assert.match(`${immersiveSource}\n${spreadsheetSource}\n${gameSource}`, new RegExp(copy));
+  }
+  assert.match(spreadsheetSource, /specialActivityCopy/);
 });
 
 test('Excel 词语查看只占用 D 列且平民指认是表格内二次确认', () => {

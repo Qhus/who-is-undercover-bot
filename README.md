@@ -32,7 +32,10 @@
 - 描述支持“全部提交后公开”和“按座位顺序公开”，投票与复投阶段持续展示本轮公开描述；
 - 支持随时暂退/返回和永久退出；暂退不影响胜负，永久退出按淘汰处理；
 - 可选主动爆灯：描述公开后全员同入口，真卧底猜中获胜，失败立即退出；
-- 结果页默认停留 10 秒后自动进入下一轮，房主可立即进入或暂停。
+- 玩家称呼最多 24 字；公共挑战同时显示在描述输入框提示和表格规则区；
+- 空白牌开局获得宽泛范围提示，系统词库自动匹配类别，自定义词组由房主填写提示；
+- 猜词爆灯和平民爆灯指认操作前说明规则和后果，全体可见发起状态，不公开私密答案；
+- 结果页默认停留 7 秒后自动进入下一轮，房主可立即进入或暂停。
 - Excel 模式的玩法说明以独立工作表呈现，保留绿色标题栏、公式栏和单元格风格，并可返回打开说明前的工作表；首页以 A2/A4 区分房主与玩家入口。
 - 描述公开后显示 5 秒倒计时并自动开放投票，房主可提前开放；退出玩家当轮“本轮内容”显示“无需提交”。
 - 本局结束后点击“换词再来一局”会保留玩家名单、重新分配身份，并保证新词组与上一局不同。
@@ -54,8 +57,9 @@ npm run dev -- --hostname localhost --port 43210
 2. 在 SQL 编辑器执行 [`cloudbase/schema.sql`](cloudbase/schema.sql)。脚本创建 `games`、`game_members`、受控建房/加入函数和同房间 RLS。
 3. 执行 [`cloudbase/concurrency-v2.sql`](cloudbase/concurrency-v2.sql)，创建并发操作表和受控操作函数；先不要执行文件末尾注释掉的权限收紧语句。
 4. 执行 [`cloudbase/verify.sql`](cloudbase/verify.sql)，确认所有核验项均为 `true`。
-5. 复制 `.env.example` 为 `.env.local`，填写环境 ID、上海地域和 Publishable Key。
-6. 安全来源中加入本地地址和最终 GitHub Pages 域名。
+5. 已有环境升级 V1.7.1 时，执行 [`cloudbase/experience-v3-3-undercover-ux.sql`](cloudbase/experience-v3-3-undercover-ux.sql)，再运行 [`cloudbase/verify-v3-3-undercover-ux.sql`](cloudbase/verify-v3-3-undercover-ux.sql)，将谁是卧底称呼上限同步提高到 24 字。
+6. 复制 `.env.example` 为 `.env.local`，填写环境 ID、上海地域和 Publishable Key。
+7. 安全来源中加入本地地址和最终 GitHub Pages 域名。
 
 只允许将 Publishable Key 暴露到浏览器。不要把 CloudBase API Key、SecretId 或 SecretKey 写入环境文件或 GitHub。
 

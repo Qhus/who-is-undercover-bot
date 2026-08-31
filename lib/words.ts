@@ -50,6 +50,22 @@ export const WORD_PAIR_ENTRIES: readonly WordPairEntry[] = [
 
 export const WORD_PAIRS: readonly (readonly [string, string])[] = WORD_PAIR_ENTRIES.map((entry) => entry.words);
 
+const BLANK_HINTS: Readonly<Record<WordPairCategory, string>> = {
+  日常: '日常行为或生活场景',
+  职场: '工作或学习场景',
+  科技: '数码、网络或软件功能',
+  娱乐: '娱乐内容或休闲活动',
+  食物: '食物或饮品',
+  物品: '日常使用的物品',
+  抽象: '感受、态度或抽象概念',
+};
+
+export function wordPairHint(pair: readonly [string, string]): string {
+  const key = wordPairKey(pair);
+  const entry = WORD_PAIR_ENTRIES.find((item) => wordPairKey(item.words) === key);
+  return entry ? BLANK_HINTS[entry.category] : '';
+}
+
 export function wordPairKey(pair: readonly [string, string]): string {
   return JSON.stringify([...pair].sort((a, b) => a.localeCompare(b, 'zh-CN')));
 }

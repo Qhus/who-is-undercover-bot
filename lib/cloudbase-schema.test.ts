@@ -10,6 +10,8 @@ const concurrencyMigration = readFileSync(new URL('../cloudbase/concurrency-v3-s
 const concurrencyHotfix = readFileSync(new URL('../cloudbase/concurrency-v3-1-special-roles-hotfix.sql', import.meta.url), 'utf8');
 const versionedRpcMigration = readFileSync(new URL('../cloudbase/concurrency-v3-2-versioned-rpc.sql', import.meta.url), 'utf8');
 const versionedRpcVerification = readFileSync(new URL('../cloudbase/verify-v3-2-versioned-rpc.sql', import.meta.url), 'utf8');
+const undercoverUxMigration = readFileSync(new URL('../cloudbase/experience-v3-3-undercover-ux.sql', import.meta.url), 'utf8');
+const undercoverUxVerification = readFileSync(new URL('../cloudbase/verify-v3-3-undercover-ux.sql', import.meta.url), 'utf8');
 const courtPlayableMigration = readFileSync(new URL('../cloudbase/concurrency-v4-1-court-playable.sql', import.meta.url), 'utf8');
 const courtPlayableVerification = readFileSync(new URL('../cloudbase/verify-v4-1-court-playable.sql', import.meta.url), 'utf8');
 const courtV5Migration = readFileSync(new URL('../cloudbase/concurrency-v5-court-draft-02.sql', import.meta.url), 'utf8');
@@ -79,6 +81,17 @@ test('并发迁移使用房间锁、操作幂等和受控状态合并', () => {
   assert.match(versionedRpcVerification, /targetPlayerId/i);
   assert.match(versionedRpcVerification, /actual as ok/i);
   assert.doesNotMatch(versionedRpcVerification, /expected\s*=\s*actual/i);
+});
+
+test('谁是卧底称呼增量将前后端上限统一为 24 字', () => {
+  assert.match(schema, /between 1 and 24/);
+  assert.match(schema, /'name', trim\(p_nickname\)/);
+  assert.doesNotMatch(schema, /left\(trim\(p_nickname\), 12\)/);
+  assert.match(undercoverUxMigration, /create or replace function public\.create_game/);
+  assert.match(undercoverUxMigration, /create or replace function public\.join_game/);
+  assert.ok((undercoverUxMigration.match(/between 1 and 24/g) ?? []).length >= 2);
+  assert.match(undercoverUxVerification, /no longer truncates names to 12 characters/);
+  assert.match(undercoverUxVerification, /anon can execute create and join RPCs/);
 });
 
 test('联机客户端使用同一操作 ID 重试并以服务端状态为准', () => {

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { accuseUndercover, applyBallotResult, assignCards, autoAdvanceDue, autoVotingDue, canAccuseUndercover, canBeginVoting, canTriggerBuzzer, createRoom, dealRoom, determineWinner, discussionComplete, eligibleVoters, exitPlayer, getDescriptionTurnPlayer, getRoundChallenge, getRoundContents, getVotingOpensAt, isRoundContentVisible, PLAYER_LIMIT_OPTIONS, RANDOM_CHALLENGE_RULES, resolveBallot, resolveUndercoverComeback, revealDescriptions, selectChallengeRule, setAutoAdvancePaused, setPlayerAway, skipDescription, startDiscussion, startNextRound, startVoting, submitRoundContent, triggerBuzzer, undercoverOptions, updateLobbySettings, type GameRoom, type Player } from './game.ts';
-import { randomWordPairAvoiding, randomWordPairExcluding, WORD_PAIR_ENTRIES, wordPairKey } from './words.ts';
+import { accuseUndercover, applyBallotResult, assignCards, autoAdvanceDue, autoVotingDue, blankCardOptions, canAccuseUndercover, canBeginVoting, canTriggerBuzzer, createRoom, dealRoom, determineWinner, discussionComplete, eligibleVoters, exitPlayer, getDescriptionTurnPlayer, getRoundChallenge, getRoundContents, getVotingOpensAt, isRoundContentVisible, PLAYER_LIMIT_OPTIONS, RANDOM_CHALLENGE_RULES, resolveBallot, resolveUndercoverComeback, revealDescriptions, selectChallengeRule, setAutoAdvancePaused, setPlayerAway, skipDescription, startDiscussion, startNextRound, startVoting, submitRoundContent, triggerBuzzer, undercoverOptions, updateLobbySettings, type GameRoom, type Player } from './game.ts';
+import { randomWordPairAvoiding, randomWordPairExcluding, WORD_PAIR_ENTRIES, wordPairHint, wordPairKey } from './words.ts';
 
 function players(count = 8): Player[] {
   return Array.from({ length: count }, (_, index) => ({ id: `p${index}`, name: `玩家 ${index + 1}`, seat: index + 1, alive: true, cardReady: true }));
@@ -51,6 +51,25 @@ test('再来一局会排除上一局词组，包含正序和反序', () => {
   const reversed = randomWordPairExcluding(['旅行', '搬家'], () => 0);
   assert.notEqual(wordPairKey(first), wordPairKey(['搬家', '旅行']));
   assert.notEqual(wordPairKey(reversed), wordPairKey(['搬家', '旅行']));
+});
+
+test('人数配置只提供不会让特殊阵营达到平民人数的空白牌选项', () => {
+  assert.deepEqual(blankCardOptions(3, 1), [0]);
+  assert.deepEqual(blankCardOptions(4, 1), [0]);
+  assert.deepEqual(blankCardOptions(5, 1), [0, 1]);
+  assert.deepEqual(undercoverOptions(5, 1), [1]);
+});
+
+test('玩家称呼最多允许 24 字', () => {
+  const accepted = createRoom({ ownerId: 'owner', ownerName: '甲'.repeat(24), playerLimit: 3, undercoverCount: 1, civilianWord: '周报', undercoverWord: '复盘' });
+  assert.equal(accepted.players[0].name.length, 24);
+  assert.throws(() => createRoom({ ownerId: 'owner', ownerName: '甲'.repeat(25), playerLimit: 3, undercoverCount: 1, civilianWord: '周报', undercoverWord: '复盘' }), /1–24/);
+});
+
+test('系统词组为同步提交模式的空白牌提供宽泛范围提示', () => {
+  assert.equal(wordPairHint(['周报', '复盘']), '工作或学习场景');
+  assert.equal(wordPairHint(['寿司', '饭团']), '食物或饮品');
+  assert.equal(wordPairHint(['不存在甲', '不存在乙']), '');
 });
 
 test('空白牌配置恰好生成一张无词语牌，且与卧底不是同一人', () => {
@@ -396,21 +415,21 @@ test('第二次仍平票时本轮无人出局', () => {
   assert.equal(next.nextRoundAt !== null, true);
 });
 
-test('结果页十秒后自动进入且暂停时不会推进', () => {
+test('结果页七秒后自动进入且暂停时不会推进', () => {
   const room = { ...votingRoom(), ballot: 2, runoffCandidateIds: ['p0', 'p1'], autoAdvanceEnabled: true };
   room.votes = { p0: 'p1', p1: 'p0', p2: 'p0', p3: 'p1', p4: 'p0', p5: 'p1' };
   const resultRoom = applyBallotResult(room, resolveBallot(room), 10_000);
-  assert.equal(resultRoom.nextRoundAt, 20_000);
-  assert.equal(autoAdvanceDue(resultRoom, 19_999), false);
-  assert.equal(autoAdvanceDue(resultRoom, 20_000), true);
+  assert.equal(resultRoom.nextRoundAt, 17_000);
+  assert.equal(autoAdvanceDue(resultRoom, 16_999), false);
+  assert.equal(autoAdvanceDue(resultRoom, 17_000), true);
   const paused = setAutoAdvancePaused(resultRoom, true, 12_000);
   assert.equal(paused.nextRoundAt, null);
   assert.equal(autoAdvanceDue(paused, 30_000), false);
   const resumed = setAutoAdvancePaused(paused, false, 30_000);
-  assert.equal(resumed.nextRoundAt, 40_000);
-  const next = startNextRound(resumed, 40_000);
+  assert.equal(resumed.nextRoundAt, 37_000);
+  const next = startNextRound(resumed, 37_000);
   assert.equal(next.round, 2);
-  assert.equal(startNextRound(next, 40_001).round, 2);
+  assert.equal(startNextRound(next, 37_001).round, 2);
 });
 
 test('卧底人数达到平民人数时卧底获胜', () => {

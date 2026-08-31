@@ -299,7 +299,7 @@ begin
         where coalesce((p->>'alive')::boolean, false);
         v_winner := case when v_undercovers = 0 then 'civilian' when v_undercovers >= v_civilians then 'undercover' else null end;
         v_auto := coalesce((v_state->>'autoAdvanceEnabled')::boolean, true);
-        v_delay := coalesce((v_state->>'autoAdvanceDelaySeconds')::integer, 10);
+        v_delay := coalesce((v_state->>'autoAdvanceDelaySeconds')::integer, 7);
         v_state := jsonb_set(v_state, '{winner}', coalesce(to_jsonb(v_winner), 'null'::jsonb), true);
         v_state := jsonb_set(v_state, '{status}', to_jsonb(case when v_winner is null then 'result' else 'finished' end), true);
         v_state := jsonb_set(v_state, '{nextRoundAt}', case when v_winner is null and v_auto then to_jsonb(v_now_ms + v_delay * 1000) else 'null'::jsonb end, true);

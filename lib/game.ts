@@ -35,13 +35,19 @@ export const MAX_PLAYERS = 10;
 export const ROUND_CONTENT_MAX_LENGTH = 80;
 export const DISCUSSION_DURATION_MS = 120_000;
 export const COMEBACK_DURATION_MS = 20_000;
-export const AUTO_ADVANCE_DELAY_MS = 10_000;
+export const AUTO_ADVANCE_DELAY_MS = 7_000;
 export const AUTO_VOTING_DELAY_MS = 5_000;
+export const PLAYER_NAME_MAX_LENGTH = 24;
 export const PLAYER_LIMIT_OPTIONS = Array.from({ length: MAX_PLAYERS - MIN_PLAYERS + 1 }, (_, index) => MIN_PLAYERS + index);
 export const BLANK_CARD_OPTIONS = [0, 1] as const;
 
-export function undercoverOptions(playerLimit: number): number[] {
-  return playerLimit >= 5 ? [1, 2] : [1];
+export function undercoverOptions(playerLimit: number, blankCardCount = 0): number[] {
+  const base = playerLimit >= 5 ? [1, 2] : [1];
+  return base.filter((undercoverCount) => undercoverCount + blankCardCount < playerLimit - undercoverCount - blankCardCount);
+}
+
+export function blankCardOptions(playerLimit: number, undercoverCount: number): number[] {
+  return BLANK_CARD_OPTIONS.filter((blankCardCount) => undercoverCount + blankCardCount < playerLimit - undercoverCount - blankCardCount);
 }
 
 export interface Player {
@@ -93,6 +99,7 @@ export interface GameRoom {
   lastCivilianAccuseResult?: { accuserId: string; targetId: string; correct: boolean; eliminatedId: string; round: number } | null;
   civilianWord: string;
   undercoverWord: string;
+  blankHint?: string;
   recentWordPairKeys?: string[];
   challengeMode: ChallengeMode;
   descriptionRevealMode?: DescriptionRevealMode;
@@ -361,7 +368,7 @@ function finalizeBallotResult(room: GameRoom, result: RoundResult, now: number):
     players,
     winner,
     status: winner ? 'finished' : 'result',
-    nextRoundAt: !winner && autoAdvanceEnabled ? now + (room.autoAdvanceDelaySeconds ?? 10) * 1000 : null,
+    nextRoundAt: !winner && autoAdvanceEnabled ? now + (room.autoAdvanceDelaySeconds ?? AUTO_ADVANCE_DELAY_MS / 1000) * 1000 : null,
     autoAdvancePaused: false,
     votes: {},
     runoffCandidateIds: [],
@@ -504,14 +511,19 @@ function normalizeGuess(value: string): string {
 }
 
 export function canTriggerBuzzer(room: GameRoom, playerId: string, now = Date.now()): boolean {
-  return Boolean(
-    room.buzzerEnabled
-    && !room.buzzerUsedBy
-    && !room.undercoverComebackUsed
-    && (room.status === 'discussion' || room.status === 'voting')
-    && descriptionsAreRevealed(room, now)
-    && room.players.some((player) => player.id === playerId && player.alive && !player.away),
-  );
+  return getBuzzerUnavailableReason(room, playerId, now) === null;
+}
+
+export function getBuzzerUnavailableReason(room: GameRoom, playerId: string, now = Date.now()): string | null {
+  const player = room.players.find((item) => item.id === playerId);
+  if (!room.buzzerEnabled) return '本局未开启';
+  if (room.buzzerUsedBy) return '本局机会已使用';
+  if (room.undercoverComebackUsed) return '特殊阵营反猜机会已使用';
+  if (!player?.alive) return '你已退出本局';
+  if (player.away) return '暂退中不可操作';
+  if (room.status !== 'discussion' && room.status !== 'voting') return '当前阶段不可操作';
+  if (!descriptionsAreRevealed(room, now)) return '等待描述公开';
+  return null;
 }
 
 export function triggerBuzzer(room: GameRoom, playerId: string, now = Date.now()): GameRoom {
@@ -624,7 +636,7 @@ export function setAutoAdvancePaused(room: GameRoom, paused: boolean, now = Date
   return {
     ...room,
     autoAdvancePaused: paused,
-    nextRoundAt: paused ? null : now + (room.autoAdvanceDelaySeconds ?? 10) * 1000,
+    nextRoundAt: paused ? null : now + (room.autoAdvanceDelaySeconds ?? AUTO_ADVANCE_DELAY_MS / 1000) * 1000,
     version: room.version + 1,
     updatedAt: now,
   };
@@ -733,7 +745,7 @@ export function exitPlayer(room: GameRoom, playerId: string, now = Date.now()): 
     lastResult: winner ? exitResult : room.lastResult,
     history: winner ? [...room.history, exitResult] : room.history,
     nextRoundAt: winner ? null : exitingPendingGuesser && resumedStatus === 'result' && (room.autoAdvanceEnabled ?? true)
-      ? now + (room.autoAdvanceDelaySeconds ?? 10) * 1000
+      ? now + (room.autoAdvanceDelaySeconds ?? AUTO_ADVANCE_DELAY_MS / 1000) * 1000
       : room.nextRoundAt,
     version: room.version + 1,
     updatedAt: now,
@@ -756,12 +768,15 @@ export function createRoom(input: {
   civilianAccuseEnabled?: boolean;
   civilianWord: string;
   undercoverWord: string;
+  blankHint?: string;
   challengeMode?: ChallengeMode;
   undercoverComebackEnabled?: boolean;
   descriptionRevealMode?: DescriptionRevealMode;
   buzzerEnabled?: boolean;
   autoAdvanceEnabled?: boolean;
 }): GameRoom {
+  const ownerName = input.ownerName.trim();
+  if (!ownerName || ownerName.length > PLAYER_NAME_MAX_LENGTH) throw new Error(`称呼须为 1–${PLAYER_NAME_MAX_LENGTH} 字`);
   if (!Number.isInteger(input.playerLimit) || input.playerLimit < MIN_PLAYERS || input.playerLimit > MAX_PLAYERS) {
     throw new Error(`玩家人数必须为 ${MIN_PLAYERS}–${MAX_PLAYERS} 人`);
   }
@@ -779,6 +794,7 @@ export function createRoom(input: {
     lastCivilianAccuseResult: null,
     civilianWord: input.civilianWord.trim(),
     undercoverWord: input.undercoverWord.trim(),
+    blankHint: input.blankHint?.trim() || undefined,
     challengeMode: input.challengeMode ?? 'off',
     descriptionRevealMode: input.descriptionRevealMode ?? 'all_submitted',
     descriptionOrder: [],
@@ -797,7 +813,7 @@ export function createRoom(input: {
     buzzerUsedBy: null,
     buzzerStatus: 'idle',
     pausedStatus: null,
-    players: [{ id: input.ownerId, name: input.ownerName.trim(), seat: 1, alive: true, cardReady: false, away: false }],
+    players: [{ id: input.ownerId, name: ownerName, seat: 1, alive: true, cardReady: false, away: false }],
     assignments: {},
     round: 1,
     ballot: 1,
@@ -910,11 +926,16 @@ export function accuseUndercover(room: GameRoom, accuserId: string, targetId: st
 }
 
 export function canAccuseUndercover(room: GameRoom, playerId: string, now = Date.now()): boolean {
-  const allowedPhase = room.status === 'voting' || (room.status === 'discussion' && descriptionsAreRevealed(room, now));
-  return Boolean(
-    room.civilianAccuseEnabled
-    && !room.civilianAccuseUsedBy
-    && allowedPhase
-    && room.players.some((player) => player.id === playerId && player.alive && !player.away),
-  );
+  return getAccuseUnavailableReason(room, playerId, now) === null;
+}
+
+export function getAccuseUnavailableReason(room: GameRoom, playerId: string, now = Date.now()): string | null {
+  const player = room.players.find((item) => item.id === playerId);
+  if (!room.civilianAccuseEnabled) return '本局未开启';
+  if (room.civilianAccuseUsedBy) return '本局机会已使用';
+  if (!player?.alive) return '你已退出本局';
+  if (player.away) return '暂退中不可操作';
+  if (room.status !== 'discussion' && room.status !== 'voting') return '当前阶段不可操作';
+  if (room.status === 'discussion' && !descriptionsAreRevealed(room, now)) return '等待描述公开';
+  return null;
 }

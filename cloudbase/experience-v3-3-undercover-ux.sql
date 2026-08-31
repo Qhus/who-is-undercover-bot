@@ -1,47 +1,6 @@
--- 在 CloudBase PostgreSQL 的 SQL 编辑器中一次性执行。
--- 匿名用户只能读取/更新自己已加入的房间；加入房间必须通过受控函数完成。
--- 完成本文件后还需执行 concurrency-v2.sql，才能启用 LFR-39 并发操作接口。
-
-create table if not exists public.games (
-  code text primary key check (code ~ '^[A-Z2-9]{6}$'),
-  owner_uid text not null default auth.uid(),
-  owner_player_id text not null,
-  state jsonb not null,
-  version bigint not null default 1,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  expires_at timestamptz not null default (now() + interval '24 hours')
-);
-
-create table if not exists public.game_members (
-  game_code text not null references public.games(code) on delete cascade,
-  user_uid text not null default auth.uid(),
-  player_id text not null,
-  joined_at timestamptz not null default now(),
-  primary key (game_code, user_uid),
-  unique (game_code, player_id)
-);
-
-alter table public.games enable row level security;
-alter table public.game_members enable row level security;
-
-create or replace function public.is_game_member(p_code text)
-returns boolean language sql stable security definer set search_path = public, pg_temp as $$
-  select exists (select 1 from public.game_members where game_code = p_code and user_uid = auth.uid());
-$$;
-
-drop policy if exists games_member_select on public.games;
-create policy games_member_select on public.games for select
-using (public.is_game_member(games.code));
-
-drop policy if exists games_member_update on public.games;
-create policy games_member_update on public.games for update
-using (public.is_game_member(games.code))
-with check (public.is_game_member(games.code));
-
-drop policy if exists members_same_room_select on public.game_members;
-create policy members_same_room_select on public.game_members for select
-using (public.is_game_member(game_members.game_code));
+-- 谁是卧底 V1.7.1 体验增量：将创建者和加入者称呼上限由 12 字提高到 24 字。
+-- 请使用拥有 public.create_game / public.join_game 的 cloudbase_postgres 角色执行。
+-- 本迁移不修改现有房间数据，不涉及离谱法堂对象。
 
 create or replace function public.create_game(p_code text, p_owner_player_id text, p_state jsonb)
 returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
@@ -84,7 +43,7 @@ begin
   v_seat := jsonb_array_length(v_players) + 1;
   v_players := v_players || jsonb_build_array(jsonb_build_object(
     'id', p_player_id, 'name', trim(p_nickname), 'seat', v_seat,
-    'alive', true, 'cardReady', false
+    'alive', true, 'cardReady', false, 'away', false
   ));
   v_state := jsonb_set(v_game.state, '{players}', v_players, true);
   v_state := jsonb_set(v_state, '{version}', to_jsonb(v_game.version + 1), true);
@@ -96,12 +55,7 @@ begin
 end;
 $$;
 
-revoke all on public.games, public.game_members from anon, authenticated;
-revoke all on function public.is_game_member(text) from public;
 revoke all on function public.create_game(text, text, jsonb) from public;
 revoke all on function public.join_game(text, text, text) from public;
-grant select on public.games, public.game_members to anon, authenticated;
-grant update(state, version, updated_at) on public.games to anon, authenticated;
-grant execute on function public.is_game_member(text) to anon, authenticated;
 grant execute on function public.create_game(text, text, jsonb) to anon, authenticated;
 grant execute on function public.join_game(text, text, text) to anon, authenticated;
