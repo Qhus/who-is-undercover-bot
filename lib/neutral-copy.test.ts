@@ -27,8 +27,9 @@ test('表格模式在输入框外和输入提示中同时展示公共规则', ()
   const spreadsheetSource = readFileSync(new URL('../app/spreadsheet-mode.tsx', import.meta.url), 'utf8');
   assert.match(spreadsheetSource, /sheet-rule-banner/);
   assert.match(spreadsheetSource, /Round_.*公共规则/);
-  assert.match(spreadsheetSource, /placeholder=\{`填写本轮描述｜规则：\$\{getRoundChallenge/);
-  assert.match(spreadsheetSource, /getRoundChallenge\(room, room\.round\)\?\.text \?\? '自由表达'/);
+  assert.match(spreadsheetSource, /placeholder="填写本轮描述｜点击查看规则"/);
+  assert.match(spreadsheetSource, /sheet-detail-popover/);
+  assert.match(spreadsheetSource, /Round_.*完整规则/);
 });
 
 test('首页提供游玩步骤和完整规则入口', () => {
@@ -89,6 +90,7 @@ test('Excel 词语查看只占用 D 列且平民指认是表格内二次确认',
   const styles = readFileSync(new URL('../app/globals.css', import.meta.url), 'utf8');
   assert.match(spreadsheetSource, />···<\/button>/);
   assert.match(spreadsheetSource, /props\.wordReviewPlayer\?\.id === player\.id/);
+  assert.match(spreadsheetSource, /reviewingThisPlayer \? reviewCopy : '复看词牌'/);
   assert.doesNotMatch(spreadsheetSource, /sheet-private-review/);
   assert.doesNotMatch(styles, /sheet-private-review/);
   assert.match(spreadsheetSource, /发起人/);

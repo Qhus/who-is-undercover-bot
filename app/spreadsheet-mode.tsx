@@ -12,6 +12,7 @@ type Notice = { kind: 'info' | 'error'; text: string } | null;
 type SheetTab = 'members' | 'rules' | 'guide' | 'log' | `round-${string}`;
 type LobbySettingsDraft = { playerLimit: number; undercoverCount: number; blankCardCount: number };
 type SpecialActionConfirmation = { type: 'buzzer' | 'accuse'; playerId: string } | null;
+type DetailHint = { scope: string; title: string; text: string } | null;
 type SheetGuide = {
   step: number;
   title: string;
@@ -193,6 +194,7 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
   const [sensitiveVisible, setSensitiveVisible] = useState(false);
   const [lobbyEditing, setLobbyEditing] = useState(false);
   const [guessAcknowledgedKey, setGuessAcknowledgedKey] = useState<string | null>(null);
+  const [detailHint, setDetailHint] = useState<DetailHint>(null);
   const privacy = useRef<PrivacyGuard | null>(null);
 
   useEffect(() => {
@@ -457,7 +459,10 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
         personal = submittedContent
           ? isRoundContentVisible(room, player.id, props.currentPlayerId) ? submittedContent : '已提交，等待公开'
           : (room.skippedDescriptionPlayerIds ?? []).includes(player.id) ? '本轮未提交' : '等待中';
-        if (isContentOwner) personal = <div className="sheet-content-input"><input value={props.roundContentDraft} maxLength={ROUND_CONTENT_MAX_LENGTH} onChange={(event) => props.onRoundContentDraft(event.target.value)} placeholder={`填写本轮描述｜规则：${getRoundChallenge(room, room.round)?.text ?? '自由表达'}`} aria-label="填写谁是卧底本轮描述内容" /><button disabled={!props.roundContentDraft.trim()} onClick={props.onSubmitRoundContent} aria-label="提交谁是卧底本轮描述内容">提交</button></div>;
+        if (isContentOwner) {
+          const fullRule = getRoundChallenge(room, room.round)?.text ?? '本轮自由表达';
+          personal = <div className="sheet-content-input"><input value={props.roundContentDraft} maxLength={ROUND_CONTENT_MAX_LENGTH} onFocus={() => setDetailHint({ scope: flowKey, title: `Round_${String(room.round).padStart(2, '0')} 完整规则`, text: `${fullRule}。最多填写 ${ROUND_CONTENT_MAX_LENGTH} 字，规则由玩家自觉遵守，不影响提交。` })} onClick={() => setDetailHint({ scope: flowKey, title: `Round_${String(room.round).padStart(2, '0')} 完整规则`, text: `${fullRule}。最多填写 ${ROUND_CONTENT_MAX_LENGTH} 字，规则由玩家自觉遵守，不影响提交。` })} onChange={(event) => props.onRoundContentDraft(event.target.value)} placeholder="填写本轮描述｜点击查看规则" aria-label="填写谁是卧底本轮描述内容" /><button disabled={!props.roundContentDraft.trim()} onClick={props.onSubmitRoundContent} aria-label="提交谁是卧底本轮描述内容">提交</button></div>;
+        }
       }
     }
       if (room.status === 'voting') personal = player.alive && !player.away ? getRoundContents(room)[player.id] ?? '本轮未提交' : '无需提交';
@@ -471,10 +476,6 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
           ? room.lastComebackResult?.correct ? '特殊判定成功' : eliminatedUndercover(room) ? '成功找出卧底' : '本轮退出'
           : '—';
       }
-      if (sensitiveVisible && props.wordReviewPlayer?.id === player.id && player.cardReady && (room.status === 'discussion' || room.status === 'voting' || room.status === 'result')) {
-        const assignment = room.assignments[player.id];
-        personal = <span className="sheet-secret-value">{assignment?.role === 'blank' ? blankCardCopy(room) : assignment?.word}</span>;
-      }
       let selection: ReactNode = room.votes[player.id] ? '已完成' : '—';
       if (isVoter) selection = <div className="sheet-select-wrap"><select value={props.selectedCandidateId ?? ''} onChange={(event) => props.onCandidate(event.target.value || null)} aria-label="提交选择，真实用途是选择本轮投票对象"><option value="">请选择…</option>{eligibleCandidates(room).filter((candidate) => candidate.id !== player.id).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}</select><button disabled={!props.selectedCandidateId} onClick={props.onSubmitVote} aria-label="确认提交本轮投票选择">提交</button></div>;
       const controlsCurrentPlayer = !props.remoteMode || props.currentPlayerId === player.id;
@@ -485,7 +486,12 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
       const canReview = player.cardReady && (room.status === 'discussion' || room.status === 'voting' || room.status === 'result') && (!props.remoteMode || props.currentPlayerId === player.id);
       const canControlPresence = room.status !== 'finished' && player.alive && (!props.remoteMode || props.currentPlayerId === player.id);
       const canAccuse = canAccuseUndercover(room, player.id) && controlsCurrentPlayer;
-      const note = <div className="sheet-inline">{player.id === room.ownerId && <span>负责人</span>}{canReview && room.status !== 'cards' && <button className="sheet-secret" onClick={() => { props.onReviewWord(player.id); window.setTimeout(() => privacy.current?.reveal(), 0); }} aria-label={`${player.name} 再次查看自己的词语`}>···</button>}{showSpecialControls && room.buzzerEnabled && controlsCurrentPlayer && <button disabled={!canBuzz} title={buzzerReason ?? '可发起'} onClick={() => props.onBuzzer(player.id)} aria-label={`${player.name} 猜词爆灯`}>{canBuzz ? '猜词爆灯' : `猜词爆灯 · ${buzzerReason}`}</button>}{showSpecialControls && room.civilianAccuseEnabled && controlsCurrentPlayer && <button disabled={!canAccuse} title={accuseReason ?? '可发起'} onClick={() => props.onOpenCivilianAccuse(player.id)} aria-label={`${player.name} 打开平民爆灯指认`}>{canAccuse ? '平民爆灯指认' : `平民爆灯 · ${accuseReason}`}</button>}{canControlPresence && <button onClick={() => props.onToggleAway(player.id)}>{player.away ? '返回' : '暂退'}</button>}{canControlPresence && <button onClick={() => props.onExitPlayer(player.id)}>退出</button>}</div>;
+      const reviewingThisPlayer = sensitiveVisible && props.wordReviewPlayer?.id === player.id;
+      const assignment = room.assignments[player.id];
+      const reviewCopy = assignment?.role === 'blank' ? blankCardCopy(room) : assignment?.word ?? '读取中';
+      const buzzerDetail = `猜词爆灯：输入你认为多数玩家拿到的完整原词。只有卧底或空白牌答对才获胜；身份不符、答案不一致或超时都会退出。${buzzerReason ? ` 当前不可用：${buzzerReason}。` : ' 本局机会仅一次。'}`;
+      const accuseDetail = `平民爆灯指认：平民指中特殊阵营则目标退出；指错或由特殊阵营发起，发起者退出。${accuseReason ? ` 当前不可用：${accuseReason}。` : ' 本局机会仅一次。'}`;
+      const note = <div className="sheet-inline">{player.id === room.ownerId && <span>负责人</span>}{canReview && room.status !== 'cards' && <button className={`sheet-secret sheet-secret--review ${reviewingThisPlayer ? 'is-revealed' : ''}`} onClick={() => { props.onReviewWord(player.id); window.setTimeout(() => privacy.current?.reveal(), 0); }} aria-label={`${player.name} 复看词牌`}>{reviewingThisPlayer ? reviewCopy : '复看词牌'}</button>}{showSpecialControls && room.buzzerEnabled && controlsCurrentPlayer && <button className={!canBuzz ? 'is-disabled' : ''} aria-disabled={!canBuzz} title={buzzerDetail} onClick={() => { setDetailHint({ scope: flowKey, title: `${player.name} · 猜词爆灯`, text: buzzerDetail }); if (canBuzz) props.onBuzzer(player.id); }} aria-label={`${player.name} 猜词爆灯`}>猜词爆灯</button>}{showSpecialControls && room.civilianAccuseEnabled && controlsCurrentPlayer && <button className={!canAccuse ? 'is-disabled' : ''} aria-disabled={!canAccuse} title={accuseDetail} onClick={() => { setDetailHint({ scope: flowKey, title: `${player.name} · 平民爆灯指认`, text: accuseDetail }); if (canAccuse) props.onOpenCivilianAccuse(player.id); }} aria-label={`${player.name} 打开平民爆灯指认`}>平民爆灯</button>}{canControlPresence && <button onClick={() => props.onToggleAway(player.id)}>{player.away ? '返回' : '暂退'}</button>}{canControlPresence && <button onClick={() => props.onExitPlayer(player.id)}>退出</button>}</div>;
       rows.push([String(player.seat).padStart(2, '0'), player.name, neutralStatus(room, player, props.activeCardPlayer, props.activeDiscussionPlayer, props.activeVoter), personal, selection, note]);
     });
     const activity = specialActivityCopy(room);
@@ -629,6 +635,7 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
       </div>
     </div>
     <footer className="sheet-tabs"><button aria-label="新增工作表">＋</button>{sheetTabs.map((tab) => <button className={sheetTab === tab ? 'is-current' : ''} onClick={() => setSheetTab(tab)} key={tab}>{tabLabel(tab)}</button>)}<span /><small>就绪 · 自动同步 · 保护视图：闲置 {PRIVACY_IDLE_MS / 1000} 秒遮挡，显示 {PRIVATE_REVEAL_MS / 1000} 秒</small></footer>
+    {detailHint?.scope === flowKey && <aside className="sheet-detail-popover" role="status" aria-live="polite"><div><strong>{detailHint.title}</strong><button onClick={() => setDetailHint(null)} aria-label="关闭完整提示">×</button></div><p>{detailHint.text}</p></aside>}
     {props.notice && <div className={`sheet-toast sheet-toast--${props.notice.kind}`} role="status">{neutralizeGameCopy(props.notice.text)}</div>}
   </main>;
 }

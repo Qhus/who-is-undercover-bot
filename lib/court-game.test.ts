@@ -1,16 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { COURT_CASE_PACKS, COURT_V7_SAMPLE_CASES } from './court-content.ts';
+import { COURT_CASE_PACKS } from './court-content.ts';
 import {
   COURT_DURATIONS,
-  COURT_TACTICS,
+  COURT_RECENT_CASE_LIMIT,
   createCourtRoom,
   nextCourtStatus,
   rankScores,
   restartCourtGame,
   startCourtRound,
   validateResponse,
-  validateQuestionChoice,
   validateStatement,
   validateVote,
 } from './court-game.ts';
@@ -37,30 +36,15 @@ test('内容版至少提供 30 个短口语参考答辩且 ID 唯一的案件包
   }
 });
 
-test('攻防版保留两段长输入并提供四十五秒质询', () => {
+test('两段输入各有五分钟且双项投票有两分钟', () => {
   assert.equal(COURT_DURATIONS.statement, 300_000);
-  assert.equal(COURT_DURATIONS.questioning, 45_000);
   assert.equal(COURT_DURATIONS.response, 300_000);
   assert.equal(COURT_DURATIONS.voting, 120_000);
   assert.throws(() => validateStatement(''));
   assert.throws(() => validateStatement('甲'.repeat(81)));
   assert.doesNotThrow(() => validateStatement('我可以解释'));
   assert.throws(() => validateResponse(''));
-  assert.throws(() => validateResponse('甲'.repeat(121)));
-  assert.doesNotThrow(() => validateResponse('甲'.repeat(120)));
-  assert.throws(() => validateQuestionChoice(null, [{ id: 'a' }]));
-  assert.throws(() => validateQuestionChoice('b', [{ id: 'a' }]));
-  assert.doesNotThrow(() => validateQuestionChoice('a', [{ id: 'a' }]));
-});
-
-test('V7 样板包含六套案件、三选一质询和八种辩护招式', () => {
-  assert.equal(COURT_V7_SAMPLE_CASES.length, 6);
-  assert.equal(COURT_TACTICS.length, 8);
-  for (const item of COURT_V7_SAMPLE_CASES) {
-    assert.equal(item.v7Sample?.questionCards.length, 3);
-    assert.ok(item.v7Sample?.archiveTactic && item.v7Sample.archiveQuestion);
-    assert.equal(new Set(item.v7Sample?.questionCards).size, 3);
-  }
+  assert.throws(() => validateResponse('甲'.repeat(81)));
 });
 
 test('双项投票均必选、不能投自己且允许投给同一条', () => {
@@ -92,11 +76,28 @@ test('同一局三轮不重复案件且新局优先排除上一局案件', () =>
   assert.ok(!previousCases.includes(room.caseId ?? ''));
 });
 
-test('完整状态机包含选择质询与证据阶段并在第三轮结束', () => {
+test('连续七局共二十一轮不重复题干', () => {
+  let room = threePlayerRoom();
+  const selected: string[] = [];
+  for (let session = 0; session < 8; session += 1) {
+    for (let round = 0; round < 3; round += 1) {
+      room = startCourtRound(room, selected.length + 1, () => 0);
+      selected.push(room.caseId ?? '');
+      room = { ...room, status: round === 2 ? 'finished' : 'result' };
+    }
+    if (session < 7) room = restartCourtGame(room, selected.length + 1);
+  }
+  for (let end = COURT_RECENT_CASE_LIMIT; end <= selected.length; end += 1) {
+    assert.equal(new Set(selected.slice(end - COURT_RECENT_CASE_LIMIT, end)).size, COURT_RECENT_CASE_LIMIT);
+  }
+  assert.equal(room.previousSessionCaseIds.length, COURT_RECENT_CASE_LIMIT);
+});
+
+test('完整状态机包含证据阶段并在第三轮结束', () => {
   let room = startCourtRound(threePlayerRoom(), 1, () => 0);
   assert.equal(room.status, 'statement');
   room = nextCourtStatus(room, 2);
-  assert.equal(room.status, 'questioning');
+  assert.equal(room.status, 'statement_reveal');
   room = nextCourtStatus(room, 3);
   assert.equal(room.status, 'evidence');
   room = nextCourtStatus(room, 4);

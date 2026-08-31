@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { COURT_CASE_PACKS, COURT_V7_SAMPLE_CASES } from './court-content.ts';
+import { COURT_CASE_PACKS } from './court-content.ts';
 
 const schema = readFileSync(new URL('../cloudbase/schema.sql', import.meta.url), 'utf8');
 const verification = readFileSync(new URL('../cloudbase/verify.sql', import.meta.url), 'utf8');
@@ -24,8 +24,6 @@ const courtCopyMigration = readFileSync(new URL('../cloudbase/content-v6-1-court
 const courtCopyVerification = readFileSync(new URL('../cloudbase/verify-v6-1-court-copy.sql', import.meta.url), 'utf8');
 const courtTimerMigration = readFileSync(new URL('../cloudbase/experience-v6-2-court-timers.sql', import.meta.url), 'utf8');
 const courtTimerVerification = readFileSync(new URL('../cloudbase/verify-v6-2-court-timers.sql', import.meta.url), 'utf8');
-const courtV7Migration = readFileSync(new URL('../cloudbase/concurrency-v7-court-defense-duel.sql', import.meta.url), 'utf8');
-const courtV7Verification = readFileSync(new URL('../cloudbase/verify-v7-court-defense-duel.sql', import.meta.url), 'utf8');
 const concurrencySource = `${concurrencyBase}\n${concurrencyMigration}\n${concurrencyHotfix}\n${versionedRpcMigration}`;
 const storeSource = readFileSync(new URL('./cloudbase-store.ts', import.meta.url), 'utf8');
 const appSource = readFileSync(new URL('../app/game-app.tsx', import.meta.url), 'utf8');
@@ -146,42 +144,16 @@ test('离谱法堂 Draft 0.2 服务端实现两段确认、自动推进和每轮
   }
 });
 
-test('离谱法堂客户端仅调用 V7 RPC，页面不再出现私密关键词机制', () => {
-  assert.match(storeSource, /rpc\('create_court_game_v7'/);
-  assert.match(storeSource, /rpc\('join_court_game_v7'/);
-  assert.match(storeSource, /rpc\('apply_court_action_v7'/);
-  assert.match(storeSource, /rpc\('get_my_court_context_v7'/);
+test('离谱法堂客户端仅调用 V6 RPC，页面不再出现私密关键词机制', () => {
+  assert.match(storeSource, /rpc\('create_court_game_v6'/);
+  assert.match(storeSource, /rpc\('join_court_game_v6'/);
+  assert.match(storeSource, /rpc\('apply_court_action_v6'/);
+  assert.match(storeSource, /rpc\('get_my_court_submission_v6'/);
   assert.match(storeSource, /p_expected_session:\s*input\.room\.sessionNo/);
   assert.match(courtAppSource, /确认首次陈词/);
-  assert.match(courtAppSource, /确认所选质询/);
   assert.match(courtAppSource, /确认当庭补述/);
   assert.match(courtAppSource, /再来一局/);
   assert.doesNotMatch(courtAppSource, /私密关键词|本人关键词|关键词读取|getMyCourtAssignment/);
-});
-
-test('离谱法堂 Draft 0.4 使用 V7 私密招式、三选一质询和两人卷宗旧案', () => {
-  for (const table of ['court_v7_tactics', 'court_v7_case_questions', 'court_v7_case_archive', 'court_v7_assignments', 'court_v7_questions', 'court_v7_rerolls', 'court_v7_votes', 'court_v7_actions']) {
-    assert.match(courtV7Migration, new RegExp(`create table if not exists public\\.${table}`));
-  }
-  for (const rpc of ['create_court_game_v7', 'join_court_game_v7', 'get_my_court_context_v7', 'apply_court_action_v7']) assert.match(courtV7Migration, new RegExp(rpc));
-  for (const action of ['reroll_court_tactic', 'confirm_court_statement', 'confirm_court_question', 'confirm_court_response', 'confirm_court_vote']) assert.match(courtV7Migration, new RegExp(action));
-  assert.match(courtV7Migration, /p_now_ms\+45000/);
-  assert.match(courtV7Migration, /target_idx := case when idx=cardinality\(participant_ids\) then 1 else idx\+1 end/);
-  assert.match(courtV7Migration, /target_player_id=participant_ids\[target_idx\]/);
-  assert.match(courtV7Migration, /v_state->>'status'='questioning'/);
-  assert.match(courtV7Migration, /v_state->>'status' in \('evidence','response','voting','result','finished'\)/);
-  assert.match(courtV7Migration, /jsonb_array_length\(v_state->'expectedPlayerIds'\)=2/);
-  assert.match(courtV7Migration, /length\(body\) not between 1 and 120/);
-  assert.match(courtV7Migration, /primary key\(game_code,session_no,player_id\)/i);
-  assert.doesNotMatch(courtV7Migration, /create or replace function public\.apply_court_action_v6/i);
-  assert.doesNotMatch(courtV7Migration, /drop\s+(?:table|function)|truncate\s+/i);
-  for (const item of COURT_V7_SAMPLE_CASES) {
-    assert.ok(courtV7Migration.includes(`('${item.id}'`), `V7 迁移缺少样板案件：${item.id}`);
-    for (const question of item.v7Sample?.questionCards ?? []) assert.ok(courtV7Migration.includes(question.replaceAll("'", "''")), `V7 迁移缺少质询卡：${item.id}`);
-    assert.ok(courtV7Migration.includes(item.v7Sample?.archiveTactic.replaceAll("'", "''") ?? ''), `V7 迁移缺少卷宗招式：${item.id}`);
-    assert.ok(courtV7Migration.includes(item.v7Sample?.archiveQuestion.replaceAll("'", "''") ?? ''), `V7 迁移缺少卷宗质询：${item.id}`);
-  }
-  for (const expected of ['exactly six complete V7 sample cases', 'V7 action supports one reroll and question confirmation', 'archive candidate appears only for two player rounds']) assert.match(courtV7Verification, new RegExp(expected));
 });
 
 test('离谱法堂 Draft 0.3 使用 V6 双项选票、卷宗参考答辩和两人局', () => {
