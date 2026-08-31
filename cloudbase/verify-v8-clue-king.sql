@@ -26,8 +26,17 @@ with checks(expected_check,actual,ok) as (
       (pg_get_functiondef('public.apply_clue_action_v1(text,text,text,text,integer,integer,bigint,jsonb)'::regprocedure) ~ 'guesserOrder' and pg_get_functiondef('public.apply_clue_action_v1(text,text,text,text,integer,integer,bigint,jsonb)'::regprocedure) ~ 'totalRounds')::text,
       pg_get_functiondef('public.apply_clue_action_v1(text,text,text,text,integer,integer,bigint,jsonb)'::regprocedure) ~ 'guesserOrder' and pg_get_functiondef('public.apply_clue_action_v1(text,text,text,text,integer,integer,bigint,jsonb)'::regprocedure) ~ 'totalRounds'),
     ('writing guessing rating and result timers exist',
-      (pg_get_functiondef('public.clue_v1_begin_round(text,jsonb,integer,bigint)'::regprocedure) ~ '90000' and pg_get_functiondef('public.clue_v1_open_guessing(text,jsonb,bigint)'::regprocedure) ~ '60000' and pg_get_functiondef('public.apply_clue_action_v1(text,text,text,text,integer,integer,bigint,jsonb)'::regprocedure) ~ 'now_ms \+ 60000' and pg_get_functiondef('public.clue_v1_finish_round(text,jsonb,bigint,boolean,text,integer,jsonb)'::regprocedure) ~ '10000')::text,
-      pg_get_functiondef('public.clue_v1_begin_round(text,jsonb,integer,bigint)'::regprocedure) ~ '90000' and pg_get_functiondef('public.clue_v1_open_guessing(text,jsonb,bigint)'::regprocedure) ~ '60000' and pg_get_functiondef('public.apply_clue_action_v1(text,text,text,text,integer,integer,bigint,jsonb)'::regprocedure) ~ 'now_ms \+ 60000' and pg_get_functiondef('public.clue_v1_finish_round(text,jsonb,bigint,boolean,text,integer,jsonb)'::regprocedure) ~ '10000'),
+      jsonb_build_object(
+        'writing90s',position('90000' in pg_get_functiondef('public.clue_v1_begin_round(text,jsonb,integer,bigint)'::regprocedure))>0,
+        'guessing60s',position('60000' in pg_get_functiondef('public.clue_v1_open_guessing(text,jsonb,bigint)'::regprocedure))>0,
+        'rating60s',position('rating' in pg_get_functiondef('public.apply_clue_action_v1(text,text,text,text,integer,integer,bigint,jsonb)'::regprocedure))>0 and position('60000' in pg_get_functiondef('public.apply_clue_action_v1(text,text,text,text,integer,integer,bigint,jsonb)'::regprocedure))>0,
+        'result10s',position('10000' in pg_get_functiondef('public.clue_v1_finish_round(text,jsonb,bigint,boolean,text,integer,jsonb)'::regprocedure))>0
+      )::text,
+      position('90000' in pg_get_functiondef('public.clue_v1_begin_round(text,jsonb,integer,bigint)'::regprocedure))>0
+        and position('60000' in pg_get_functiondef('public.clue_v1_open_guessing(text,jsonb,bigint)'::regprocedure))>0
+        and position('rating' in pg_get_functiondef('public.apply_clue_action_v1(text,text,text,text,integer,integer,bigint,jsonb)'::regprocedure))>0
+        and position('60000' in pg_get_functiondef('public.apply_clue_action_v1(text,text,text,text,integer,integer,bigint,jsonb)'::regprocedure))>0
+        and position('10000' in pg_get_functiondef('public.clue_v1_finish_round(text,jsonb,bigint,boolean,text,integer,jsonb)'::regprocedure))>0),
     ('restart creates a new session and clears scores',
       (pg_get_functiondef('public.apply_clue_action_v1(text,text,text,text,integer,integer,bigint,jsonb)'::regprocedure) ~ 'restart_clue_game' and pg_get_functiondef('public.apply_clue_action_v1(text,text,text,text,integer,integer,bigint,jsonb)'::regprocedure) ~ '''\{hintScores\}''.*''\{\}''')::text,
       pg_get_functiondef('public.apply_clue_action_v1(text,text,text,text,integer,integer,bigint,jsonb)'::regprocedure) ~ 'restart_clue_game' and pg_get_functiondef('public.apply_clue_action_v1(text,text,text,text,integer,integer,bigint,jsonb)'::regprocedure) ~ '''\{hintScores\}''.*''\{\}''')

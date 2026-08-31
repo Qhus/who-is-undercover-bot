@@ -239,6 +239,11 @@ test('A3 提示大王使用独立私密表、版本化 RPC 与完整轮转状态
   for (const expected of ['at least 100 enabled clue words', 'duplicate clue text is preserved as separate clue ids', 'every player becomes guesser once before finish', 'restart creates a new session and clears scores']) {
     assert.match(clueV1Verification, new RegExp(expected));
   }
+  assert.match(clueV1Verification, /'writing90s'/);
+  assert.match(clueV1Verification, /'guessing60s'/);
+  assert.match(clueV1Verification, /'rating60s'/);
+  assert.match(clueV1Verification, /'result10s'/);
+  assert.doesNotMatch(clueV1Verification, /now_ms \\+ 60000/);
   for (const copy of ['内容相同的提示会分别保留', '提示大王排名', '猜题速度排名', '确认全部评分', '再来一局']) {
     assert.match(clueAppSource, new RegExp(copy));
   }
