@@ -60,6 +60,7 @@ export interface ClueKingRoom {
   clueStatuses: Record<string, CluePhaseStatus>;
   clueConfirmedCount: number;
   publicClues: PublicClue[];
+  guessAttemptCount?: number;
   guessStatus: 'waiting' | 'correct' | 'wrong' | 'timeout';
   guessElapsedMs: number | null;
   revealedWord: string | null;
@@ -73,8 +74,9 @@ export interface ClueKingRoom {
 export const CLUE_MIN_PLAYERS = 3;
 export const CLUE_MAX_PLAYERS = 8;
 export const CLUE_MAX_LENGTH = 8;
+export const CLUE_MAX_GUESS_ATTEMPTS = 3;
 export const CLUE_DURATIONS = {
-  clue_writing: 90_000,
+  clue_writing: 120_000,
   guessing: 60_000,
   rating: 60_000,
   result: 10_000,
@@ -111,6 +113,7 @@ export function createClueRoom(ownerName: string, ruleMode: ClueRuleMode = 'off'
     clueStatuses: {},
     clueConfirmedCount: 0,
     publicClues: [],
+    guessAttemptCount: 0,
     guessStatus: 'waiting',
     guessElapsedMs: null,
     revealedWord: null,

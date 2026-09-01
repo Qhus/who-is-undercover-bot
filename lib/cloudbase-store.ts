@@ -161,7 +161,7 @@ export class CloudBaseRoomStore {
 
   async applyClueAction(input: { room: ClueKingRoom; actionId: string; actionType: ClueActionType; payload?: Record<string, unknown> }): Promise<ClueActionResult> {
     await this.connect();
-    const { data, error } = await this.db().rpc('apply_clue_action_v1', {
+    const { data, error } = await this.db().rpc('apply_clue_action_v2', {
       p_code: input.room.code,
       p_action_id: input.actionId,
       p_action_type: input.actionType,

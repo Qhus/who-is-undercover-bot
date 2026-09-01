@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createClueRoom, formatGuessTime, rankGuessTimes, rankHintScores, validateClue, validateRatings } from './clue-game.ts';
+import { CLUE_DURATIONS, CLUE_MAX_GUESS_ATTEMPTS, createClueRoom, formatGuessTime, rankGuessTimes, rankHintScores, validateClue, validateRatings } from './clue-game.ts';
 
 test('提示大王创建独立公开房间且不包含答案', () => {
   const room = createClueRoom('负责人', 'random', 100, () => 0.25);
@@ -23,6 +23,11 @@ test('评分要求每条提示都有一至三分', () => {
   validateRatings({ a: 1, b: 3 }, ['a', 'b']);
   assert.throws(() => validateRatings({ a: 1 }, ['a', 'b']), /每条提示/);
   assert.throws(() => validateRatings({ a: 4 }, ['a']), /1–3 分/);
+});
+
+test('体验增量提供两分钟填写和三次判断机会', () => {
+  assert.equal(CLUE_DURATIONS.clue_writing, 120_000);
+  assert.equal(CLUE_MAX_GUESS_ATTEMPTS, 3);
 });
 
 test('提示分和猜题速度分别排行', () => {

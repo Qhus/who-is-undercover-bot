@@ -26,6 +26,8 @@ const courtTimerMigration = readFileSync(new URL('../cloudbase/experience-v6-2-c
 const courtTimerVerification = readFileSync(new URL('../cloudbase/verify-v6-2-court-timers.sql', import.meta.url), 'utf8');
 const clueV1Migration = readFileSync(new URL('../cloudbase/concurrency-v8-clue-king.sql', import.meta.url), 'utf8');
 const clueV1Verification = readFileSync(new URL('../cloudbase/verify-v8-clue-king.sql', import.meta.url), 'utf8');
+const clueExperienceMigration = readFileSync(new URL('../cloudbase/concurrency-v8-1-clue-experience.sql', import.meta.url), 'utf8');
+const clueExperienceVerification = readFileSync(new URL('../cloudbase/verify-v8-1-clue-experience.sql', import.meta.url), 'utf8');
 const concurrencySource = `${concurrencyBase}\n${concurrencyMigration}\n${concurrencyHotfix}\n${versionedRpcMigration}`;
 const storeSource = readFileSync(new URL('./cloudbase-store.ts', import.meta.url), 'utf8');
 const appSource = readFileSync(new URL('../app/game-app.tsx', import.meta.url), 'utf8');
@@ -223,10 +225,11 @@ test('A3 提示大王使用独立私密表、版本化 RPC 与完整轮转状态
   for (const table of ['clue_word_bank_v1', 'clue_v1_round_secrets', 'clue_v1_clues', 'clue_v1_guesses', 'clue_v1_actions']) {
     assert.match(clueV1Migration, new RegExp(`create table if not exists public\\.${table}`));
   }
-  for (const rpc of ['create_clue_game_v1', 'join_clue_game_v1', 'get_my_clue_round_v1', 'apply_clue_action_v1']) {
+  for (const rpc of ['create_clue_game_v1', 'join_clue_game_v1', 'get_my_clue_round_v1']) {
     assert.match(clueV1Migration, new RegExp(rpc));
     assert.match(storeSource, new RegExp(`rpc\\('${rpc}'`));
   }
+  assert.match(clueV1Migration, /apply_clue_action_v1/);
   for (const action of ['start_clue_game', 'confirm_clue', 'submit_clue_guess', 'confirm_clue_ratings', 'advance_clue_phase', 'restart_clue_game']) {
     assert.match(clueV1Migration, new RegExp(action));
   }
@@ -245,7 +248,20 @@ test('A3 提示大王使用独立私密表、版本化 RPC 与完整轮转状态
   assert.match(clueV1Verification, /result timer is 10 seconds/);
   assert.doesNotMatch(clueV1Verification, /jsonb_build_object/);
   assert.doesNotMatch(clueV1Verification, /now_ms \\+ 60000/);
-  for (const copy of ['内容相同的提示会分别保留', '提示大王排名', '猜题速度排名', '确认全部评分', '再来一局']) {
+  for (const copy of ['相同内容仍按不同成员分别记录', '提示大王排名', '猜题速度排名', '确认全部评分', '再来一局']) {
     assert.match(clueAppSource, new RegExp(copy));
+  }
+});
+
+test('A3 体验增量延长填写时间并允许三次判断', () => {
+  assert.match(clueExperienceMigration, /create or replace function public\.apply_clue_action_v2/);
+  assert.match(storeSource, /rpc\('apply_clue_action_v2'/);
+  assert.match(clueExperienceMigration, /phaseDeadlineAt[\s\S]*30000/);
+  assert.match(clueExperienceMigration, /v_attempts>=3/);
+  assert.match(clueExperienceMigration, /on conflict\(game_code,session_no,round_no\) do update/);
+  assert.match(clueExperienceMigration, /还可尝试/);
+  assert.doesNotMatch(clueExperienceMigration, /drop\s+(?:table|function)|truncate\s+/i);
+  for (const expected of ['V2 action RPC exists', 'writing timer is extended from 90 to 120 seconds', 'guesser may try up to three times', 'wrong guesses are updated without ending early']) {
+    assert.match(clueExperienceVerification, new RegExp(expected));
   }
 });

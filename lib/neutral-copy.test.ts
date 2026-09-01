@@ -148,7 +148,8 @@ test('三项游戏使用独立页面和独立入口', () => {
   assert.doesNotMatch(courtApp, /demo-b|demo-c|创建本机演示/);
   assert.match(cluePage, /ClueSpreadsheetMode/);
   assert.match(clueApp, /获奖联想机制改编/);
-  assert.match(clueApp, /提示不去重/);
+  assert.match(clueApp, /相同内容仍按不同成员分别记录/);
+  assert.match(clueApp, /最多尝试 3 次/);
 });
 
 test('三个游戏都支持返回目录和带房间编号的邀请链接', () => {

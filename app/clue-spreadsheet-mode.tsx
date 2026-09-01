@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CLUE_MAX_LENGTH,
+  CLUE_MAX_GUESS_ATTEMPTS,
   CLUE_MIN_PLAYERS,
   createClueRoom,
   formatGuessTime,
@@ -20,7 +21,7 @@ import { makeId } from '@/lib/game';
 const clueSheets = [
   ['home', '提示首页'],
   ['members', '成员状态'],
-  ['clues', '本轮提示'],
+  ['clues', '本轮记录'],
   ['scores', '双榜单'],
   ['guide', '玩法说明'],
 ] as const;
@@ -29,11 +30,11 @@ type ClueSheetId = typeof clueSheets[number][0];
 
 const statusName: Record<string, string> = {
   lobby: '等待成员',
-  clue_writing: '填写提示',
-  guessing: '猜题中',
-  rating: '提示评分',
-  result: '本轮结果',
-  finished: '最终排行',
+  clue_writing: '填写关联词',
+  guessing: '结果判断',
+  rating: '质量评分',
+  result: '本轮汇总',
+  finished: '最终统计',
 };
 
 function remaining(deadline: number | null, now: number) {
@@ -61,7 +62,7 @@ export default function ClueSpreadsheetMode() {
   const [guessText, setGuessText] = useState('');
   const [ratings, setRatings] = useState<Record<string, number>>({});
   const [activeSheet, setActiveSheet] = useState<ClueSheetId>('home');
-  const [notice, setNotice] = useState('成熟联想机制的联机积分改编：人人轮流猜，提示不去重，猜中后给提示评分。');
+  const [notice, setNotice] = useState('联想协作记录：每人轮流负责判断，其他成员提交简短关联词，命中后进行匿名质量评分。');
   const [busy, setBusy] = useState(false);
   const [now, setNow] = useState(0);
   const scopeRef = useRef('');
@@ -224,10 +225,11 @@ export default function ClueSpreadsheetMode() {
     }
   };
 
-  const submitGuess = () => {
+  const submitGuess = async () => {
     const clean = guessText.trim();
     if (!clean) return setNotice('请先填写你的猜测。');
-    void apply('submit_clue_guess', { guessText: clean });
+    const next = await apply('submit_clue_guess', { guessText: clean });
+    if (next?.status === 'guessing') setGuessText('');
   };
 
   const confirmRatings = () => {
@@ -249,10 +251,10 @@ export default function ClueSpreadsheetMode() {
   const tableRows = () => {
     if (activeSheet === 'guide') return <>
       <tr><th>1</th><td>一句话玩法</td><td colSpan={5}>每人轮流当一次猜题者；其他人看答案写提示，猜中后逐条评 1–3 分，最后生成提示分与猜题速度双榜单。</td></tr>
-      <tr><th>2</th><td>重复提示</td><td colSpan={5}>不会删除。内容相同的提示会分别保留、分别评分。</td></tr>
-      <tr><th>3</th><td>提示限制</td><td colSpan={5}>基础规则为 1–8 字且不能直接写出答案；房主可开启随机限制，让部分轮次增加字数或禁用词挑战。</td></tr>
-      <tr><th>4</th><td>评分规则</td><td colSpan={5}>只有猜中才进入评分；猜题者在作者揭晓前为每条提示选择 1、2 或 3 分，确认后锁定。</td></tr>
-      <tr><th>5</th><td>自动推进</td><td colSpan={5}>全部提示确认后立即开放猜题；超时也会继续，不需要房主逐轮点击。</td></tr>
+      <tr><th>2</th><td>相同内容</td><td colSpan={5}>可以放心按自己的想法填写；即使和别人写得一样，也会按不同成员分别展示、分别计分。</td></tr>
+      <tr><th>3</th><td>填写限制</td><td colSpan={5}>关联词填写时间为 120 秒；基础规则为 1–8 字且不能直接写出答案，房主也可开启随机限制。</td></tr>
+      <tr><th>4</th><td>质量评价</td><td colSpan={5}>只有判断正确才进入评价；负责人在成员揭晓前为每条关联词选择 1、2 或 3 分，确认后锁定。</td></tr>
+      <tr><th>5</th><td>判断与推进</td><td colSpan={5}>全部关联词确认后立即开放判断；负责人在 60 秒内最多尝试 3 次，超时也会自动继续。</td></tr>
     </>;
     if (!room) return <tr><th>1</th><td>工作表</td><td colSpan={5}>请先返回“提示首页”创建或加入房间。</td></tr>;
     if (activeSheet === 'members') return <>
@@ -265,7 +267,7 @@ export default function ClueSpreadsheetMode() {
     </>;
     if (activeSheet === 'clues') return <>
       <tr><th>1</th><td>编号</td><td colSpan={3}>提示内容</td><td>作者</td><td>评分</td></tr>
-      {room.publicClues.length ? room.publicClues.map((clue, index) => <tr key={clue.clueId}><th>{index + 2}</th><td>{clue.displayCode}</td><td colSpan={3}>{clue.text}</td><td>{clue.authorName ?? '评分后揭晓'}</td><td>{clue.score ? `${clue.score} 分` : '待评分'}</td></tr>) : <tr><th>2</th><td>尚未公开</td><td colSpan={5}>提示全部确认或倒计时结束后，会在这里同时公开；重复提示不会删除。</td></tr>}
+      {room.publicClues.length ? room.publicClues.map((clue, index) => <tr key={clue.clueId}><th>{index + 2}</th><td>{clue.displayCode}</td><td colSpan={3}>{clue.text}</td><td>{clue.authorName ?? '评分后揭晓'}</td><td>{clue.score ? `${clue.score} 分` : '待评分'}</td></tr>) : <tr><th>2</th><td>尚未汇总</td><td colSpan={5}>所有成员确认或倒计时结束后集中显示；相同内容仍按不同成员分别记录。</td></tr>}
     </>;
     return <tr><th>1</th><td>最近状态</td><td>{room.code}</td><td>第 {room.round}/{room.totalRounds || room.players.length} 轮</td><td>{statusName[room.status]}</td><td colSpan={2}>{notice}</td></tr>;
   };
@@ -273,11 +275,11 @@ export default function ClueSpreadsheetMode() {
   return <main className="sheet-app clue-sheet">
     <header className="sheet-titlebar">
       <button className="sheet-filemark" onClick={leaveView}>表</button>
-      <div><strong>{room ? `提示填报表 · ${room.code}` : '提示填报表 · 联机工作簿'}</strong><span>获奖联想机制改编 · 双榜单积分</span></div>
+      <div><strong>{room ? `提示填报表 · ${room.code}` : '提示填报表 · 联机工作簿'}</strong><span>联想协作机制 · 两项统计</span></div>
       <div className="sheet-title-actions"><a href="../" aria-label="返回摸鱼游戏工作台">目录</a>{room && <><button onClick={() => navigator.clipboard?.writeText(room.code)}>复制房间编号</button><button onClick={copyInviteLink}>复制邀请链接</button><button onClick={leaveView}>返回提示首页</button></>}</div>
     </header>
-    <nav className="sheet-ribbon"><button className="is-current">开始</button><button onClick={() => setActiveSheet('clues')}>提示</button><button onClick={() => setActiveSheet('scores')}>排名</button><span /></nav>
-    <div className="sheet-formula"><span className="sheet-namebox">A1</span><span className="sheet-fx">fx</span><output>{room ? `${statusName[room.status]} · ${room.guesserName ? `本轮猜题者 ${room.guesserName}` : '等待开始'} · ${remaining(room.phaseDeadlineAt, now)} 秒` : '人人轮流猜一次；提示不去重；猜中后由猜题者评分'}</output></div>
+    <nav className="sheet-ribbon"><button className="is-current">开始</button><button onClick={() => setActiveSheet('clues')}>记录</button><button onClick={() => setActiveSheet('scores')}>排名</button><span /></nav>
+    <div className="sheet-formula"><span className="sheet-namebox">A1</span><span className="sheet-fx">fx</span><output>{room ? `${statusName[room.status]} · ${room.guesserName ? `本轮负责人 ${room.guesserName}` : '等待开始'} · ${remaining(room.phaseDeadlineAt, now)} 秒` : '每人轮流负责判断；其他成员填写关联词；命中后评价关联质量'}</output></div>
     <section className="sheet-workspace"><div className="sheet-canvas">
       <div className="sheet-commandbar">
         {!room ? <span>独立 A3 入口 · 3–8 人 · 推荐 4 人以上</span> : room.status === 'lobby' ? <>{isOwner ? <button className="sheet-primary-action" disabled={room.players.length < CLUE_MIN_PLAYERS || busy} onClick={() => void apply('start_clue_game')}>{room.players.length < CLUE_MIN_PLAYERS ? `还需 ${CLUE_MIN_PLAYERS - room.players.length} 人` : '开始第一轮'}</button> : <span>等待房主开始</span>}<span>每个人都会当一次猜题者，开始后不再加入新成员</span></> : room.status === 'finished' ? <>{isOwner && <button className="sheet-primary-action" onClick={() => void apply('restart_clue_game')}>再来一局</button>}<span>{isOwner ? '保留成员，清空本局积分并更换题目' : '等待房主决定是否再来一局'}</span></> : <span>系统自动推进 · 提示作者在评分确认前保持匿名</span>}
@@ -286,8 +288,8 @@ export default function ClueSpreadsheetMode() {
         {!room ? <>
           <div><input value={ownerName} onChange={(event) => setOwnerName(event.target.value.slice(0, 24))} placeholder="房主称呼" /><select value={ruleMode} onChange={(event) => setRuleMode(event.target.value as ClueRuleMode)}><option value="off">普通提示</option><option value="random">随机限制</option></select><button disabled={busy} onClick={createRemote}>创建房间</button></div>
           <div><input value={joinName} onChange={(event) => setJoinName(event.target.value.slice(0, 24))} placeholder="你的称呼" /><input value={joinCode} maxLength={6} onChange={(event) => setJoinCode(event.target.value.toUpperCase().replace(/[^A-Z2-9]/g, ''))} placeholder="六位编号" /><button disabled={busy} onClick={joinRemote}>加入</button></div>
-        </> : room.status === 'clue_writing' && !isGuesser ? <div><input disabled={Boolean(clueLocked)} value={clueText} maxLength={CLUE_MAX_LENGTH} onChange={(event) => setClueText(event.target.value)} placeholder="填写 1–8 字提示" /><button disabled={Boolean(clueLocked)} onClick={confirmClue}>{clueLocked ? '提示已确认' : '确认提示'}</button></div>
-          : room.status === 'guessing' && isGuesser ? <div><input value={guessText} maxLength={20} onChange={(event) => setGuessText(event.target.value)} placeholder="只有一次作答机会" /><button onClick={submitGuess}>确认答案</button></div>
+        </> : room.status === 'clue_writing' && !isGuesser ? <div><input disabled={Boolean(clueLocked)} value={clueText} maxLength={CLUE_MAX_LENGTH} onChange={(event) => setClueText(event.target.value)} placeholder="填写 1–8 字关联词" /><button disabled={Boolean(clueLocked)} onClick={confirmClue}>{clueLocked ? '内容已确认' : '确认内容'}</button></div>
+          : room.status === 'guessing' && isGuesser ? <div><input value={guessText} maxLength={20} onChange={(event) => setGuessText(event.target.value)} placeholder={`还可尝试 ${CLUE_MAX_GUESS_ATTEMPTS - (room.guessAttemptCount ?? 0)} 次`} /><button onClick={() => void submitGuess()}>确认答案</button></div>
             : room.status === 'rating' && isGuesser ? <div><span>请在表格中为每条匿名提示评 1–3 分</span><button onClick={confirmRatings}>确认全部评分</button></div> : null}
       </div>
       <div className="sheet-grid-scroll"><table className="sheet-grid">
@@ -296,20 +298,20 @@ export default function ClueSpreadsheetMode() {
           <tr><th>1</th><td>操作</td><td>称呼</td><td>房间编号</td><td>提示难度</td><td>执行</td><td>说明</td></tr>
           <tr><th>2</th><td>创建 A3 房间</td><td><input value={ownerName} onChange={(event) => setOwnerName(event.target.value.slice(0, 24))} placeholder="填写称呼" /></td><td>自动生成</td><td><select value={ruleMode} onChange={(event) => setRuleMode(event.target.value as ClueRuleMode)}><option value="off">普通提示</option><option value="random">随机限制</option></select></td><td><button className="sheet-action" disabled={busy} onClick={createRemote}>创建联机房间</button></td><td>3–8 人</td></tr>
           <tr><th>3</th><td>加入 A3 房间</td><td><input value={joinName} onChange={(event) => setJoinName(event.target.value.slice(0, 24))} placeholder="填写称呼" /></td><td><input value={joinCode} maxLength={6} onChange={(event) => setJoinCode(event.target.value.toUpperCase().replace(/[^A-Z2-9]/g, ''))} placeholder="例如 Q7K2P8" /></td><td>跟随房主</td><td><button className="sheet-action" disabled={busy} onClick={joinRemote}>加入房间</button></td><td>开始后停止加入</td></tr>
-          <tr><th>5</th><td>为什么值得玩</td><td colSpan={5}>源自德国年度游戏获奖联想机制的联机积分改编：不删除重复提示，每人轮流猜题，猜中后逐条评分，最终争夺“提示大王”和“猜题速度”双榜单。</td></tr>
-          <tr><th>6</th><td>一轮流程</td><td colSpan={5}>提示者看答案 → 各自秘密填一个提示 → 同时公开 → 猜题者作答一次 → 猜中后匿名评分 → 揭晓作者。</td></tr>
+          <tr><th>5</th><td>为什么值得玩</td><td colSpan={5}>基于成熟获奖联想机制改编：每个人独立提供关联词，相同想法也各自计分，最终比较“提示质量”和“判断速度”两项统计。</td></tr>
+          <tr><th>6</th><td>一轮流程</td><td colSpan={5}>成员查看答案 → 各自秘密填一个关联词 → 集中公开 → 负责人在 60 秒内最多尝试 3 次 → 命中后匿名评分 → 揭晓成员。</td></tr>
         </> : <>
           <tr><th>1</th><td>房间</td><td>{room.code}</td><td>轮次</td><td>{room.round}/{room.totalRounds || room.players.length}</td><td>猜题者</td><td>{room.guesserName ?? '等待开始'}</td></tr>
           {room.status === 'lobby' && room.players.map((player, index) => <tr key={player.id}><th>{index + 2}</th><td>{player.id === room.ownerId ? '房主' : '成员'}</td><td>{player.seat}</td><td colSpan={2}>{player.name}{player.id === playerId ? '（你）' : ''}</td><td>已加入</td><td>{room.ruleMode === 'random' ? '随机提示限制' : '普通提示'}</td></tr>)}
           {room.status === 'clue_writing' && <>
             <tr><th>10</th><td>本轮角色</td><td>{isGuesser ? '你是猜题者' : '你是提示者'}</td><td>答案</td><td>{isGuesser ? '不可见' : privateRound?.targetWord ?? '读取中…'}</td><td>额外限制</td><td>{room.challengeText ?? '无'}</td></tr>
             {room.players.map((player, index) => <tr key={player.id}><th>{11 + index}</th><td>{player.id === room.guesserId ? '猜题者' : '提示状态'}</td><td colSpan={2}>{player.name}{player.id === playerId ? '（你）' : ''}</td><td>{player.id === room.guesserId ? '等待提示' : room.clueStatuses[player.id] === 'confirmed' ? '已确认' : '填写中'}</td><td colSpan={2}>{player.id === room.guesserId ? '看不到答案' : '正文暂不公开'}</td></tr>)}
-            {!isGuesser && <tr><th>25</th><td>我的提示</td><td colSpan={4}><input disabled={Boolean(clueLocked)} value={clueText} maxLength={CLUE_MAX_LENGTH} onChange={(event) => setClueText(event.target.value)} placeholder="填写 1–8 字提示" /><small>{clueText.length}/{CLUE_MAX_LENGTH} · 重复提示不会删除</small></td><td><button className="sheet-action" disabled={Boolean(clueLocked)} onClick={confirmClue}>{clueLocked ? '提示已确认' : '确认提示'}</button></td></tr>}
+            {!isGuesser && <tr><th>25</th><td>我的关联词</td><td colSpan={4}><input disabled={Boolean(clueLocked)} value={clueText} maxLength={CLUE_MAX_LENGTH} onChange={(event) => setClueText(event.target.value)} placeholder="填写 1–8 字关联词" /><small>{clueText.length}/{CLUE_MAX_LENGTH} · 与别人相同也会单独记录和计分</small></td><td><button className="sheet-action" disabled={Boolean(clueLocked)} onClick={confirmClue}>{clueLocked ? '内容已确认' : '确认内容'}</button></td></tr>}
           </>}
           {['guessing', 'rating', 'result'].includes(room.status) && <>
             <tr><th>10</th><td>提示编号</td><td colSpan={3}>完整提示</td><td>作者</td><td>{room.status === 'rating' ? '评分' : '状态'}</td></tr>
             {room.publicClues.map((clue, index) => <tr key={clue.clueId}><th>{11 + index}</th><td>{clue.displayCode}</td><td colSpan={3}>{clue.text}</td><td>{clue.authorName ?? '暂不公开'}</td><td>{room.status === 'rating' && isGuesser ? <select value={ratings[clue.clueId] ?? ''} onChange={(event) => setRatings((current) => ({ ...current, [clue.clueId]: Number(event.target.value) }))}><option value="">评分</option><option value="1">1 分</option><option value="2">2 分</option><option value="3">3 分</option></select> : clue.score ? `${clue.score} 分` : '已公开'}</td></tr>)}
-            {room.status === 'guessing' && <tr><th>25</th><td>猜题作答</td><td colSpan={4}>{isGuesser ? <input value={guessText} maxLength={20} onChange={(event) => setGuessText(event.target.value)} placeholder="填写答案，仅可提交一次" /> : `等待 ${room.guesserName} 作答`}</td><td>{isGuesser ? <button className="sheet-action" onClick={submitGuess}>确认答案</button> : '等待中'}</td></tr>}
+            {room.status === 'guessing' && <tr><th>25</th><td>结果判断</td><td colSpan={4}>{isGuesser ? <><input value={guessText} maxLength={20} onChange={(event) => setGuessText(event.target.value)} placeholder="填写你认为的答案" /><small>已尝试 {room.guessAttemptCount ?? 0}/{CLUE_MAX_GUESS_ATTEMPTS} 次，猜错可继续</small></> : `等待 ${room.guesserName} 判断；本轮最多尝试 ${CLUE_MAX_GUESS_ATTEMPTS} 次`}</td><td>{isGuesser ? <button className="sheet-action" onClick={() => void submitGuess()}>确认答案</button> : '等待中'}</td></tr>}
             {room.status === 'rating' && <tr><th>25</th><td>提示评分</td><td colSpan={4}>{isGuesser ? '请为每条匿名提示选择 1–3 分；确认后才揭晓作者。' : `已猜中，等待 ${room.guesserName} 完成提示评分。`}</td><td>{isGuesser ? <button className="sheet-action" onClick={confirmRatings}>确认全部评分</button> : '等待中'}</td></tr>}
             {room.status === 'result' && <tr><th>25</th><td>{latestResult?.correct ? '猜题成功' : '本轮未猜中'}</td><td>答案：{room.revealedWord}</td><td colSpan={2}>作答：{latestResult?.guessText ?? '未提交'}</td><td>用时：{formatGuessTime(latestResult?.elapsedMs ?? null)}</td><td>10 秒后下一轮</td></tr>}
           </>}

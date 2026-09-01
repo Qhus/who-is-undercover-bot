@@ -6,7 +6,7 @@
 
 - `/`：游戏目录，通过 A2、A3、A4 进入三项独立玩法；
 - `/undercover/`：谁是卧底，负责私密发词、描述、匿名投票与自动判胜；
-- `/clue/`：提示大王，每人轮流猜题，提示不去重，猜中后匿名评分并生成双榜单；
+- `/clue/`：提示大王，每人轮流判断答案，其他成员独立提交关联词，命中后匿名评分并生成双榜单；
 - `/court/`：离谱法堂，围绕成套案件进行匿名陈词、证据突袭、补述与陪审投票；
 - 三个游戏都可复制带房间编号的邀请链接，群友打开后只需填写称呼；
 - 返回游戏目录不会自动退出仍在进行的联机房间，重新进入时可恢复。
@@ -44,7 +44,7 @@
 - 联机关键操作通过数据库房间锁和唯一操作 ID 合并；同时确认、提交描述或投票不会再覆盖其他玩家的结果，重复请求保持幂等。
 - 游戏目录标题栏提供显示当前版本号的通知入口；更新说明在目录工作簿右侧窗格内展开，可查看完整版本内容，不使用弹窗、不记录已读状态且不发送推送；具体游戏页不再重复展示通知。
 - 离谱法堂当前使用 V6 简易流程：案件、首次陈词、证据突袭、当庭补述和双项评选；陈词与补述各 5 分钟、投票 2 分钟，不包含辩护招式或玩家质询。
-- 提示大王支持 3–8 人，每人轮流猜一次；提示不去重，可选随机提示限制；猜中后为匿名提示评 1–3 分，最终生成提示分和猜题速度双榜单。
+- 提示大王支持 3–8 人，每人轮流负责一轮判断；关联词填写 120 秒，相同内容按成员分别记录；判断阶段 60 秒内最多尝试 3 次，命中后为匿名关联词评 1–3 分，最终生成提示分和猜题速度双榜单。
 
 ## 本地运行
 
@@ -63,8 +63,9 @@ npm run dev -- --hostname localhost --port 43210
 4. 执行 [`cloudbase/verify.sql`](cloudbase/verify.sql)，确认所有核验项均为 `true`。
 5. 已有环境升级 V1.7.1 时，执行 [`cloudbase/experience-v3-3-undercover-ux.sql`](cloudbase/experience-v3-3-undercover-ux.sql)，再运行 [`cloudbase/verify-v3-3-undercover-ux.sql`](cloudbase/verify-v3-3-undercover-ux.sql)，将谁是卧底称呼上限同步提高到 24 字。
 6. 新增提示大王时，执行 [`cloudbase/concurrency-v8-clue-king.sql`](cloudbase/concurrency-v8-clue-king.sql)，再运行 [`cloudbase/verify-v8-clue-king.sql`](cloudbase/verify-v8-clue-king.sql)，确认每行 `ok=true`。
-7. 复制 `.env.example` 为 `.env.local`，填写环境 ID、上海地域和 Publishable Key。
-8. 安全来源中加入本地地址和最终 GitHub Pages 域名。
+7. 升级 A3 V1.8.1 时，执行 [`cloudbase/concurrency-v8-1-clue-experience.sql`](cloudbase/concurrency-v8-1-clue-experience.sql)，再运行 [`cloudbase/verify-v8-1-clue-experience.sql`](cloudbase/verify-v8-1-clue-experience.sql)，确认每行 `ok=true`。
+8. 复制 `.env.example` 为 `.env.local`，填写环境 ID、上海地域和 Publishable Key。
+9. 安全来源中加入本地地址和最终 GitHub Pages 域名。
 
 只允许将 Publishable Key 暴露到浏览器。不要把 CloudBase API Key、SecretId 或 SecretKey 写入环境文件或 GitHub。
 
