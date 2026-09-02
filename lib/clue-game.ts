@@ -16,6 +16,8 @@ export interface PublicClue {
   roleId?: string;
   roleName?: string;
   roleRule?: string;
+  isMostUnique?: boolean;
+  peerLikeCount?: number;
 }
 
 export interface ClueRoundResult {
@@ -39,6 +41,7 @@ export interface CluePrivateRound {
   roleId: string | null;
   roleName: string | null;
   roleRule: string | null;
+  clueId: string | null;
 }
 
 export interface ClueKingRoom {
@@ -78,6 +81,9 @@ export interface ClueKingRoom {
   roundResults: ClueRoundResult[];
   hintScores: Record<string, number>;
   guessTimes: Record<string, number>;
+  uniqueAwards?: Record<string, number>;
+  peerLikes?: Record<string, number>;
+  peerLikeVoterIds?: string[];
   usedWordIds: string[];
   previousSessionWordIds: string[];
   recentWordIds: string[];
@@ -139,6 +145,9 @@ export function createClueRoom(ownerName: string, mode: ClueMode = 'free', diffi
     roundResults: [],
     hintScores: {},
     guessTimes: {},
+    uniqueAwards: {},
+    peerLikes: {},
+    peerLikeVoterIds: [],
     usedWordIds: [],
     previousSessionWordIds: [],
     recentWordIds: [],
@@ -147,16 +156,19 @@ export function createClueRoom(ownerName: string, mode: ClueMode = 'free', diffi
   };
 }
 
-export function validateClue(text: string, targetWord: string | null, maxLength = CLUE_MAX_LENGTH) {
+export function validateClue(text: string, targetWord: string | null, maxLength = CLUE_MAX_LENGTH, minLength = 1) {
   const clean = text.trim();
-  if (!clean || clean.length > maxLength) throw new Error(`提示须为 1–${maxLength} 字`);
+  if (clean.length < minLength || clean.length > maxLength) throw new Error(`提示须为 ${minLength}–${maxLength} 字`);
   if (targetWord && clean.toLocaleLowerCase().includes(targetWord.trim().toLocaleLowerCase())) throw new Error('提示不能直接写出答案');
   return clean;
 }
 
 export function validateRatings(ratings: Record<string, number>, clueIds: string[]) {
-  if (clueIds.some((id) => !Number.isInteger(ratings[id]) || ratings[id] < 1 || ratings[id] > 3)) {
-    throw new Error('请为每条提示选择 1–3 分');
+  if (clueIds.some((id) => !Number.isInteger(ratings[id]) || ratings[id] < 1 || ratings[id] > 4)) {
+    throw new Error('请为每条提示选择 1–4 分');
+  }
+  if (clueIds.filter((id) => ratings[id] === 4).length > 1) {
+    throw new Error('每轮最多一条提示可以获得 4 分');
   }
 }
 

@@ -47,7 +47,7 @@ export const CLUE_PUBLIC_RULES: readonly CluePublicRule[] = [
 
 export const CLUE_ROLES: readonly ClueRole[] = [
   { id: 'R01', name: '撒谎者', rule: '说反话，但要留下一条能绕回答案的联系', example: '失眠 → 一觉到天亮', maxLength: 12, load: 'high' },
-  { id: 'R02', name: '话痨', rule: '写 8–16 字，把一件事说得稍微完整一点', example: '雨伞 → 出门嫌累下雨后悔没带', maxLength: 16, load: 'medium' },
+  { id: 'R02', name: '话痨', rule: '像在群里给朋友解释一样，用一句 12–20 字的口语描述', example: '充电宝 → 我每次出门没带它都会特别没有安全感', maxLength: 20, load: 'medium' },
   { id: 'R03', name: '惜字如金', rule: '尽量正好写 2 字', example: '咖啡 → 提神', maxLength: 8, load: 'medium' },
   { id: 'R04', name: '导游', rule: '只从地点、时间或出现的场景切入', example: '电梯 → 高楼层中转站', maxLength: 12, load: 'low' },
   { id: 'R05', name: '诗人', rule: '使用比喻或意象，不直说类别', example: '闹钟 → 清晨的敌军号角', maxLength: 12, load: 'medium' },
@@ -76,4 +76,8 @@ export function clueInputMaxLength(input: { mode: ClueMode; publicRuleId?: strin
   if (input.mode === 'role_play') return CLUE_ROLES.find((role) => role.id === input.roleId)?.maxLength ?? 16;
   if (input.mode === 'public_rule') return CLUE_PUBLIC_RULES.find((rule) => rule.id === input.publicRuleId)?.maxLength ?? 16;
   return 8;
+}
+
+export function clueInputMinLength(input: { mode: ClueMode; roleId?: string | null }) {
+  return input.mode === 'role_play' && input.roleId === 'R02' ? 12 : 1;
 }

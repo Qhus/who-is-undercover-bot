@@ -30,6 +30,10 @@ const clueExperienceMigration = readFileSync(new URL('../cloudbase/concurrency-v
 const clueExperienceVerification = readFileSync(new URL('../cloudbase/verify-v8-1-clue-experience.sql', import.meta.url), 'utf8');
 const clueV3Migration = readFileSync(new URL('../cloudbase/concurrency-v9-clue-role-modes.sql', import.meta.url), 'utf8');
 const clueV3Verification = readFileSync(new URL('../cloudbase/verify-v9-clue-role-modes.sql', import.meta.url), 'utf8');
+const clueRatingMigration = readFileSync(new URL('../cloudbase/concurrency-v9-1-clue-rating.sql', import.meta.url), 'utf8');
+const clueRatingVerification = readFileSync(new URL('../cloudbase/verify-v9-1-clue-rating.sql', import.meta.url), 'utf8');
+const cluePeerAwardsMigration = readFileSync(new URL('../cloudbase/concurrency-v9-2-clue-peer-awards.sql', import.meta.url), 'utf8');
+const cluePeerAwardsVerification = readFileSync(new URL('../cloudbase/verify-v9-2-clue-peer-awards.sql', import.meta.url), 'utf8');
 const concurrencySource = `${concurrencyBase}\n${concurrencyMigration}\n${concurrencyHotfix}\n${versionedRpcMigration}`;
 const storeSource = readFileSync(new URL('./cloudbase-store.ts', import.meta.url), 'utf8');
 const appSource = readFileSync(new URL('../app/game-app.tsx', import.meta.url), 'utf8');
@@ -270,10 +274,12 @@ test('A3 V3 提供难度、公共规则、私密角色与必要提示', () => {
   for (const table of ['clue_word_bank_v3', 'clue_public_rule_bank_v3', 'clue_role_bank_v3', 'clue_v3_round_secrets', 'clue_v3_role_assignments']) {
     assert.match(clueV3Migration, new RegExp(`create table if not exists public\\.${table}`));
   }
-  for (const rpc of ['create_clue_game_v3', 'join_clue_game_v3', 'get_my_clue_round_v3', 'apply_clue_action_v3']) {
+  for (const rpc of ['create_clue_game_v3', 'join_clue_game_v3']) {
     assert.match(clueV3Migration, new RegExp(rpc));
     assert.match(storeSource, new RegExp(`rpc\\('${rpc}'`));
   }
+  assert.match(clueV3Migration, /get_my_clue_round_v3/);
+  assert.match(clueV3Migration, /apply_clue_action_v3/);
   assert.match(clueV3Migration, /'clueVersion',3/);
   assert.match(clueV3Migration, /p_mode not in \('free','public_rule','role_play'\)/);
   assert.match(clueV3Migration, /p_difficulty not in \('easy','normal','hard','mixed'\)/);
@@ -288,4 +294,41 @@ test('A3 V3 提供难度、公共规则、私密角色与必要提示', () => {
   assert.match(clueAppSource, /评分参考/);
   assert.match(clueAppSource, /cluePlaceholder/);
   assert.doesNotMatch(clueAppSource, /placeholder=".*不能直接写出答案/);
+});
+
+test('A3 V3.1 未猜中仍评分并提供唯一可选四分特别奖', () => {
+  assert.match(clueRatingMigration, /create or replace function public\.clue_v31_finish_round/);
+  assert.match(clueRatingMigration, /create or replace function public\.apply_clue_action_v31/);
+  assert.match(clueRatingMigration, /v_attempts>=3[\s\S]*?\{status\}[\s\S]*?"rating"/);
+  assert.match(clueRatingMigration, /status'='guessing'[\s\S]*?\{status\}[\s\S]*?"rating"[\s\S]*?\{guessStatus\}[\s\S]*?"timeout"/);
+  assert.match(clueRatingMigration, /\^\[1-4\]\$/);
+  assert.match(clueRatingMigration, /if n>1 then raise exception '每轮最多一条提示可以获得 4 分'/);
+  assert.doesNotMatch(clueRatingMigration, /drop\s+(?:table|function)|truncate\s+/i);
+  for (const expected of ['V3.1 action RPC exists', 'anon can execute V3.1 action RPC', 'failed guesses enter rating', 'rating accepts one optional four point award', 'failed rounds still add hint scores', 'failed rounds stay out of speed ranking']) {
+    assert.match(clueRatingVerification, new RegExp(expected));
+  }
+  assert.match(clueAppSource, /4 分·最独特/);
+  assert.match(clueAppSource, /猜中、三次未中或超时后都会公布答案并进入评分/);
+});
+
+test('A3 V3.2 标记最独特、支持非阻塞同行点赞并更新话痨', () => {
+  assert.match(cluePeerAwardsMigration, /create table if not exists public\.clue_v32_peer_likes/);
+  assert.match(cluePeerAwardsMigration, /create or replace function public\.get_my_clue_round_v32/);
+  assert.match(cluePeerAwardsMigration, /create or replace function public\.apply_clue_action_v32/);
+  assert.match(storeSource, /rpc\('apply_clue_action_v32'/);
+  assert.match(storeSource, /rpc\('get_my_clue_round_v32'/);
+  assert.match(cluePeerAwardsMigration, /submit_peer_like/);
+  assert.match(cluePeerAwardsMigration, /不能给自己的提示点赞/);
+  assert.match(cluePeerAwardsMigration, /isMostUnique/);
+  assert.match(cluePeerAwardsMigration, /uniqueAwards/);
+  assert.match(cluePeerAwardsMigration, /peerLikeCount/);
+  assert.match(cluePeerAwardsMigration, /12–20 字的口语描述/);
+  assert.doesNotMatch(cluePeerAwardsMigration, /drop\s+(?:table|function)|truncate\s+/i);
+  for (const expected of ['V3.2 peer like table exists with RLS', 'V3.2 public RPCs exist', 'peer like is optional and rejects self votes', 'round result exposes unique and peer awards', 'peer votes tolerate concurrent version updates']) {
+    assert.match(cluePeerAwardsVerification, new RegExp(expected));
+  }
+  assert.match(clueAppSource, /本轮最独特/);
+  assert.match(clueAppSource, /同行点赞/);
+  assert.match(clueAppSource, /同行最爱/);
+  assert.match(clueAppSource, /room\.players\.length >= 3/);
 });

@@ -359,6 +359,10 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgb(200 77 49 / 3
 .clue-sheet .sheet-grid td { height:auto; min-height:34px; overflow:visible; text-overflow:clip; white-space:normal; overflow-wrap:anywhere; line-height:1.5; vertical-align:top; }
 .clue-sheet .sheet-grid td button { min-height:27px; padding:2px 9px; border:1px solid #aaa; background:#fff; }
 .clue-sheet .sheet-grid td .sheet-action { color:#fff; border-color:var(--sheet-green); background:var(--sheet-green); }
+.clue-cell-stack { display:flex; flex-wrap:wrap; align-items:center; gap:4px 7px; }
+.clue-award { display:inline-block; padding:1px 5px; border:1px solid #c9a227; color:#735c00; background:#fff8cf; font-size:12px; font-weight:700; }
+.clue-peer-count { color:#356148; font-size:12px; }
+.clue-sheet .sheet-grid td .clue-peer-button { min-height:24px; padding:1px 7px; border-color:#78a98d; color:#174c32; background:#f2fbf5; font-weight:700; }
 
 .presence-actions { width:min(1180px,calc(100% - 48px)); margin:0 auto 16px; display:flex; flex-wrap:wrap; gap:8px; }
 .presence-actions>div { display:flex; align-items:center; gap:6px; padding:6px 8px; border:1px solid var(--line); background:#fff; }

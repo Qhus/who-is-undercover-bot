@@ -44,7 +44,7 @@
 - 联机关键操作通过数据库房间锁和唯一操作 ID 合并；同时确认、提交描述或投票不会再覆盖其他玩家的结果，重复请求保持幂等。
 - 游戏目录标题栏提供显示当前版本号的通知入口；更新说明在目录工作簿右侧窗格内展开，可查看完整版本内容，不使用弹窗、不记录已读状态且不发送推送；具体游戏页不再重复展示通知。
 - 离谱法堂当前使用 V6 简易流程：案件、首次陈词、证据突袭、当庭补述和双项评选；陈词与补述各 5 分钟、投票 2 分钟，不包含辩护招式或玩家质询。
-- 提示大王支持 2–8 人，可选自由、公共规则或角色扮演模式以及四档题目难度；角色每题重新分配。关联词填写 120 秒，判断阶段 60 秒内最多尝试 3 次，命中后为匿名关联词评 1–3 分，最终生成提示分和猜题速度双榜单。
+- 提示大王支持 2–8 人，可选自由、公共规则或角色扮演模式以及四档题目难度；角色每题重新分配。关联词填写 120 秒，判断阶段 60 秒内最多尝试 3 次；无论是否猜中都会公布答案并为匿名关联词评 1–4 分，4 分会标记“本轮最独特”。三人及以上时，提示者还可给其他一条提示送出不计入总分的同行点赞，最终生成双榜单、最独特次数和“同行最爱”称号。
 
 ## 本地运行
 
@@ -65,8 +65,10 @@ npm run dev -- --hostname localhost --port 43210
 6. 新增提示大王时，执行 [`cloudbase/concurrency-v8-clue-king.sql`](cloudbase/concurrency-v8-clue-king.sql)，再运行 [`cloudbase/verify-v8-clue-king.sql`](cloudbase/verify-v8-clue-king.sql)，确认每行 `ok=true`。
 7. 升级 A3 V1.8.1 时，执行 [`cloudbase/concurrency-v8-1-clue-experience.sql`](cloudbase/concurrency-v8-1-clue-experience.sql)，再运行 [`cloudbase/verify-v8-1-clue-experience.sql`](cloudbase/verify-v8-1-clue-experience.sql)，确认每行 `ok=true`。
 8. 升级 A3 V1.9.0 时，执行 [`cloudbase/concurrency-v9-clue-role-modes.sql`](cloudbase/concurrency-v9-clue-role-modes.sql)，再运行 [`cloudbase/verify-v9-clue-role-modes.sql`](cloudbase/verify-v9-clue-role-modes.sql)，确认每行 `ok=true`。
-9. 复制 `.env.example` 为 `.env.local`，填写环境 ID、上海地域和 Publishable Key。
-10. 安全来源中加入本地地址和最终 GitHub Pages 域名。
+9. 升级 A3 V1.9.1 时，执行 [`cloudbase/concurrency-v9-1-clue-rating.sql`](cloudbase/concurrency-v9-1-clue-rating.sql)，再运行 [`cloudbase/verify-v9-1-clue-rating.sql`](cloudbase/verify-v9-1-clue-rating.sql)，确认每行 `ok=true`。
+10. 升级 A3 V1.9.2 时，执行 [`cloudbase/concurrency-v9-2-clue-peer-awards.sql`](cloudbase/concurrency-v9-2-clue-peer-awards.sql)，再运行 [`cloudbase/verify-v9-2-clue-peer-awards.sql`](cloudbase/verify-v9-2-clue-peer-awards.sql)，确认每行 `ok=true`。该脚本已包含 4 分约束修正，可直接接在 V3 后执行。
+11. 复制 `.env.example` 为 `.env.local`，填写环境 ID、上海地域和 Publishable Key。
+12. 安全来源中加入本地地址和最终 GitHub Pages 域名。
 
 只允许将 Publishable Key 暴露到浏览器。不要把 CloudBase API Key、SecretId 或 SecretKey 写入环境文件或 GitHub。
 

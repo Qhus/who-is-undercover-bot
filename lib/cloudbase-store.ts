@@ -45,7 +45,7 @@ export type CourtActionType =
   | 'end_court_game'
   | 'restart_court_game';
 export interface CourtActionResult { outcome: GameActionOutcome; code: string; message: string; state: AbsurdCourtRoom; version: number; }
-export type ClueActionType = 'start_clue_game' | 'confirm_clue' | 'submit_clue_guess' | 'confirm_clue_ratings' | 'skip_clue_result' | 'advance_clue_phase' | 'restart_clue_game';
+export type ClueActionType = 'start_clue_game' | 'confirm_clue' | 'submit_clue_guess' | 'confirm_clue_ratings' | 'submit_peer_like' | 'skip_clue_result' | 'advance_clue_phase' | 'restart_clue_game';
 export interface ClueActionResult { outcome: GameActionOutcome; code: string; message: string; state: ClueKingRoom; version: number; }
 
 function publicConfig() {
@@ -163,7 +163,7 @@ export class CloudBaseRoomStore {
 
   async applyClueAction(input: { room: ClueKingRoom; actionId: string; actionType: ClueActionType; payload?: Record<string, unknown> }): Promise<ClueActionResult> {
     await this.connect();
-    const { data, error } = await this.db().rpc('apply_clue_action_v3', {
+    const { data, error } = await this.db().rpc('apply_clue_action_v32', {
       p_code: input.room.code,
       p_action_id: input.actionId,
       p_action_type: input.actionType,
@@ -179,7 +179,7 @@ export class CloudBaseRoomStore {
 
   async getMyClueRound(code: string): Promise<CluePrivateRound | null> {
     await this.connect();
-    const { data, error } = await this.db().rpc('get_my_clue_round_v3', { p_code: code }).single();
+    const { data, error } = await this.db().rpc('get_my_clue_round_v32', { p_code: code }).single();
     if (error) throw error;
     return data as CluePrivateRound | null;
   }
