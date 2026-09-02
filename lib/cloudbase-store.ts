@@ -2,7 +2,8 @@ import cloudbase from '@cloudbase/js-sdk';
 import { registerMySQL, type IPgClient } from '@cloudbase/mysql';
 import type { GameRoom } from './game';
 import type { AbsurdCourtRoom, CourtPrivateSubmission } from './court-game';
-import type { ClueKingRoom, CluePrivateRound, ClueRuleMode } from './clue-game';
+import type { ClueKingRoom, CluePrivateRound } from './clue-game';
+import type { ClueDifficulty, ClueMode } from './clue-content';
 
 type GameRow = { state: GameRoom; version: number };
 type PgClient = ReturnType<IPgClient>;
@@ -44,7 +45,7 @@ export type CourtActionType =
   | 'end_court_game'
   | 'restart_court_game';
 export interface CourtActionResult { outcome: GameActionOutcome; code: string; message: string; state: AbsurdCourtRoom; version: number; }
-export type ClueActionType = 'start_clue_game' | 'confirm_clue' | 'submit_clue_guess' | 'confirm_clue_ratings' | 'advance_clue_phase' | 'restart_clue_game';
+export type ClueActionType = 'start_clue_game' | 'confirm_clue' | 'submit_clue_guess' | 'confirm_clue_ratings' | 'skip_clue_result' | 'advance_clue_phase' | 'restart_clue_game';
 export interface ClueActionResult { outcome: GameActionOutcome; code: string; message: string; state: ClueKingRoom; version: number; }
 
 function publicConfig() {
@@ -135,13 +136,14 @@ export class CloudBaseRoomStore {
     return data as CourtPrivateSubmission | null;
   }
 
-  async createClueRoom(room: ClueKingRoom, ruleMode: ClueRuleMode): Promise<ClueKingRoom> {
+  async createClueRoom(room: ClueKingRoom, mode: ClueMode, difficulty: ClueDifficulty): Promise<ClueKingRoom> {
     await this.connect();
-    const { data, error } = await this.db().rpc('create_clue_game_v1', {
+    const { data, error } = await this.db().rpc('create_clue_game_v3', {
       p_code: room.code,
       p_owner_player_id: room.ownerId,
       p_owner_name: room.players[0]?.name ?? '房主',
-      p_rule_mode: ruleMode,
+      p_mode: mode,
+      p_difficulty: difficulty,
     }).single();
     if (error) throw error;
     return data as unknown as ClueKingRoom;
@@ -149,7 +151,7 @@ export class CloudBaseRoomStore {
 
   async joinClueRoom(code: string, playerId: string, nickname: string): Promise<{ room: ClueKingRoom; playerId: string }> {
     await this.connect();
-    const { data, error } = await this.db().rpc('join_clue_game_v1', {
+    const { data, error } = await this.db().rpc('join_clue_game_v3', {
       p_code: code,
       p_player_id: playerId,
       p_nickname: nickname,
@@ -161,7 +163,7 @@ export class CloudBaseRoomStore {
 
   async applyClueAction(input: { room: ClueKingRoom; actionId: string; actionType: ClueActionType; payload?: Record<string, unknown> }): Promise<ClueActionResult> {
     await this.connect();
-    const { data, error } = await this.db().rpc('apply_clue_action_v2', {
+    const { data, error } = await this.db().rpc('apply_clue_action_v3', {
       p_code: input.room.code,
       p_action_id: input.actionId,
       p_action_type: input.actionType,
@@ -177,7 +179,7 @@ export class CloudBaseRoomStore {
 
   async getMyClueRound(code: string): Promise<CluePrivateRound | null> {
     await this.connect();
-    const { data, error } = await this.db().rpc('get_my_clue_round_v1', { p_code: code }).single();
+    const { data, error } = await this.db().rpc('get_my_clue_round_v3', { p_code: code }).single();
     if (error) throw error;
     return data as CluePrivateRound | null;
   }

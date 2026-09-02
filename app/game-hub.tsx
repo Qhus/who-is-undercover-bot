@@ -63,7 +63,7 @@ export default function GameHub() {
     return [
       ['入口', '建议人数', '预计时长', '摘要', '操作', '状态'],
       ['A2', '3–10 人', '10–20 分钟', '查看私密词语、轮流描述、匿名投票找出特殊成员', <a className="sheet-action hub-launch" href="./undercover/" key="undercover" aria-label="打开 A2">{undercoverRoom ? '继续 / 打开' : '打开'}</a>, undercoverRoom ? `可恢复编号 ${undercoverRoom}` : '可创建或加入'],
-      ['A3', '3–8 人', '8–15 分钟', '轮流判断答案、独立提交关联词并匿名评分，比较提示质量与判断速度', <a className="sheet-action hub-launch" href="./clue/" key="clue" aria-label="打开 A3">{clueRoom ? '继续 / 打开' : '打开'}</a>, clueRoom ? `可恢复编号 ${clueRoom}` : '可创建或加入'],
+      ['A3', '2–8 人', '8–15 分钟', '轮流猜答案；可选自由、公共规则或角色扮演，比较提示质量与判断速度', <a className="sheet-action hub-launch" href="./clue/" key="clue" aria-label="打开 A3">{clueRoom ? '继续 / 打开' : '打开'}</a>, clueRoom ? `可恢复编号 ${clueRoom}` : '可创建或加入'],
       ['A4', '2–8 人', '15–25 分钟', '围绕同一离谱案件匿名陈词，评选最会狡辩和最像真的答案', <a className="sheet-action hub-launch" href="./court/" key="court" aria-label="打开 A4">{courtRoom ? '继续 / 打开' : '打开'}</a>, courtRoom ? `可恢复编号 ${courtRoom}` : '可创建或加入'],
       ['', '', '', '', '', ''],
       ['页面调整', '根页面现为目录', 'A2、A3、A4 使用独立页面', '返回目录不影响进行中的流程', '收藏本页即可', '三项数据相互隔离'],
@@ -72,7 +72,7 @@ export default function GameHub() {
   }, [clueRoom, courtRoom, tab, undercoverRoom]);
 
   const formula = tab === 'catalog'
-    ? activeCell === 'A4' ? 'A4：同案匿名陈词，证据突袭后继续补充说明' : activeCell === 'A3' ? 'A3：成员独立填写关联词，相同内容分别计分，负责人最多判断三次' : '目录：根据摘要从 A2、A3 或 A4 选择一个项目'
+    ? activeCell === 'A4' ? 'A4：同案匿名陈词，证据突袭后继续补充说明' : activeCell === 'A3' ? 'A3：成员按本题规则填写关联词，负责人最多判断三次' : '目录：根据摘要从 A2、A3 或 A4 选择一个项目'
     : tab === 'guide' ? '五步开始：选游戏 → 建房 → 加入 → 按提示操作 → 返回目录' : `自动更新说明 · 当前版本 ${CURRENT_RELEASE.version}`;
   const selectedRelease = RELEASE_NOTES.find((release) => release.version === selectedReleaseVersion) ?? CURRENT_RELEASE;
 

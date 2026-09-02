@@ -1,22 +1,32 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { CLUE_DURATIONS, CLUE_MAX_GUESS_ATTEMPTS, createClueRoom, formatGuessTime, rankGuessTimes, rankHintScores, validateClue, validateRatings } from './clue-game.ts';
+import { CLUE_PUBLIC_RULES, CLUE_ROLES, clueInputMaxLength, clueInputPrompt } from './clue-content.ts';
 
 test('提示大王创建独立公开房间且不包含答案', () => {
-  const room = createClueRoom('负责人', 'random', 100, () => 0.25);
+  const room = createClueRoom('负责人', 'role_play', 'hard', 100, () => 0.25);
   assert.equal(room.gameType, 'clue_king');
-  assert.equal(room.clueVersion, 1);
-  assert.equal(room.ruleMode, 'random');
+  assert.equal(room.clueVersion, 3);
+  assert.equal(room.mode, 'role_play');
+  assert.equal(room.difficulty, 'hard');
   assert.equal(room.status, 'lobby');
   assert.doesNotMatch(JSON.stringify(room), /targetWord/);
 });
 
-test('提示校验保留重复可能但执行可选限制', () => {
-  assert.equal(validateClue('夜晚', '加班', null), '夜晚');
-  assert.throws(() => validateClue('加班', '加班', null), /不能直接写出答案/);
-  assert.throws(() => validateClue('星期天下午', '加班', 'max2'), /最多 2 字/);
-  assert.throws(() => validateClue('三字词', '加班', 'exact4'), /正好 4 字/);
-  assert.throws(() => validateClue('很夜晚', '加班', 'no_fillers'), /不能包含/);
+test('提示只做必要的长度和完整答案校验', () => {
+  assert.equal(validateClue('夜晚', '加班', 8), '夜晚');
+  assert.throws(() => validateClue('加班', '加班', 8), /不能直接写出答案/);
+  assert.throws(() => validateClue('星期天下午也要继续开会', '加班', 8), /1–8 字/);
+  assert.equal(validateClue('班车', '加班', 8), '班车');
+});
+
+test('特殊规则只进入当前题占位提示，自由模式不重复默认规则', () => {
+  assert.equal(CLUE_PUBLIC_RULES.length, 11);
+  assert.equal(CLUE_ROLES.length, 12);
+  assert.equal(clueInputPrompt({ mode: 'free' }), '填写本轮关联词');
+  assert.match(clueInputPrompt({ mode: 'public_rule', publicRuleName: '问号局', publicRuleText: '把提示写成一个问句' }), /问号局/);
+  assert.match(clueInputPrompt({ mode: 'role_play', roleName: '诗人', roleRule: '使用比喻或意象' }), /诗人/);
+  assert.equal(clueInputMaxLength({ mode: 'role_play', roleId: 'R02' }), 16);
 });
 
 test('评分要求每条提示都有一至三分', () => {
@@ -31,7 +41,7 @@ test('体验增量提供两分钟填写和三次判断机会', () => {
 });
 
 test('提示分和猜题速度分别排行', () => {
-  const room = createClueRoom('甲', 'off', 100, () => 0.25);
+  const room = createClueRoom('甲', 'free', 'normal', 100, () => 0.25);
   room.players.push(
     { id: 'b', name: '乙', seat: 2, alive: true, cardReady: false, away: false },
     { id: 'c', name: '丙', seat: 3, alive: true, cardReady: false, away: false },

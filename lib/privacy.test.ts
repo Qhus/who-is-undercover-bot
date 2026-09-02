@@ -71,11 +71,11 @@ test('离谱法堂工作表标签可切换且长陈述完整换行', () => {
 });
 
 test('A3 公开房间不包含私密答案、提示草稿或作者映射', () => {
-  const room = createClueRoom('房主', 'random', 1, () => 0.2);
+  const room = createClueRoom('房主', 'role_play', 'normal', 1, () => 0.2);
   const publicState = JSON.stringify(room);
   for (const privateField of ['targetWord', 'clueText', 'confirmedAt', 'authorId']) {
     assert.doesNotMatch(publicState, new RegExp(`"${privateField}"`));
   }
   assert.equal(room.gameType, 'clue_king');
-  assert.equal(room.clueVersion, 1);
+  assert.equal(room.clueVersion, 3);
 });

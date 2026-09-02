@@ -1,6 +1,6 @@
 import { makeRoomCode, type Player, type RandomSource } from './game.ts';
+import type { ClueDifficulty, ClueMode } from './clue-content.ts';
 
-export type ClueRuleMode = 'off' | 'random';
 export type ClueStatus = 'lobby' | 'clue_writing' | 'guessing' | 'rating' | 'result' | 'finished';
 export type CluePhaseStatus = 'writing' | 'confirmed' | 'unconfirmed' | 'away';
 
@@ -13,6 +13,9 @@ export interface PublicClue {
   authorId?: string;
   authorName?: string;
   score?: number;
+  roleId?: string;
+  roleName?: string;
+  roleRule?: string;
 }
 
 export interface ClueRoundResult {
@@ -33,12 +36,15 @@ export interface CluePrivateRound {
   clueConfirmed: boolean;
   challengeId: string | null;
   challengeText: string | null;
+  roleId: string | null;
+  roleName: string | null;
+  roleRule: string | null;
 }
 
 export interface ClueKingRoom {
   code: string;
   gameType: 'clue_king';
-  clueVersion: 1;
+  clueVersion: 3;
   sessionNo: number;
   ownerId: string;
   players: CluePlayer[];
@@ -50,12 +56,17 @@ export interface ClueKingRoom {
   round: number;
   totalRounds: number;
   phaseDeadlineAt: number | null;
-  ruleMode: ClueRuleMode;
+  mode: ClueMode;
+  difficulty: ClueDifficulty;
+  currentDifficulty: Exclude<ClueDifficulty, 'mixed'> | null;
   guesserOrder: string[];
   guesserId: string | null;
   guesserName: string | null;
   challengeId: string | null;
   challengeText: string | null;
+  publicRuleId: string | null;
+  publicRuleName: string | null;
+  publicRuleText: string | null;
   expectedCluePlayerIds: string[];
   clueStatuses: Record<string, CluePhaseStatus>;
   clueConfirmedCount: number;
@@ -69,11 +80,14 @@ export interface ClueKingRoom {
   guessTimes: Record<string, number>;
   usedWordIds: string[];
   previousSessionWordIds: string[];
+  recentWordIds: string[];
+  lastPublicRuleId: string | null;
+  lastRoleByPlayer: Record<string, string>;
 }
 
-export const CLUE_MIN_PLAYERS = 3;
+export const CLUE_MIN_PLAYERS = 2;
 export const CLUE_MAX_PLAYERS = 8;
-export const CLUE_MAX_LENGTH = 8;
+export const CLUE_MAX_LENGTH = 16;
 export const CLUE_MAX_GUESS_ATTEMPTS = 3;
 export const CLUE_DURATIONS = {
   clue_writing: 120_000,
@@ -86,12 +100,12 @@ function makePlayerId(random: RandomSource) {
   return `p_${Math.floor(random() * 1e12).toString(36)}`;
 }
 
-export function createClueRoom(ownerName: string, ruleMode: ClueRuleMode = 'off', now = Date.now(), random: RandomSource = Math.random): ClueKingRoom {
+export function createClueRoom(ownerName: string, mode: ClueMode = 'free', difficulty: ClueDifficulty = 'normal', now = Date.now(), random: RandomSource = Math.random): ClueKingRoom {
   const id = makePlayerId(random);
   return {
     code: makeRoomCode(random),
     gameType: 'clue_king',
-    clueVersion: 1,
+    clueVersion: 3,
     sessionNo: 1,
     ownerId: id,
     players: [{ id, name: ownerName.trim() || '房主', seat: 1, alive: true, cardReady: false, away: false }],
@@ -103,12 +117,17 @@ export function createClueRoom(ownerName: string, ruleMode: ClueRuleMode = 'off'
     round: 0,
     totalRounds: 0,
     phaseDeadlineAt: null,
-    ruleMode,
+    mode,
+    difficulty,
+    currentDifficulty: null,
     guesserOrder: [],
     guesserId: null,
     guesserName: null,
     challengeId: null,
     challengeText: null,
+    publicRuleId: null,
+    publicRuleName: null,
+    publicRuleText: null,
     expectedCluePlayerIds: [],
     clueStatuses: {},
     clueConfirmedCount: 0,
@@ -122,16 +141,16 @@ export function createClueRoom(ownerName: string, ruleMode: ClueRuleMode = 'off'
     guessTimes: {},
     usedWordIds: [],
     previousSessionWordIds: [],
+    recentWordIds: [],
+    lastPublicRuleId: null,
+    lastRoleByPlayer: {},
   };
 }
 
-export function validateClue(text: string, targetWord: string | null, challengeId: string | null) {
+export function validateClue(text: string, targetWord: string | null, maxLength = CLUE_MAX_LENGTH) {
   const clean = text.trim();
-  if (!clean || clean.length > CLUE_MAX_LENGTH) throw new Error(`提示须为 1–${CLUE_MAX_LENGTH} 字`);
-  if (targetWord && clean.toLocaleLowerCase() === targetWord.trim().toLocaleLowerCase()) throw new Error('提示不能直接写出答案');
-  if (challengeId === 'max2' && clean.length > 2) throw new Error('本轮提示最多 2 字');
-  if (challengeId === 'exact4' && clean.length !== 4) throw new Error('本轮提示必须正好 4 字');
-  if (challengeId === 'no_fillers' && /[的是很像有]/u.test(clean)) throw new Error('本轮提示不能包含“的、是、很、像、有”');
+  if (!clean || clean.length > maxLength) throw new Error(`提示须为 1–${maxLength} 字`);
+  if (targetWord && clean.toLocaleLowerCase().includes(targetWord.trim().toLocaleLowerCase())) throw new Error('提示不能直接写出答案');
   return clean;
 }
 

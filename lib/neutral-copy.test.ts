@@ -132,7 +132,7 @@ test('三项游戏使用独立页面和独立入口', () => {
   const clueApp = readFileSync(new URL('../app/clue-spreadsheet-mode.tsx', import.meta.url), 'utf8');
   assert.match(rootPage, /GameHub/);
   assert.match(hubPage, /\['A2', '3–10 人'/);
-  assert.match(hubPage, /\['A3', '3–8 人'/);
+  assert.match(hubPage, /\['A3', '2–8 人'/);
   assert.match(hubPage, /\['A4', '2–8 人'/);
   assert.match(hubPage, /'摘要'/);
   assert.doesNotMatch(hubPage, /A2 · 谁是卧底|A4 · 离谱法堂|>谁是卧底<|>离谱法堂</);

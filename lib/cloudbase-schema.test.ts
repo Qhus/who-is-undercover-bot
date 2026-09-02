@@ -28,6 +28,8 @@ const clueV1Migration = readFileSync(new URL('../cloudbase/concurrency-v8-clue-k
 const clueV1Verification = readFileSync(new URL('../cloudbase/verify-v8-clue-king.sql', import.meta.url), 'utf8');
 const clueExperienceMigration = readFileSync(new URL('../cloudbase/concurrency-v8-1-clue-experience.sql', import.meta.url), 'utf8');
 const clueExperienceVerification = readFileSync(new URL('../cloudbase/verify-v8-1-clue-experience.sql', import.meta.url), 'utf8');
+const clueV3Migration = readFileSync(new URL('../cloudbase/concurrency-v9-clue-role-modes.sql', import.meta.url), 'utf8');
+const clueV3Verification = readFileSync(new URL('../cloudbase/verify-v9-clue-role-modes.sql', import.meta.url), 'utf8');
 const concurrencySource = `${concurrencyBase}\n${concurrencyMigration}\n${concurrencyHotfix}\n${versionedRpcMigration}`;
 const storeSource = readFileSync(new URL('./cloudbase-store.ts', import.meta.url), 'utf8');
 const appSource = readFileSync(new URL('../app/game-app.tsx', import.meta.url), 'utf8');
@@ -227,7 +229,6 @@ test('A3 提示大王使用独立私密表、版本化 RPC 与完整轮转状态
   }
   for (const rpc of ['create_clue_game_v1', 'join_clue_game_v1', 'get_my_clue_round_v1']) {
     assert.match(clueV1Migration, new RegExp(rpc));
-    assert.match(storeSource, new RegExp(`rpc\\('${rpc}'`));
   }
   assert.match(clueV1Migration, /apply_clue_action_v1/);
   for (const action of ['start_clue_game', 'confirm_clue', 'submit_clue_guess', 'confirm_clue_ratings', 'advance_clue_phase', 'restart_clue_game']) {
@@ -255,7 +256,6 @@ test('A3 提示大王使用独立私密表、版本化 RPC 与完整轮转状态
 
 test('A3 体验增量延长填写时间并允许三次判断', () => {
   assert.match(clueExperienceMigration, /create or replace function public\.apply_clue_action_v2/);
-  assert.match(storeSource, /rpc\('apply_clue_action_v2'/);
   assert.match(clueExperienceMigration, /phaseDeadlineAt[\s\S]*30000/);
   assert.match(clueExperienceMigration, /v_attempts>=3/);
   assert.match(clueExperienceMigration, /on conflict\(game_code,session_no,round_no\) do update/);
@@ -264,4 +264,28 @@ test('A3 体验增量延长填写时间并允许三次判断', () => {
   for (const expected of ['V2 action RPC exists', 'writing timer is extended from 90 to 120 seconds', 'guesser may try up to three times', 'wrong guesses are updated without ending early']) {
     assert.match(clueExperienceVerification, new RegExp(expected));
   }
+});
+
+test('A3 V3 提供难度、公共规则、私密角色与必要提示', () => {
+  for (const table of ['clue_word_bank_v3', 'clue_public_rule_bank_v3', 'clue_role_bank_v3', 'clue_v3_round_secrets', 'clue_v3_role_assignments']) {
+    assert.match(clueV3Migration, new RegExp(`create table if not exists public\\.${table}`));
+  }
+  for (const rpc of ['create_clue_game_v3', 'join_clue_game_v3', 'get_my_clue_round_v3', 'apply_clue_action_v3']) {
+    assert.match(clueV3Migration, new RegExp(rpc));
+    assert.match(storeSource, new RegExp(`rpc\\('${rpc}'`));
+  }
+  assert.match(clueV3Migration, /'clueVersion',3/);
+  assert.match(clueV3Migration, /p_mode not in \('free','public_rule','role_play'\)/);
+  assert.match(clueV3Migration, /p_difficulty not in \('easy','normal','hard','mixed'\)/);
+  assert.match(clueV3Migration, /v_word\.allowed_role_ids \? id/);
+  assert.match(clueV3Migration, /recentWordIds/);
+  assert.match(clueV3Migration, /skip_clue_result/);
+  assert.doesNotMatch(clueV3Migration, /drop\s+(?:table|function)|truncate\s+/i);
+  for (const expected of ['exactly 120 enabled words with 40 per difficulty', '11 public rules and 12 private roles', 'rooms support two players and three guesses', 'recent 21 words are excluded']) {
+    assert.match(clueV3Verification, new RegExp(expected));
+  }
+  assert.match(clueAppSource, /默认规则/);
+  assert.match(clueAppSource, /评分参考/);
+  assert.match(clueAppSource, /cluePlaceholder/);
+  assert.doesNotMatch(clueAppSource, /placeholder=".*不能直接写出答案/);
 });
