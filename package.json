@@ -11,7 +11,7 @@
     "build:pages": "next build",
     "start": "vinext start",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
-    "test": "node --experimental-strip-types --test lib/game.test.ts lib/privacy.test.ts lib/neutral-copy.test.ts lib/cloudbase-schema.test.ts lib/court-game.test.ts lib/clue-game.test.ts"
+    "test": "node --experimental-strip-types --test lib/game.test.ts lib/privacy.test.ts lib/neutral-copy.test.ts lib/cloudbase-schema.test.ts lib/court-game.test.ts lib/clue-game.test.ts lib/soup-game.test.ts"
   },
   "dependencies": {
     "@cloudbase/js-sdk": "^3.8.1",

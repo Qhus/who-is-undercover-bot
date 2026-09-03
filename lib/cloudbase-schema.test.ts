@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { COURT_CASE_PACKS } from './court-content.ts';
+import { SOUP_CASES } from './soup-content.ts';
 
 const schema = readFileSync(new URL('../cloudbase/schema.sql', import.meta.url), 'utf8');
 const verification = readFileSync(new URL('../cloudbase/verify.sql', import.meta.url), 'utf8');
@@ -34,11 +35,14 @@ const clueRatingMigration = readFileSync(new URL('../cloudbase/concurrency-v9-1-
 const clueRatingVerification = readFileSync(new URL('../cloudbase/verify-v9-1-clue-rating.sql', import.meta.url), 'utf8');
 const cluePeerAwardsMigration = readFileSync(new URL('../cloudbase/concurrency-v9-2-clue-peer-awards.sql', import.meta.url), 'utf8');
 const cluePeerAwardsVerification = readFileSync(new URL('../cloudbase/verify-v9-2-clue-peer-awards.sql', import.meta.url), 'utf8');
+const soupV1Migration = readFileSync(new URL('../cloudbase/concurrency-v10-soup-detective.sql', import.meta.url), 'utf8');
+const soupV1Verification = readFileSync(new URL('../cloudbase/verify-v10-soup-detective.sql', import.meta.url), 'utf8');
 const concurrencySource = `${concurrencyBase}\n${concurrencyMigration}\n${concurrencyHotfix}\n${versionedRpcMigration}`;
 const storeSource = readFileSync(new URL('./cloudbase-store.ts', import.meta.url), 'utf8');
 const appSource = readFileSync(new URL('../app/game-app.tsx', import.meta.url), 'utf8');
 const courtAppSource = readFileSync(new URL('../app/court-spreadsheet-mode.tsx', import.meta.url), 'utf8');
 const clueAppSource = readFileSync(new URL('../app/clue-spreadsheet-mode.tsx', import.meta.url), 'utf8');
+const soupAppSource = readFileSync(new URL('../app/soup-spreadsheet-mode.tsx', import.meta.url), 'utf8');
 
 test('CloudBase auth.uid() 文本标识使用 text 字段', () => {
   assert.match(schema, /owner_uid\s+text\s+not null\s+default auth\.uid\(\)/i);
@@ -331,4 +335,34 @@ test('A3 V3.2 标记最独特、支持非阻塞同行点赞并更新话痨', () 
   assert.match(clueAppSource, /同行点赞/);
   assert.match(clueAppSource, /同行最爱/);
   assert.match(clueAppSource, /room\.players\.length >= 3/);
+});
+
+test('A5 使用独立私密表、并行草稿与版本化顺序行动 RPC', () => {
+  for (const table of ['soup_case_bank_v1', 'soup_round_secrets_v1', 'soup_drafts_v1', 'soup_feedback_v1', 'soup_actions_v1']) {
+    assert.match(soupV1Migration, new RegExp(`create table if not exists public\.${table}`));
+  }
+  for (const rpc of ['create_soup_game_v1', 'join_soup_game_v1', 'get_my_soup_round_v1', 'save_soup_draft_v1', 'submit_soup_feedback_v1', 'apply_soup_action_v1']) {
+    assert.match(soupV1Migration, new RegExp(rpc));
+    assert.ok(storeSource.includes(`rpc('${rpc}'`));
+  }
+  for (const action of ['start_soup_game', 'acknowledge_soup_host', 'submit_soup_question', 'submit_soup_solution', 'skip_soup_turn', 'judge_soup_question', 'judge_soup_solution', 'use_soup_hint', 'extend_soup_limit', 'reveal_soup_bottom', 'next_soup_round', 'end_soup_game']) {
+    assert.match(soupV1Migration, new RegExp(action));
+  }
+  assert.match(soupV1Migration, /primary key\(game_code,session_no,round_no,player_id\)/i);
+  assert.match(soupV1Migration, /case when is_host then secret\.bottom else null end/);
+  assert.match(soupV1Migration, /'caseTitle',null/);
+  assert.doesNotMatch(soupV1Migration, /"id":"soup-[enh]\d{2}-/);
+  assert.match(soupV1Migration, /review_status text not null default 'pilot'/);
+  assert.match(soupV1Migration, /p_expected_session/);
+  assert.match(soupV1Migration, /for update/);
+  assert.doesNotMatch(soupV1Migration, /drop\s+(?:table|function)|truncate\s+/i);
+  for (const card of SOUP_CASES) {
+    assert.ok(soupV1Migration.includes(`\"id\":\"${card.id}\"`), `数据库迁移缺少 A5 题卡：${card.id}`);
+  }
+  for (const expected of ['exactly 20 pilot case cards with 6/10/4 difficulty', 'all launch cards remain pilot until real blind tests', 'private packet exposes case material only to current host', 'drafts are keyed by room session round and player']) {
+    assert.match(soupV1Verification, new RegExp(expected));
+  }
+  for (const copy of ['提交问题', '提交还原', '跳过本轮', '我已看懂', '下一碗', '题后反馈']) {
+    assert.match(soupAppSource, new RegExp(copy));
+  }
 });

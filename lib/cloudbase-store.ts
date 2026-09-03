@@ -4,6 +4,7 @@ import type { GameRoom } from './game';
 import type { AbsurdCourtRoom, CourtPrivateSubmission } from './court-game';
 import type { ClueKingRoom, CluePrivateRound } from './clue-game';
 import type { ClueDifficulty, ClueMode } from './clue-content';
+import type { SoupFeedbackInput, SoupPrivateRound, SoupRoom } from './soup-game';
 
 type GameRow = { state: GameRoom; version: number };
 type PgClient = ReturnType<IPgClient>;
@@ -47,6 +48,20 @@ export type CourtActionType =
 export interface CourtActionResult { outcome: GameActionOutcome; code: string; message: string; state: AbsurdCourtRoom; version: number; }
 export type ClueActionType = 'start_clue_game' | 'confirm_clue' | 'submit_clue_guess' | 'confirm_clue_ratings' | 'submit_peer_like' | 'skip_clue_result' | 'advance_clue_phase' | 'restart_clue_game';
 export interface ClueActionResult { outcome: GameActionOutcome; code: string; message: string; state: ClueKingRoom; version: number; }
+export type SoupActionType =
+  | 'start_soup_game'
+  | 'acknowledge_soup_host'
+  | 'submit_soup_question'
+  | 'submit_soup_solution'
+  | 'skip_soup_turn'
+  | 'judge_soup_question'
+  | 'judge_soup_solution'
+  | 'use_soup_hint'
+  | 'extend_soup_limit'
+  | 'reveal_soup_bottom'
+  | 'next_soup_round'
+  | 'end_soup_game';
+export interface SoupActionResult { outcome: GameActionOutcome; code: string; message: string; state: SoupRoom; version: number; }
 
 function publicConfig() {
   const env = process.env.NEXT_PUBLIC_CLOUDBASE_ENV_ID;
@@ -184,6 +199,66 @@ export class CloudBaseRoomStore {
     return data as CluePrivateRound | null;
   }
 
+  async createSoupRoom(room: SoupRoom): Promise<SoupRoom> {
+    await this.connect();
+    const { data, error } = await this.db().rpc('create_soup_game_v1', {
+      p_code: room.code,
+      p_owner_player_id: room.ownerId,
+      p_owner_name: room.players[0]?.name ?? '负责人',
+    }).single();
+    if (error) throw error;
+    return data as unknown as SoupRoom;
+  }
+
+  async joinSoupRoom(code: string, playerId: string, nickname: string): Promise<{ room: SoupRoom; playerId: string }> {
+    await this.connect();
+    const { data, error } = await this.db().rpc('join_soup_game_v1', {
+      p_code: code,
+      p_player_id: playerId,
+      p_nickname: nickname,
+    }).single();
+    if (error) throw error;
+    const result = data as unknown as { state: SoupRoom; playerId: string };
+    return { room: result.state, playerId: result.playerId };
+  }
+
+  async applySoupAction(input: { room: SoupRoom; actionId: string; actionType: SoupActionType; payload?: Record<string, unknown> }): Promise<SoupActionResult> {
+    await this.connect();
+    const { data, error } = await this.db().rpc('apply_soup_action_v1', {
+      p_code: input.room.code,
+      p_action_id: input.actionId,
+      p_action_type: input.actionType,
+      p_expected_status: input.room.status,
+      p_expected_round: input.room.round,
+      p_expected_session: input.room.sessionNo,
+      p_expected_version: input.room.version,
+      p_payload: input.payload ?? {},
+    }).single();
+    if (error) throw error;
+    return data as unknown as SoupActionResult;
+  }
+
+  async getMySoupRound(code: string): Promise<SoupPrivateRound | null> {
+    await this.connect();
+    const { data, error } = await this.db().rpc('get_my_soup_round_v1', { p_code: code }).single();
+    if (error) throw error;
+    return data as SoupPrivateRound | null;
+  }
+
+  async saveSoupDraft(code: string, draftText: string): Promise<SoupPrivateRound> {
+    await this.connect();
+    const { data, error } = await this.db().rpc('save_soup_draft_v1', { p_code: code, p_draft_text: draftText }).single();
+    if (error) throw error;
+    return data as SoupPrivateRound;
+  }
+
+  async submitSoupFeedback(code: string, feedback: SoupFeedbackInput): Promise<{ accepted: boolean }> {
+    await this.connect();
+    const { data, error } = await this.db().rpc('submit_soup_feedback_v1', { p_code: code, p_feedback: feedback }).single();
+    if (error) throw error;
+    return data as unknown as { accepted: boolean };
+  }
+
   async joinRoom(code: string, playerId: string, nickname: string): Promise<{ room: GameRoom; playerId: string }> {
     await this.connect();
     const { data, error } = await this.db().rpc('join_game', {
@@ -211,6 +286,11 @@ export class CloudBaseRoomStore {
   async getClueRoom(code: string): Promise<ClueKingRoom | null> {
     const room = await this.getRoom(code);
     return room && (room as unknown as { gameType?: string }).gameType === 'clue_king' ? room as unknown as ClueKingRoom : null;
+  }
+
+  async getSoupRoom(code: string): Promise<SoupRoom | null> {
+    const room = await this.getRoom(code);
+    return room && (room as unknown as { gameType?: string }).gameType === 'soup_detective' ? room as unknown as SoupRoom : null;
   }
 
   async applyGameAction(input: {
@@ -262,6 +342,12 @@ export class CloudBaseRoomStore {
   watchClueRoom(code: string, onChange: (room: ClueKingRoom) => void, onError: (error: unknown) => void) {
     return this.watchRoom(code, (room) => {
       if ((room as unknown as { gameType?: string }).gameType === 'clue_king') onChange(room as unknown as ClueKingRoom);
+    }, onError);
+  }
+
+  watchSoupRoom(code: string, onChange: (room: SoupRoom) => void, onError: (error: unknown) => void) {
+    return this.watchRoom(code, (room) => {
+      if ((room as unknown as { gameType?: string }).gameType === 'soup_detective') onChange(room as unknown as SoupRoom);
     }, onError);
   }
 }

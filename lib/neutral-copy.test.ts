@@ -106,15 +106,16 @@ test('版本通知由统一数据生成且当前版本始终位于首项', () =>
   assert.ok(RELEASE_NOTES.every((release) => release.details.length >= 3));
 });
 
-test('目录和三个游戏页面共用非弹窗通知栏，谁是卧底将沉浸模式降级为兼容视图', () => {
+test('目录和四个游戏页面共用非弹窗通知栏，谁是卧底将沉浸模式降级为兼容视图', () => {
   const hubSource = readFileSync(new URL('../app/game-hub.tsx', import.meta.url), 'utf8');
   const spreadsheetSource = readFileSync(new URL('../app/spreadsheet-mode.tsx', import.meta.url), 'utf8');
   const clueSource = readFileSync(new URL('../app/clue-spreadsheet-mode.tsx', import.meta.url), 'utf8');
   const courtSource = readFileSync(new URL('../app/court-spreadsheet-mode.tsx', import.meta.url), 'utf8');
+  const soupSource = readFileSync(new URL('../app/soup-spreadsheet-mode.tsx', import.meta.url), 'utf8');
   const notificationSource = readFileSync(new URL('../app/release-notification.tsx', import.meta.url), 'utf8');
   const styles = readFileSync(new URL('../app/globals.css', import.meta.url), 'utf8');
   const notificationStyles = styles.slice(styles.indexOf('.sheet-notification-panel'), styles.indexOf('.sheet-tabs'));
-  for (const source of [hubSource, spreadsheetSource, clueSource, courtSource]) {
+  for (const source of [hubSource, spreadsheetSource, clueSource, courtSource, soupSource]) {
     assert.match(source, /ReleaseNotificationButton/);
     assert.match(source, /ReleaseNotificationPanel/);
   }
@@ -131,7 +132,7 @@ test('目录和三个游戏页面共用非弹窗通知栏，谁是卧底将沉�
   assert.doesNotMatch(notificationSource, /aria-modal="true"/);
 });
 
-test('三项游戏使用独立页面和独立入口', () => {
+test('四项游戏使用独立页面和独立入口', () => {
   const rootPage = readFileSync(new URL('../app/page.tsx', import.meta.url), 'utf8');
   const hubPage = readFileSync(new URL('../app/game-hub.tsx', import.meta.url), 'utf8');
   const undercoverPage = readFileSync(new URL('../app/undercover/page.tsx', import.meta.url), 'utf8');
@@ -140,15 +141,19 @@ test('三项游戏使用独立页面和独立入口', () => {
   const courtApp = readFileSync(new URL('../app/court-spreadsheet-mode.tsx', import.meta.url), 'utf8');
   const cluePage = readFileSync(new URL('../app/clue/page.tsx', import.meta.url), 'utf8');
   const clueApp = readFileSync(new URL('../app/clue-spreadsheet-mode.tsx', import.meta.url), 'utf8');
+  const soupPage = readFileSync(new URL('../app/soup/page.tsx', import.meta.url), 'utf8');
+  const soupApp = readFileSync(new URL('../app/soup-spreadsheet-mode.tsx', import.meta.url), 'utf8');
   assert.match(rootPage, /GameHub/);
   assert.match(hubPage, /\['A2', '3–10 人'/);
   assert.match(hubPage, /\['A3', '2–8 人'/);
   assert.match(hubPage, /\['A4', '2–8 人'/);
+  assert.match(hubPage, /\['A5', '3–10 人'/);
   assert.match(hubPage, /'摘要'/);
   assert.doesNotMatch(hubPage, /A2 · 谁是卧底|A4 · 离谱法堂|>谁是卧底<|>离谱法堂</);
   assert.match(hubPage, /\.\/undercover\//);
   assert.match(hubPage, /\.\/clue\//);
   assert.match(hubPage, /\.\/court\//);
+  assert.match(hubPage, /\.\/soup\//);
   assert.match(undercoverPage, /GameApp/);
   assert.doesNotMatch(undercoverSheet, /离谱法堂|情况说明表（实验）/);
   assert.match(courtPage, /CourtSpreadsheetMode/);
@@ -160,20 +165,29 @@ test('三项游戏使用独立页面和独立入口', () => {
   assert.match(clueApp, /获奖联想机制改编/);
   assert.match(clueApp, /相同内容仍按不同成员分别记录/);
   assert.match(clueApp, /最多尝试 3 次/);
+  assert.match(soupPage, /SoupSpreadsheetMode/);
+  assert.match(soupApp, /提交问题/);
+  assert.match(soupApp, /提交还原/);
+  assert.match(soupApp, /跳过本轮/);
+  assert.match(soupApp, /我已看懂/);
 });
 
-test('三个游戏都支持返回目录和带房间编号的邀请链接', () => {
+test('四个游戏都支持返回目录和带房间编号的邀请链接', () => {
   const undercoverApp = readFileSync(new URL('../app/game-app.tsx', import.meta.url), 'utf8');
   const undercoverSheet = readFileSync(new URL('../app/spreadsheet-mode.tsx', import.meta.url), 'utf8');
   const courtApp = readFileSync(new URL('../app/court-spreadsheet-mode.tsx', import.meta.url), 'utf8');
   const clueApp = readFileSync(new URL('../app/clue-spreadsheet-mode.tsx', import.meta.url), 'utf8');
+  const soupApp = readFileSync(new URL('../app/soup-spreadsheet-mode.tsx', import.meta.url), 'utf8');
   assert.match(undercoverSheet, /返回摸鱼游戏工作台/);
   assert.match(courtApp, /返回摸鱼游戏工作台/);
   assert.match(clueApp, /返回摸鱼游戏工作台/);
+  assert.match(soupApp, /href="\.\.\/"/);
   assert.match(undercoverApp, /searchParams\.set\('room', room\.code\)/);
   assert.match(courtApp, /searchParams\.set\('room', room\.code\)/);
   assert.match(clueApp, /searchParams\.set\('room', room\.code\)/);
+  assert.match(soupApp, /searchParams\.set\('room', room\.code\)/);
   assert.match(undercoverApp, /URLSearchParams\(window\.location\.search\)/);
   assert.match(courtApp, /URLSearchParams\(window\.location\.search\)/);
   assert.match(clueApp, /URLSearchParams\(window\.location\.search\)/);
+  assert.match(soupApp, /URLSearchParams\(window\.location\.search\)/);
 });
