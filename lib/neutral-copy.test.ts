@@ -106,19 +106,29 @@ test('版本通知由统一数据生成且当前版本始终位于首项', () =>
   assert.ok(RELEASE_NOTES.every((release) => release.details.length >= 3));
 });
 
-test('目录页面使用非弹窗通知栏，谁是卧底将沉浸模式降级为兼容视图', () => {
+test('目录和三个游戏页面共用非弹窗通知栏，谁是卧底将沉浸模式降级为兼容视图', () => {
   const hubSource = readFileSync(new URL('../app/game-hub.tsx', import.meta.url), 'utf8');
   const spreadsheetSource = readFileSync(new URL('../app/spreadsheet-mode.tsx', import.meta.url), 'utf8');
+  const clueSource = readFileSync(new URL('../app/clue-spreadsheet-mode.tsx', import.meta.url), 'utf8');
+  const courtSource = readFileSync(new URL('../app/court-spreadsheet-mode.tsx', import.meta.url), 'utf8');
+  const notificationSource = readFileSync(new URL('../app/release-notification.tsx', import.meta.url), 'utf8');
   const styles = readFileSync(new URL('../app/globals.css', import.meta.url), 'utf8');
   const notificationStyles = styles.slice(styles.indexOf('.sheet-notification-panel'), styles.indexOf('.sheet-tabs'));
-  assert.match(hubSource, /通知 · \{CURRENT_RELEASE\.version\}/);
-  assert.match(hubSource, /hub-notification-panel/);
-  assert.match(hubSource, /暂不记录已读状态，也不发送推送/);
-  assert.doesNotMatch(spreadsheetSource, /通知 · \{CURRENT_RELEASE\.version\}/);
-  assert.doesNotMatch(spreadsheetSource, /sheet-notification-panel/);
+  for (const source of [hubSource, spreadsheetSource, clueSource, courtSource]) {
+    assert.match(source, /ReleaseNotificationButton/);
+    assert.match(source, /ReleaseNotificationPanel/);
+  }
+  assert.match(notificationSource, /通知 · \{CURRENT_RELEASE\.version\}/);
+  assert.match(notificationSource, /release-notification-panel/);
+  assert.match(notificationSource, /暂不记录已读状态，也不发送推送/);
   assert.match(spreadsheetSource, />兼容视图<\/button>/);
+  assert.match(spreadsheetSource, /'当前流程'/);
+  assert.match(spreadsheetSource, /'本局设置'/);
+  assert.match(spreadsheetSource, /'轮次记录'/);
+  assert.doesNotMatch(spreadsheetSource, /sheet-flow-guide/);
+  assert.doesNotMatch(spreadsheetSource, /className="sheet-toolbar"/);
   assert.doesNotMatch(notificationStyles, /position:\s*fixed/);
-  assert.doesNotMatch(hubSource, /aria-modal="true"[^]*hub-notification-panel/);
+  assert.doesNotMatch(notificationSource, /aria-modal="true"/);
 });
 
 test('三项游戏使用独立页面和独立入口', () => {

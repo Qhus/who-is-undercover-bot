@@ -12,6 +12,7 @@ import {
 } from '@/lib/court-game';
 import { getCloudStore, type CourtActionType } from '@/lib/cloudbase-store';
 import { makeId } from '@/lib/game';
+import { ReleaseNotificationButton, ReleaseNotificationPanel } from './release-notification';
 
 const statusName: Record<string, string> = {
   lobby: '等待成员',
@@ -63,6 +64,7 @@ export default function CourtSpreadsheetMode() {
   const [ownerName, setOwnerName] = useState('');
   const [joinName, setJoinName] = useState('');
   const [joinCode, setJoinCode] = useState('');
+  const [notificationOpen, setNotificationOpen] = useState(false);
   const [room, setRoom] = useState<AbsurdCourtRoom | null>(null);
   const [playerId, setPlayerId] = useState('');
   const [privateSubmission, setPrivateSubmission] = useState<CourtPrivateSubmission | null>(null);
@@ -320,7 +322,7 @@ export default function CourtSpreadsheetMode() {
     <header className="sheet-titlebar">
       <button className="sheet-filemark" onClick={leaveView}>表</button>
       <div><strong>{room ? `离谱法堂 · ${room.code}` : '离谱法堂 · 案件管理工作簿'}</strong><span>独立游戏 · 匿名双项评选</span></div>
-      <div className="sheet-title-actions"><a href="../" aria-label="返回摸鱼游戏工作台">目录</a>{room && <><button onClick={() => navigator.clipboard?.writeText(room.code)}>复制房间编号</button><button onClick={copyInviteLink}>复制邀请链接</button><button onClick={leaveView}>返回法堂首页</button></>}</div>
+      <div className="sheet-title-actions"><a href="../" aria-label="返回摸鱼游戏工作台">目录</a><ReleaseNotificationButton open={notificationOpen} onToggle={() => setNotificationOpen((open) => !open)} />{room && <><button className="sheet-room-action" onClick={() => navigator.clipboard?.writeText(room.code)}>复制房间编号</button><button className="sheet-room-action" onClick={copyInviteLink}>复制邀请链接</button><button className="sheet-room-action" onClick={leaveView}>返回法堂首页</button></>}</div>
     </header>
     <nav className="sheet-ribbon"><button className="is-current">开始</button><button>案件</button><button>评选</button><span />{room && <button onClick={() => void apply('change_court_presence', { away: !me?.away })}>{me?.away ? '结束暂离' : '暂离'}</button>}</nav>
     <div className="sheet-formula"><span className="sheet-namebox">A1</span><span className="sheet-fx">fx</span><output>{room ? `${statusName[room.status]} · 第 ${room.round}/3 轮 · 局次 ${room.sessionNo} · ${remaining(room.phaseDeadlineAt, now)} 秒` : '不是找卧底，是分别选出最会狡辩和最像真的答案'}</output></div>
@@ -357,7 +359,7 @@ export default function CourtSpreadsheetMode() {
         </>}</tbody>
       </table></div>
       {notice && <div className="sheet-toast sheet-toast--info">{notice}</div>}
-    </div></section>
+    </div><ReleaseNotificationPanel open={notificationOpen} onClose={() => setNotificationOpen(false)} /></section>
     <footer className="sheet-tabs"><button disabled aria-label="新增工作表不可用">＋</button>{courtSheets.map(([id, label]) => <button className={activeSheet === id ? 'is-current' : ''} onClick={() => setActiveSheet(id)} key={id}>{label}</button>)}</footer>
   </main>;
 }

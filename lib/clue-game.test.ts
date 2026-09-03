@@ -22,6 +22,12 @@ test('提示只做必要的长度和完整答案校验', () => {
   assert.equal(validateClue('班车', '加班', 8), '班车');
 });
 
+test('提示大王默认使用普通难度和角色扮演模式', () => {
+  const room = createClueRoom('负责人');
+  assert.equal(room.mode, 'role_play');
+  assert.equal(room.difficulty, 'normal');
+});
+
 test('特殊规则只进入当前题占位提示，自由模式不重复默认规则', () => {
   assert.equal(CLUE_PUBLIC_RULES.length, 11);
   assert.equal(CLUE_ROLES.length, 12);

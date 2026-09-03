@@ -106,7 +106,7 @@ function makePlayerId(random: RandomSource) {
   return `p_${Math.floor(random() * 1e12).toString(36)}`;
 }
 
-export function createClueRoom(ownerName: string, mode: ClueMode = 'free', difficulty: ClueDifficulty = 'normal', now = Date.now(), random: RandomSource = Math.random): ClueKingRoom {
+export function createClueRoom(ownerName: string, mode: ClueMode = 'role_play', difficulty: ClueDifficulty = 'normal', now = Date.now(), random: RandomSource = Math.random): ClueKingRoom {
   const id = makePlayerId(random);
   return {
     code: makeRoomCode(random),

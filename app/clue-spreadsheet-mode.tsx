@@ -24,6 +24,7 @@ import {
 } from '@/lib/clue-content';
 import { getCloudStore, type ClueActionType } from '@/lib/cloudbase-store';
 import { makeId } from '@/lib/game';
+import { ReleaseNotificationButton, ReleaseNotificationPanel } from './release-notification';
 
 const clueSheets = [
   ['home', '提示首页'],
@@ -61,7 +62,8 @@ export default function ClueSpreadsheetMode() {
   const [ownerName, setOwnerName] = useState('');
   const [joinName, setJoinName] = useState('');
   const [joinCode, setJoinCode] = useState('');
-  const [mode, setMode] = useState<ClueMode>('free');
+  const [notificationOpen, setNotificationOpen] = useState(false);
+  const [mode, setMode] = useState<ClueMode>('role_play');
   const [difficulty, setDifficulty] = useState<ClueDifficulty>('normal');
   const [room, setRoom] = useState<ClueKingRoom | null>(null);
   const [playerId, setPlayerId] = useState('');
@@ -321,7 +323,7 @@ export default function ClueSpreadsheetMode() {
     <header className="sheet-titlebar">
       <button className="sheet-filemark" onClick={leaveView}>表</button>
       <div><strong>{room ? `提示填报表 · ${room.code}` : '提示填报表 · 联机工作簿'}</strong><span>联想协作机制 · 两项统计</span></div>
-      <div className="sheet-title-actions"><a href="../" aria-label="返回摸鱼游戏工作台">目录</a>{room && <><button onClick={() => navigator.clipboard?.writeText(room.code)}>复制房间编号</button><button onClick={copyInviteLink}>复制邀请链接</button><button onClick={leaveView}>返回提示首页</button></>}</div>
+      <div className="sheet-title-actions"><a href="../" aria-label="返回摸鱼游戏工作台">目录</a><ReleaseNotificationButton open={notificationOpen} onToggle={() => setNotificationOpen((open) => !open)} />{room && <><button className="sheet-room-action" onClick={() => navigator.clipboard?.writeText(room.code)}>复制房间编号</button><button className="sheet-room-action" onClick={copyInviteLink}>复制邀请链接</button><button className="sheet-room-action" onClick={leaveView}>返回提示首页</button></>}</div>
     </header>
     <nav className="sheet-ribbon"><button className="is-current">开始</button><button onClick={() => setActiveSheet('clues')}>记录</button><button onClick={() => setActiveSheet('scores')}>排名</button><span /></nav>
     <div className="sheet-formula"><span className="sheet-namebox">A1</span><span className="sheet-fx">fx</span><output>{room ? `${statusName[room.status]} · ${room.guesserName ? `本轮负责人 ${room.guesserName}` : '等待开始'} · ${remaining(room.phaseDeadlineAt, now)} 秒` : '每人轮流负责判断；其他成员填写关联词；每轮结束后评价关联质量'}</output></div>
@@ -368,7 +370,7 @@ export default function ClueSpreadsheetMode() {
         </>}</tbody>
       </table></div>
       {notice && <div className="sheet-toast sheet-toast--info">{notice}</div>}
-    </div></section>
+    </div><ReleaseNotificationPanel open={notificationOpen} onClose={() => setNotificationOpen(false)} /></section>
     <footer className="sheet-tabs"><button disabled aria-label="新增工作表不可用">＋</button>{clueSheets.map(([id, label]) => <button className={activeSheet === id ? 'is-current' : ''} onClick={() => setActiveSheet(id)} key={id}>{label}</button>)}</footer>
   </main>;
 }
