@@ -8,12 +8,13 @@ import { CURRENT_RELEASE } from '@/lib/release-notes';
 import { wordPairHint } from '@/lib/words';
 import { ReleaseNotificationButton, ReleaseNotificationPanel } from './release-notification';
 
+import { WorkbookColumns, WorkbookFeedback, WorkbookText, useWorkbookNotes, type WorkbookNote } from './workbook-feedback';
+
 type Screen = 'home' | 'setup' | 'game';
 type Notice = { kind: 'info' | 'error'; text: string } | null;
 type SheetTab = 'members' | 'rules' | 'history' | 'guide';
 type LobbySettingsDraft = { playerLimit: number; undercoverCount: number; blankCardCount: number };
 type SpecialActionConfirmation = { type: 'buzzer' | 'accuse'; playerId: string } | null;
-type DetailHint = { scope: string; title: string; text: string } | null;
 type SheetGuide = {
   step: number;
   title: string;
@@ -172,13 +173,13 @@ function specialActivityCopy(room: GameRoom): string | null {
   return null;
 }
 
-function Grid({ rows, activeCell, emphasizedCells, onActivate }: { rows: ReactNode[][]; activeCell: string; emphasizedCells: string[]; onActivate: (cell: string) => void }) {
-  return <div className="sheet-grid-scroll"><table className="sheet-grid" aria-label="协作数据表">
+function Grid({ rows, activeCell, emphasizedCells, onActivate, onNote }: { rows: ReactNode[][]; activeCell: string; emphasizedCells: string[]; onActivate: (cell: string) => void; onNote?: (note: WorkbookNote) => void }) {
+  return <div className="sheet-grid-scroll"><table className="sheet-grid" aria-label="协作数据表"><WorkbookColumns />
     <thead><tr><th className="sheet-corner" aria-hidden="true" />{columns.map((column) => <th key={column} scope="col">{column}</th>)}</tr></thead>
     <tbody>{rows.map((row, rowIndex) => <tr className={row[0] === '游玩步骤' || row[0] === '核心规则' ? 'is-guide-heading' : ''} key={rowIndex}><th scope="row">{rowIndex + 1}</th>{columns.map((column, columnIndex) => {
       const coordinate = `${column}${rowIndex + 1}`;
       const className = [activeCell === coordinate ? 'is-active-cell' : '', emphasizedCells.includes(coordinate) ? 'is-guided-cell' : ''].filter(Boolean).join(' ');
-      return <td className={className} onClick={() => onActivate(coordinate)} key={column}>{row[columnIndex] ?? ''}</td>;
+      return <td className={className} onClick={() => onActivate(coordinate)} key={column}>{onNote && typeof row[columnIndex] === 'string' && String(row[columnIndex]).length > 18 ? <WorkbookText text={String(row[columnIndex])} title={`${coordinate} 完整说明`} onOpen={onNote} /> : row[columnIndex] ?? ''}</td>;
     })}</tr>)}</tbody>
   </table></div>;
 }
@@ -190,7 +191,6 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
   const [sensitiveVisible, setSensitiveVisible] = useState(false);
   const [lobbyEditing, setLobbyEditing] = useState(false);
   const [guessAcknowledgedKey, setGuessAcknowledgedKey] = useState<string | null>(null);
-  const [detailHint, setDetailHint] = useState<DetailHint>(null);
   const [notificationOpen, setNotificationOpen] = useState(false);
   const privacy = useRef<PrivacyGuard | null>(null);
 
@@ -221,8 +221,8 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
 
   const sheetTabs = useMemo<SheetTab[]>(() => {
     const tabs: SheetTab[] = ['members', 'rules', 'history'];
-    return sheetTab === 'guide' ? [...tabs, 'guide'] : tabs;
-  }, [sheetTab]);
+    return [...tabs, 'guide'];
+  }, []);
 
   function openGuideSheet() {
     if (sheetTab !== 'guide') setReturnSheetTab(sheetTab);
@@ -261,9 +261,9 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
     if (props.screen === 'home') {
       return {
         step: 0,
-        title: '选择你的角色入口',
-        instruction: '房主从 A2 开始创建房间；普通玩家从 A4 开始，依次填写 B4 称呼、C4 六位编号，再点 E4“加入”。',
-        location: '房主入口：A2；玩家入口：A4',
+        title: '创建或加入',
+        instruction: '一人创建房间，其他人填写称呼和六位编号后加入。',
+        location: '创建：第 2 行 · 加入：第 4 行',
         focusCell: 'A2',
         emphasizedCells: ['A2', 'A4'],
         cellHints: { A2: '房主入口：创建一个新房间', A4: '玩家入口：加入已有房间' },
@@ -273,10 +273,10 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
       return {
         step: 0,
         title: '填写创建配置',
-        instruction: '沿 B 列从上到下检查配置。确认描述方式、爆灯和自动下一轮；完成后点上方“创建联机表”。',
+        instruction: '检查人数与规则，完成后点击“创建联机表”。',
         location: '配置区域：从 B2 向下检查；提交按钮：表格上方',
         focusCell: 'B2',
-        emphasizedCells: ['B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B9', 'B10', 'B11', 'B12', 'B13', 'B14', 'B15'],
+        emphasizedCells: ['B2'],
         cellHints: {
           B2: '必填：负责人称呼', B3: '必填：成员数量', B4: '必填：卧底数量', B5: '选择空白牌数量', B6: '选择本轮挑战模式',
           B7: '选择描述公开方式', B8: '选择是否开启猜词翻盘', B9: '选择是否开启猜词爆灯', B10: '选择是否开启平民爆灯指认',
@@ -333,7 +333,7 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
         step: 2,
         title: `填写本轮内容 · ${formatCountdown(props.discussionRemainingSeconds)}`,
         instruction: props.activeDiscussionPlayer
-          ? `在 ${cell} 输入本轮内容并点击“提交”；全员完成或倒计时结束后，由负责人继续。`
+          ? `在 ${cell} 输入本轮内容并点击“提交”；全员完成或倒计时结束后自动公开，5 秒后开放投票。`
           : props.canOpenVoting ? `描述已经公开，${props.votingOpenRemainingSeconds} 秒后自动开放投票；房主也可提前开放。` : '你的内容已完成，等待其他成员或倒计时结束后统一公开。',
         location: props.activeDiscussionPlayer ? `当前填写位置：${cell}（本轮内容列）` : props.canOpenVoting ? `自动开放投票：${props.votingOpenRemainingSeconds} 秒` : `剩余时间：${formatCountdown(props.discussionRemainingSeconds)}`,
         focusCell: props.activeDiscussionPlayer ? cell : 'C2',
@@ -346,7 +346,7 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
       const cell = `E${row}`;
       return {
         step: 3,
-        title: props.activeVoter ? `${props.activeVoter.name}：提交选择` : '等待其他成员提交',
+        title: props.activeVoter ? `${props.activeVoter.name}：确认投票` : '等待其他成员提交',
         instruction: props.activeVoter ? `在 ${cell} 的下拉框选择成员，再点击同一单元格内的“提交”。` : '你的选择已提交，请等待其他成员。',
         location: props.activeVoter ? `当前填写位置：${cell}（提交选择列）` : '进度位置：C 列',
         focusCell: props.activeVoter ? cell : 'C2',
@@ -360,11 +360,11 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
       return {
         step: 4,
         title: props.activeComebackPlayer ? `填写特殊判定 · ${formatCountdown(props.comebackRemainingSeconds)}` : `等待特殊判定 · ${formatCountdown(props.comebackRemainingSeconds)}`,
-        instruction: props.activeComebackPlayer ? `在 ${cell} 私密输入另一组词语并提交，只能尝试一次。` : '一名成员正在私密完成特殊判定，结果稍后统一公开。',
+        instruction: props.activeComebackPlayer ? `在 ${cell} 私密输入多数玩家拿到的完整原词，只能尝试一次。` : '一名成员正在私密完成特殊判定，结果稍后统一公开。',
         location: props.activeComebackPlayer ? `当前填写位置：${cell}` : '当前无需填写',
         focusCell: props.activeComebackPlayer ? cell : 'C2',
         emphasizedCells: props.activeComebackPlayer ? [cell] : [],
-        cellHints: props.activeComebackPlayer ? { [cell]: '私密输入另一组词语；20 秒内仅可提交一次' } : {},
+        cellHints: props.activeComebackPlayer ? { [cell]: '私密输入多数玩家的完整原词；20 秒内仅可提交一次' } : {},
       };
     }
     const foundUndercover = eliminatedUndercover(room);
@@ -373,19 +373,19 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
       step: 4,
       title: comebackWon ? '流程已完成' : foundUndercover ? `成功找出卧底：${foundUndercover.name}` : room.status === 'finished' ? '流程已完成' : '查看本轮结果',
       instruction: comebackWon ? '特殊判定已通过，本局结束；负责人可换词再来一局。' : foundUndercover
-        ? (room.status === 'finished' ? '所有卧底已经找出，本局结束。' : isOwner ? '本轮命中卧底；点击上方“进入下一轮”继续。' : '本轮命中卧底，等待负责人推进。')
+        ? (room.status === 'finished' ? '特殊阵营已全部退出，本局结束。' : (room.autoAdvanceEnabled ?? true) ? room.autoAdvancePaused ? '自动进入已暂停，房主可继续。' : `${props.nextRoundRemainingSeconds} 秒后自动进入下一轮。` : isOwner ? '本轮命中卧底；点击上方“立即进入下一轮”继续。' : '本轮命中卧底，等待负责人推进。')
         : isOwner ? (room.status === 'finished' ? '结果已汇总；点击上方“换词再来一局”重新开始。' : (room.autoAdvanceEnabled ?? true) ? `${props.nextRoundRemainingSeconds} 秒后自动进入下一轮，可暂停或立即进入。` : '结果已汇总；点击上方“进入下一轮”继续。') : (room.status === 'result' && (room.autoAdvanceEnabled ?? true) ? `${props.nextRoundRemainingSeconds} 秒后自动进入下一轮。` : '结果已汇总，等待负责人推进。'),
       location: comebackWon ? '结果提示：特殊判定成功' : foundUndercover ? '结果提示：已成功找出卧底' : '当前结果：当前流程；过往记录：轮次记录',
       focusCell: 'D2', emphasizedCells: ['D2'], cellHints: { D2: comebackWon ? '流程已完成' : foundUndercover ? `成功找出卧底：${foundUndercover.name}` : '查看本轮结果' },
     };
   }, [sheetTab, props.screen, props.room, props.accuseActorId, props.accuseTargetId, props.activeCardPlayer, props.activeDiscussionPlayer, props.activeVoter, props.activeComebackPlayer, props.discussionRemainingSeconds, props.votingOpenRemainingSeconds, props.comebackRemainingSeconds, props.nextRoundRemainingSeconds, props.canOpenVoting, isOwner]);
 
-  const flowKey = `${sheetTab}|${props.screen}|${props.room?.status ?? ''}|${props.room?.round ?? ''}|${props.activeCardPlayer?.id ?? ''}|${props.activeDiscussionPlayer?.id ?? ''}|${props.activeVoter?.id ?? ''}|${props.accuseActorId ?? ''}`;
+  const flowKey = `${props.room?.code ?? ''}|${sheetTab}|${props.screen}|${props.room?.status ?? ''}|${props.room?.round ?? ''}|${props.activeCardPlayer?.id ?? ''}|${props.activeDiscussionPlayer?.id ?? ''}|${props.activeVoter?.id ?? ''}|${props.accuseActorId ?? ''}`;
+  const { note: detailHint, setNote: setDetailHint } = useWorkbookNotes(flowKey);
   const activeCell = cellSelection?.flowKey === flowKey ? cellSelection.cell : workflowGuide.focusCell;
 
-  const formulaValue = sensitiveVisible && currentAssignment
-    ? (currentAssignment.role === 'blank' && props.room ? blankCardCopy(props.room) : currentAssignment.word)
-    : workflowGuide.cellHints[activeCell] ?? (activeCell === 'D2' && props.room?.status === 'cards' ? '···' : `=${tabLabel(sheetTab)}!${activeCell}`);
+  // Formula bar is public context only; private words stay in the protected cell.
+  const formulaValue = workflowGuide.cellHints[activeCell] ?? `=${tabLabel(sheetTab)}!${activeCell}`;
 
   const gameRows = (): ReactNode[][] => {
     const room = props.room;
@@ -417,7 +417,7 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
         room.players.forEach((player) => rows.push([
           `Round_${String(round).padStart(2, '0')}`,
           player.name,
-          contents[player.id] ?? (round === room.round ? '尚未公开' : '本轮未提交'),
+          round < room.round || isRoundContentVisible(room, player.id, props.currentPlayerId) ? contents[player.id] ?? '本轮未提交' : '尚未公开',
           history.some((result) => result.eliminatedId === player.id) ? '本轮退出' : history.length ? '保留' : '进行中',
           history.map((result) => result.counts[player.id] ?? 0).join(' / ') || '—',
           round === room.round ? workflowGuide.title : '已归档',
@@ -447,7 +447,7 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
           : (room.skippedDescriptionPlayerIds ?? []).includes(player.id) ? '本轮未提交' : '等待中';
         if (isContentOwner) {
           const fullRule = getRoundChallenge(room, room.round)?.text ?? '本轮自由表达';
-          personal = <div className="sheet-content-input"><input value={props.roundContentDraft} maxLength={ROUND_CONTENT_MAX_LENGTH} onFocus={() => setDetailHint({ scope: flowKey, title: `Round_${String(room.round).padStart(2, '0')} 完整规则`, text: `${fullRule}。最多填写 ${ROUND_CONTENT_MAX_LENGTH} 字，规则由玩家自觉遵守，不影响提交。` })} onClick={() => setDetailHint({ scope: flowKey, title: `Round_${String(room.round).padStart(2, '0')} 完整规则`, text: `${fullRule}。最多填写 ${ROUND_CONTENT_MAX_LENGTH} 字，规则由玩家自觉遵守，不影响提交。` })} onChange={(event) => props.onRoundContentDraft(event.target.value)} placeholder="填写本轮描述｜点击查看规则" aria-label="填写谁是卧底本轮描述内容" /><button disabled={!props.roundContentDraft.trim()} onClick={props.onSubmitRoundContent} aria-label="提交谁是卧底本轮描述内容">提交</button></div>;
+          personal = <div className="sheet-content-input"><input value={props.roundContentDraft} maxLength={ROUND_CONTENT_MAX_LENGTH} onClick={() => setDetailHint({ scope: flowKey, title: `Round_${String(room.round).padStart(2, '0')} 完整规则`, text: `${fullRule}。最多填写 ${ROUND_CONTENT_MAX_LENGTH} 字，规则由玩家自觉遵守，不影响提交。` })} onChange={(event) => props.onRoundContentDraft(event.target.value)} placeholder="填写本轮描述｜点击查看规则" aria-label="填写谁是卧底本轮描述内容" /><button disabled={!props.roundContentDraft.trim()} onClick={props.onSubmitRoundContent} aria-label="提交谁是卧底本轮描述内容">提交</button></div>;
         }
       }
     }
@@ -549,9 +549,9 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
     : props.screen === 'home'
     ? [
         ['操作', '称呼', '协作表编号', '状态', '执行', '备注'],
-        ['创建房间（房主入口）', props.ownerName, '自动生成', '可用', <button key="create" className="sheet-action" onClick={props.onOpenSetup} aria-label="创建谁是卧底游戏房间">打开配置</button>, '成员识别表 · 3–10 人'],
+        ['创建', props.ownerName, '自动生成', '可用', <button key="create" className="sheet-action" onClick={props.onOpenSetup} aria-label="创建谁是卧底游戏房间">打开配置</button>, '成员识别表 · 3–10 人'],
         ['玩法与完整规则', '新手推荐先读', '六步游玩流程', '核心规则', <button key="guide" className="sheet-action" onClick={openGuideSheet} aria-label="在表格中查看谁是卧底游玩步骤与核心规则">查看说明</button>, '开局前可随时查看'],
-        ['加入房间（玩家入口）', <input key="join-name" value={props.joinName} maxLength={PLAYER_NAME_MAX_LENGTH} onChange={(event) => props.onJoinName(event.target.value.slice(0, PLAYER_NAME_MAX_LENGTH))} placeholder="① 填写你的称呼" aria-label="加入游戏时使用的玩家称呼" />, <input key="join-code" value={props.joinCode} onChange={(event) => props.onJoinCode(event.target.value.toUpperCase().replace(/[^A-Z2-9]/g, ''))} maxLength={6} placeholder="② 填写六位编号" aria-label="谁是卧底游戏房间码" />, props.cloudReady ? '联机可用' : '本机可用', <button key="join" className="sheet-action" disabled={props.busy} onClick={props.onJoin} aria-label="加入谁是卧底游戏房间">③ 加入</button>, 'A4 · 按 B4 → C4 → E4'],
+        ['加入', <input key="join-name" value={props.joinName} maxLength={PLAYER_NAME_MAX_LENGTH} onChange={(event) => props.onJoinName(event.target.value.slice(0, PLAYER_NAME_MAX_LENGTH))} placeholder="① 填写你的称呼" aria-label="加入游戏时使用的玩家称呼" />, <input key="join-code" value={props.joinCode} onChange={(event) => props.onJoinCode(event.target.value.toUpperCase().replace(/[^A-Z2-9]/g, ''))} maxLength={6} placeholder="② 填写六位编号" aria-label="谁是卧底游戏房间码" />, props.cloudReady ? '联机可用' : '本机可用', <button key="join" className="sheet-action" disabled={props.busy} onClick={props.onJoin} aria-label="加入谁是卧底游戏房间">③ 加入</button>, '填写称呼与编号后加入'],
         ['', '', '', '', '', ''],
         ['说明', '低干扰显示', '不规避审计', '默认静音', '本地保存', '按 Esc 遮挡'],
       ]
@@ -602,7 +602,7 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
         ? <div className="undercover-mobile-controls">
             {props.room.status === 'lobby' && <div>{isOwner ? <button disabled={props.room.players.length !== props.room.playerLimit} onClick={props.onStartDealing}>{props.room.players.length === props.room.playerLimit ? '生成个人信息' : `还差 ${props.room.playerLimit - props.room.players.length} 人`}</button> : <span>等待负责人开始</span>}</div>}
             {props.room.status === 'cards' && <div><span>{props.activeCardPlayer ? '请先在表格 D 列复看词牌' : '等待其他成员确认词牌'}</span>{props.activeCardPlayer && <button onClick={() => { privacy.current?.mask('sheet-change'); props.onConfirmCard(); }}>已确认自己的词语</button>}</div>}
-            {props.room.status === 'discussion' && props.activeDiscussionPlayer && <div><input value={props.roundContentDraft} maxLength={ROUND_CONTENT_MAX_LENGTH} onFocus={() => setDetailHint({ scope: flowKey, title: '本轮描述规则', text: `${getRoundChallenge(props.room!, props.room!.round)?.text ?? '本轮自由表达'}；最多 ${ROUND_CONTENT_MAX_LENGTH} 字，不能直接写出自己的词语。` })} onChange={(event) => props.onRoundContentDraft(event.target.value.slice(0, ROUND_CONTENT_MAX_LENGTH))} placeholder="填写本轮描述" /><button onClick={props.onSubmitRoundContent}>提交</button></div>}
+            {props.room.status === 'discussion' && props.activeDiscussionPlayer && <div><input value={props.roundContentDraft} maxLength={ROUND_CONTENT_MAX_LENGTH} onChange={(event) => props.onRoundContentDraft(event.target.value.slice(0, ROUND_CONTENT_MAX_LENGTH))} placeholder="填写本轮描述" /><button onClick={props.onSubmitRoundContent}>提交</button></div>}
             {props.room.status === 'voting' && props.activeVoter && <div><select value={props.selectedCandidateId ?? ''} onChange={(event) => props.onCandidate(event.target.value || null)}><option value="">选择一名成员</option>{eligibleCandidates(props.room).filter((player) => player.id !== props.activeVoter?.id).map((player) => <option value={player.id} key={player.id}>{player.name}</option>)}</select><button disabled={!props.selectedCandidateId} onClick={props.onSubmitVote}>提交选择</button></div>}
             {props.room.status === 'guessing' && props.activeComebackPlayer && <div><input value={props.comebackDraft} onChange={(event) => props.onComebackDraft(event.target.value)} placeholder="私密填写多数玩家的完整原词" /><button onClick={props.onSubmitComeback}>提交</button></div>}
             {props.room.status === 'result' && isOwner && <div><button onClick={props.onContinue}>立即进入下一轮</button>{(props.room.autoAdvanceEnabled ?? true) && <button className="is-secondary" onClick={props.onToggleAutoAdvance}>{props.room.autoAdvancePaused ? '继续自动进入' : '暂停自动进入'}</button>}</div>}
@@ -610,40 +610,40 @@ export default function SpreadsheetMode(props: SpreadsheetModeProps) {
           </div>
         : null;
 
-  return <main className={`sheet-app undercover-sheet ${sheetTab === 'guide' ? 'sheet-app--guide' : ''}`} onContextMenu={(event) => event.preventDefault()}>
+  return <main className={`sheet-app workbook-unified undercover-sheet ${sheetTab === 'guide' ? 'sheet-app--guide' : ''}`} data-workbook-sheet={sheetTab === 'members' ? props.screen : sheetTab} onContextMenu={(event) => event.preventDefault()}>
     <header className="sheet-titlebar">
-      <button className="sheet-filemark" onClick={props.onReset} aria-label="返回谁是卧底游戏首页">表</button>
-      <div><strong>{props.room ? `协作数据表 · ${props.room.code}` : '协作数据表'}</strong><span>{props.remoteMode ? '已同步' : '已保存到本机'} · {CURRENT_RELEASE.version}</span></div>
+      <span className="sheet-filemark" aria-hidden="true">表</span>
+      <div><strong>协作工作簿 · A2</strong><span>{props.room ? `编号 ${props.room.code}` : '协作记录模板'} · {CURRENT_RELEASE.version}</span></div>
       <div className="sheet-title-actions">
         <a href="../" aria-label="返回摸鱼游戏工作台">目录</a>
         <ReleaseNotificationButton open={notificationOpen} onToggle={() => setNotificationOpen((open) => !open)} />
         <button className="sheet-help-action" onClick={openGuideSheet} aria-label="在表格中查看谁是卧底游玩步骤与核心规则">帮助</button>
         {props.room && <><button className="sheet-room-action" onClick={props.onCopyRoomCode} aria-label="复制谁是卧底游戏房间码">复制编号</button><button className="sheet-room-action" onClick={props.onCopyInviteLink} aria-label="复制带房间编号的谁是卧底邀请链接">复制邀请链接</button><button className="sheet-room-action" onClick={props.onCopyCurrentRule} aria-label="复制谁是卧底本轮公共规则">复制备注</button></>}
+        {props.room && <button className="sheet-room-action" onClick={props.onReset}>离开页面</button>}
         <button className="sheet-compatibility-action" onClick={() => { privacy.current?.mask('mode-change'); props.onSwitchMode(); }} aria-label="切换到兼容保留的沉浸式谁是卧底游戏界面">兼容视图</button>
       </div>
     </header>
-    <nav className="sheet-ribbon" aria-label="表格工具栏"><button className="is-current">开始</button><button>数据</button><button>视图</button><span /><button onClick={() => privacy.current?.mask('escape')} aria-label="立即隐藏秘密词语">隐藏敏感内容</button></nav>
+    <nav className="sheet-ribbon" aria-label="表格工具栏"><button className={sheetTab === 'members' ? 'is-current' : ''} onClick={() => setSheetTab('members')}>开始</button><button disabled={!props.room} className={sheetTab === 'rules' ? 'is-current' : ''} onClick={() => setSheetTab('rules')}>设置</button><button disabled={!props.room} className={sheetTab === 'history' ? 'is-current' : ''} onClick={() => setSheetTab('history')}>记录</button><span /><button onClick={() => privacy.current?.mask('escape')} aria-label="立即隐藏秘密词语">隐藏敏感内容</button></nav>
     <div className="sheet-formula"><span className="sheet-namebox">{activeCell}</span><span className="sheet-fx">fx</span><output aria-live="polite">{formulaValue}</output></div>
     <div className="sheet-workspace">
       <div className="sheet-canvas">
         <section className="undercover-stage-summary" aria-labelledby="sheet-current-guide">
           <span>步骤 {workflowGuide.step + 1}/5</span>
           <div><strong id="sheet-current-guide">{workflowGuide.title}</strong><p>{workflowGuide.instruction}</p></div>
-          <small>{workflowGuide.location}</small>
+          <button className="workbook-note-trigger" onClick={() => setDetailHint({ title: workflowGuide.title, text: `${workflowGuide.instruction}\n${workflowGuide.location}` })}>操作说明</button>
         </section>
         {action}
         {mobileAction}
         {props.screen === 'game' && props.room?.status === 'discussion' && <aside className="sheet-rule-banner" aria-label="谁是卧底本轮公共表达规则">
           <span>Round_{String(props.room.round).padStart(2, '0')} 公共规则</span>
-          <strong>{getRoundChallenge(props.room, props.room.round)?.text ?? '本轮自由表达'}</strong>
+          <button className="workbook-note-trigger" onClick={() => setDetailHint({ title: '本轮描述规则', text: getRoundChallenge(props.room!, props.room!.round)?.text ?? '本轮自由表达' })}>{getRoundChallenge(props.room, props.room.round)?.text ?? '本轮自由表达'} · 查看完整规则</button>
           <small>当前输入 {props.roundContentDraft.length} 字 · 玩家自觉遵守 · 不影响提交</small>
         </aside>}
-        <Grid rows={rows} activeCell={activeCell} emphasizedCells={workflowGuide.emphasizedCells} onActivate={(cell) => setCellSelection({ flowKey, cell })} />
+        <Grid rows={rows} onNote={sheetTab === 'guide' || sheetTab === 'rules' || props.screen !== 'game' ? setDetailHint : undefined} activeCell={activeCell} emphasizedCells={workflowGuide.emphasizedCells} onActivate={(cell) => setCellSelection({ flowKey, cell })} />
       </div>
       <ReleaseNotificationPanel open={notificationOpen} onClose={() => setNotificationOpen(false)} />
     </div>
-    <footer className="sheet-tabs"><button aria-label="新增工作表">＋</button>{sheetTabs.map((tab) => <button className={sheetTab === tab ? 'is-current' : ''} onClick={() => setSheetTab(tab)} key={tab}>{tabLabel(tab)}</button>)}<span /><small>就绪 · 自动同步 · 保护视图：闲置 {PRIVACY_IDLE_MS / 1000} 秒遮挡，显示 {PRIVATE_REVEAL_MS / 1000} 秒</small></footer>
-    {detailHint?.scope === flowKey && <aside className="sheet-detail-popover" role="status" aria-live="polite"><div><strong>{detailHint.title}</strong><button onClick={() => setDetailHint(null)} aria-label="关闭完整提示">×</button></div><p>{detailHint.text}</p></aside>}
-    {props.notice && <div className={`sheet-toast sheet-toast--${props.notice.kind}`} role="status">{neutralizeGameCopy(props.notice.text)}</div>}
+    <WorkbookFeedback note={detailHint} onClose={() => setDetailHint(null)} status={props.notice ? neutralizeGameCopy(props.notice.text) : props.room ? '就绪 · 私密词牌会在切换工作表、失焦或闲置后遮挡。' : '就绪 · 选择创建或加入。完整规则见“玩法说明”。'} kind={props.notice?.kind} />
+    <footer className="sheet-tabs">{sheetTabs.map((tab) => <button className={sheetTab === tab ? 'is-current' : ''} disabled={!props.room && (tab === 'rules' || tab === 'history')} onClick={() => tab === 'guide' ? openGuideSheet() : setSheetTab(tab)} key={tab}>{tabLabel(tab)}</button>)}<span /><small>就绪 · 自动同步 · 保护视图：闲置 {PRIVACY_IDLE_MS / 1000} 秒遮挡，显示 {PRIVATE_REVEAL_MS / 1000} 秒</small></footer>
   </main>;
 }

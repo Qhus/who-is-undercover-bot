@@ -8,6 +8,7 @@ import {
   SOUP_MIN_PLAYERS, createSoupRoom, soupVerdictLabel, validateSoupFeedback,
   type SoupFeedbackInput, type SoupPrivateRound, type SoupQuestionVerdict, type SoupRoom, type SoupSolutionVerdict,
 } from '@/lib/soup-game';
+import { WorkbookColumns, WorkbookFeedback, WorkbookText, useWorkbookNotes, useWorkbookNotice } from './workbook-feedback';
 import { ReleaseNotificationButton, ReleaseNotificationPanel } from './release-notification';
 import { acceptSoupRoom, canEditSoupDraft, createSoupDraftController, soupRoundScope, type SoupDraftStatus } from '@/lib/soup-draft';
 
@@ -59,7 +60,8 @@ export default function SoupSpreadsheetMode() {
   const [feedbackSent, setFeedbackSent] = useState(false);
   const [activeSheet, setActiveSheet] = useState<SoupSheetId>('home');
   const [activeCell, setActiveCell] = useState('A1');
-  const [notice, setNotice] = useState('调查记录：一名成员掌握完整资料，其余成员轮流提出是非问题或尝试还原。');
+  const [notice, setNotice, noticeKind] = useWorkbookNotice('就绪 · 题库为盲测候选内容，欢迎题后反馈。');
+  const { note, setNote } = useWorkbookNotes(`${room?.code ?? ''}|${room?.sessionNo ?? ''}|${room?.round ?? ''}|${room?.status ?? ''}|${activeSheet}`);
   const [busy, setBusy] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [secretVisible, setSecretVisible] = useState(false);
@@ -116,17 +118,17 @@ export default function SoupSpreadsheetMode() {
         setRoom(found);
         setNotice('已恢复上次打开的调查房间。');
       } catch {
-        if (!disposed && epoch === viewEpoch.current) setNotice('上次房间暂时无法恢复，可重新输入房间编号加入。');
+        if (!disposed && epoch === viewEpoch.current) setNotice('上次房间暂时无法恢复，可重新输入房间编号加入。', 'error');
       }
     })();
     return () => { disposed = true; };
-  }, [cloudReady]);
+  }, [cloudReady, setNotice]);
 
   useEffect(() => {
     if (!room?.code || !playerId || !cloudReady) return;
     const code = room.code;
-    return getCloudStore().watchSoupRoom(code, (incoming) => setRoom((current) => current?.code === code ? acceptSoupRoom(current, incoming) : current), (error) => setNotice(readableError(error, '房间同步失败')));
-  }, [cloudReady, playerId, room?.code]);
+    return getCloudStore().watchSoupRoom(code, (incoming) => setRoom((current) => current?.code === code ? acceptSoupRoom(current, incoming) : current), (error) => setNotice(readableError(error, '房间同步失败'), 'error'));
+  }, [cloudReady, playerId, room?.code, setNotice]);
 
   const draftRoomCode = room?.code ?? '';
   const draftRound = room?.round ?? 0;
@@ -165,11 +167,11 @@ export default function SoupSpreadsheetMode() {
       let local: string | null = null;
       try { local = sessionStorage.getItem(cacheKey); } catch { /* Storage can be disabled. */ }
       controller.hydrate(found, local);
-    }).catch((error) => { if (!disposed) setNotice(readableError(error, '个人工作区暂时无法读取，请点击“重新读取”。')); });
+    }).catch((error) => { if (!disposed) setNotice(readableError(error, '个人工作区暂时无法读取，请点击“重新读取”。'), 'error'); });
     const retry = () => { void controller.flush(); };
     window.addEventListener('online', retry);
     return () => { disposed = true; controller.dispose(); window.removeEventListener('online', retry); if (draftController.current === controller) draftController.current = null; };
-  }, [draftRoomCode, draftRound, draftSession, playerId, privateReload]);
+  }, [draftRoomCode, draftRound, draftSession, playerId, privateReload, setNotice]);
 
   useEffect(() => {
     draftController.current?.setEnabled(draftEditable);
@@ -194,13 +196,13 @@ export default function SoupSpreadsheetMode() {
       setNotice(result.outcome === 'stale' ? '状态已更新，请确认当前轮次后重试。' : result.message);
       return result.state;
     } catch (error) {
-      if (epoch === viewEpoch.current) setNotice(readableError(error, '操作未确认，可重试；本地草稿仍保留。'));
+      if (epoch === viewEpoch.current) setNotice(readableError(error, '操作未确认，可重试；本地草稿仍保留。'), 'error');
       return null;
     } finally {
       setBusy(false);
       busyRef.current = false;
     }
-  }, [room]);
+  }, [room, setNotice]);
 
   const remember = (code: string, id: string) => {
     window.localStorage.setItem(`soup-player-${code}`, id);
@@ -209,8 +211,8 @@ export default function SoupSpreadsheetMode() {
 
   const createRemote = async () => {
     if (busyRef.current) return;
-    if (!cloudReady) return setNotice('测试站尚未配置 CloudBase 环境变量。');
-    if (!ownerName.trim()) return setNotice('请先填写你的称呼。');
+    if (!cloudReady) return setNotice('测试站尚未配置 CloudBase 环境变量。', 'error');
+    if (!ownerName.trim()) return setNotice('请先填写你的称呼。', 'error');
     busyRef.current = true;
     viewEpoch.current += 1;
     setBusy(true);
@@ -222,15 +224,15 @@ export default function SoupSpreadsheetMode() {
       setPlayerId(next.ownerId);
       setNotice(`房间 ${next.code} 已创建，请把邀请链接发给朋友。`);
     } catch (error) {
-      setNotice(readableError(error, '创建房间失败'));
+      setNotice(readableError(error, '创建房间失败'), 'error');
     } finally { setBusy(false); busyRef.current = false; }
   };
 
   const joinRemote = async () => {
     if (busyRef.current) return;
     const code = joinCode.trim().toUpperCase();
-    if (!cloudReady) return setNotice('测试站尚未配置 CloudBase 环境变量。');
-    if (!joinName.trim() || code.length !== 6) return setNotice('请填写称呼和六位房间编号。');
+    if (!cloudReady) return setNotice('测试站尚未配置 CloudBase 环境变量。', 'error');
+    if (!joinName.trim() || code.length !== 6) return setNotice('请填写称呼和六位房间编号。', 'error');
     busyRef.current = true;
     viewEpoch.current += 1;
     setBusy(true);
@@ -242,7 +244,7 @@ export default function SoupSpreadsheetMode() {
       setPlayerId(joined.playerId);
       setNotice(`已加入房间 ${code}。`);
     } catch (error) {
-      setNotice(readableError(error, '加入房间失败'));
+      setNotice(readableError(error, '加入房间失败'), 'error');
     } finally { setBusy(false); busyRef.current = false; }
   };
 
@@ -262,7 +264,7 @@ export default function SoupSpreadsheetMode() {
       if (scope !== scopeRef.current) return;
       setFeedbackSent(true);
       setNotice('本题反馈已记录，谢谢。');
-    } catch (error) { if (scope === scopeRef.current) setNotice(readableError(error, '反馈提交失败')); }
+    } catch (error) { if (scope === scopeRef.current) setNotice(readableError(error, '反馈提交失败'), 'error'); }
     finally { busyRef.current = false; setBusy(false); }
   };
 
@@ -281,7 +283,7 @@ export default function SoupSpreadsheetMode() {
     const invite = new URL(window.location.href);
     invite.search = ''; invite.hash = ''; invite.searchParams.set('room', room.code);
     try { await navigator.clipboard.writeText(invite.toString()); setNotice('邀请链接已复制。'); }
-    catch { setNotice('浏览器未允许复制，请复制地址栏并附上房间编号。'); }
+    catch { setNotice('浏览器未允许复制，请复制地址栏并附上房间编号。', 'error'); }
   };
 
   const isOwner = room?.ownerId === playerId;
@@ -296,6 +298,7 @@ export default function SoupSpreadsheetMode() {
   const openGuide = () => { if (activeSheet !== 'guide') returnSheet.current = activeSheet; setActiveSheet('guide'); };
 
   const guideRows = [
+    row(['汤底侦探', '一人掌握汤底，其余人轮流提问或尝试还原，共同解开汤面。', '', '', '', '', '']),
     row(['步骤', '谁操作', '要做什么', '完成标志', '规则', '遇到问题', '']),
     row(['01 开始煲汤', '负责人', '3–10 人到齐后开始', '随机选出汤主', '人人担任过汤主前不重复', '人数不足不能开始', '']),
     row(['02 阅读资料', '汤主', '打开“汤主资料”，查看汤底、关键事实和参考判定', '点击“我已看懂”', '侦探只能看到汤面', 'Esc、切换工作表或离开窗口即隐藏；闲置 60 秒也会隐藏', '']),
@@ -377,14 +380,13 @@ export default function SoupSpreadsheetMode() {
     ? `${statusLabels[room.status]} · ${room.currentDetectiveName ? `当前：${room.currentDetectiveName}` : '等待开始'} · ${room.effectiveQuestionCount}/${room.maxQuestions} 问`
     : `${soupSheets.find(([id]) => id === activeSheet)?.[1]} · 房间 ${room.code} · 第 ${room.round} 题`;
 
-  return <main data-soup-sheet={activeSheet} className={`sheet-app soup-sheet${activeSheet === 'guide' ? ' sheet-app--guide' : ''}`}>
+  return <main data-soup-sheet={activeSheet} className={`sheet-app workbook-unified soup-sheet${activeSheet === 'guide' ? ' sheet-app--guide' : ''}`}>
     <header className="sheet-titlebar">
       <span className="sheet-filemark" aria-hidden="true">表</span>
       <div><strong>协作工作簿 · A5</strong><span>{room ? `编号 ${room.code} · ${statusLabels[room.status]}` : '调查记录模板'}</span></div>
       <div className="sheet-title-actions"><a className="sheet-room-action" href="../">目录</a>{room && <button onClick={copyInvite}>复制链接</button>}<ReleaseNotificationButton open={notificationOpen} onToggle={() => setNotificationOpen((open) => !open)} /></div>
     </header>
-    <nav className="sheet-ribbon"><button className={activeSheet === 'home' ? 'is-current' : ''} onClick={() => setActiveSheet('home')}>开始</button><button onClick={openGuide}>帮助</button>{activeSheet === 'guide' && <button onClick={() => setActiveSheet(returnSheet.current)}>返回原工作表</button>}<button onClick={() => privacy.current?.mask('escape')}>隐藏敏感内容</button><span /></nav>
-    <div className="sheet-toolbar" aria-hidden="true"><span>撤销</span><span>重做</span><i /><b>系统字体</b><b>11</b><i /><strong>B</strong><em>I</em><u>U</u><i /><span>左对齐</span><span>自动换行</span><span>筛选</span></div>
+    <nav className="sheet-ribbon"><button className={activeSheet === 'home' ? 'is-current' : ''} onClick={() => setActiveSheet('home')}>开始</button><button className={activeSheet === 'guide' ? 'is-current' : ''} onClick={openGuide}>帮助</button>{activeSheet === 'guide' && <button onClick={() => setActiveSheet(returnSheet.current)}>返回原工作表</button>}<button disabled={!secretVisible} onClick={() => privacy.current?.mask('escape')}>隐藏敏感内容</button><span /></nav>
     <div className="sheet-formula"><span className="sheet-namebox">{activeCell}</span><span className="sheet-fx">fx</span><output>{formula}</output></div>
     {room && <div className="sheet-commandbar">
       {isOwner && room.status === 'lobby' && <button className="sheet-primary-action" disabled={busy || activeCount < SOUP_MIN_PLAYERS} onClick={() => void apply('start_soup_game')}>开始煲汤</button>}
@@ -394,18 +396,19 @@ export default function SoupSpreadsheetMode() {
       {!privateRound && room.round > 0 && <button disabled={busy} onClick={() => setPrivateReload((value) => value + 1)}>重新读取</button>}
       {isCurrentDetective && room.status === 'investigating' && <strong>轮到你：在草稿格填写后，选择问题、还原或跳过。</strong>}
       {awaitingHost && <strong>{isHost ? '请判定当前提交。' : `等待汤主 ${room.hostName ?? ''} 判定。`}</strong>}
+      <button className="workbook-note-trigger" onClick={() => setNote({ title: '行动与保存说明', text: '等待时可以修改自己的草稿。“已保存”只代表草稿同步，不是正式提交。轮到你时，在提交问题、提交还原、跳过本轮中选一个；汤主判定后自动换下一人。完整问答在“问答记录”，不会截断正文。' })}>操作说明</button>
     </div>}
     {confirmation && <div className="sheet-commandbar soup-confirm" role="group" aria-label="操作确认"><strong>{confirmation === 'end_soup_game' ? '结束本局将停止所有行动，并公开本题汤底。' : '公布后将结束本题，所有人都能看到汤底。'}</strong><button disabled={busy} onClick={() => { void apply(confirmation); setConfirmation(null); }}>确认{confirmation === 'end_soup_game' ? '结束' : '公布'}</button><button onClick={() => setConfirmation(null)}>取消</button></div>}
     {draftEditable && !isHost && draftState === 'error' && <div className="sheet-commandbar"><span>草稿暂未同步，当前文字仍保留。</span><button onClick={() => void draftController.current?.flush()}>重试保存</button></div>}
     {draftEditable && !isHost && draftState === 'conflict' && <div className="sheet-commandbar"><span>本地草稿与云端不同，请选择保留哪一份。</span><button onClick={() => draftController.current?.resolveConflict(true)}>保存当前文字</button><button onClick={() => draftController.current?.resolveConflict(false)}>采用云端草稿</button></div>}
     <div className="sheet-workspace">
       <div className="sheet-canvas">
-        {!room && <section className="hub-intro"><div><span>使用说明</span><strong>A5 · 汤底侦探</strong><p>3–10 人，一人掌握完整资料，其余成员在表格内轮流提问和还原；题库当前为盲测候选内容。</p></div></section>}
-        <div className="sheet-grid-scroll"><table className="sheet-grid" aria-label={soupSheets.find(([id]) => id === activeSheet)?.[1]}><thead><tr><th />{columns.map((column) => <th key={column}>{column}</th>)}</tr></thead><tbody>{rows.map((values, rowIndex) => <tr key={rowIndex}><th>{rowIndex + 1}</th>{columns.map((column, columnIndex) => { const coordinate = `${column}${rowIndex + 1}`; return <td className={coordinate === activeCell ? 'is-active-cell' : ''} onClick={() => setActiveCell(coordinate)} key={column}>{values[columnIndex] ?? ''}</td>; })}</tr>)}</tbody></table></div>
+        {!room && <section className="hub-intro"><div><span>使用说明</span><strong>创建或加入</strong><p>3–10 人；填写称呼创建房间，或凭六位编号加入。流程见“玩法说明”。</p></div></section>}
+        <div className="sheet-grid-scroll"><table className="sheet-grid" aria-label={soupSheets.find(([id]) => id === activeSheet)?.[1]}><WorkbookColumns count={7} /><thead><tr><th />{columns.map((column) => <th key={column}>{column}</th>)}</tr></thead><tbody>{rows.map((values, rowIndex) => <tr key={rowIndex}><th>{rowIndex + 1}</th>{columns.map((column, columnIndex) => { const coordinate = `${column}${rowIndex + 1}`; return <td className={coordinate === activeCell ? 'is-active-cell' : ''} onClick={() => setActiveCell(coordinate)} key={column}>{(activeSheet === 'guide' || activeSheet === 'records' || (activeSheet === 'home' && ['当前汤面', '待汤主判定', '公开提示', '最新记录', '题后处理'].includes(String(values[0])) && columnIndex === 1)) && typeof values[columnIndex] === 'string' && String(values[columnIndex]).length > 16 ? <WorkbookText text={String(values[columnIndex])} title={`${coordinate} 完整内容`} onOpen={setNote} /> : values[columnIndex] ?? ''}</td>; })}</tr>)}</tbody></table></div>
       </div>
       <ReleaseNotificationPanel open={notificationOpen} onClose={() => setNotificationOpen(false)} />
     </div>
-    {notice && <div className="soup-status" role="status">{notice}</div>}
+    <WorkbookFeedback note={note} onClose={() => setNote(null)} status={notice} kind={noticeKind} />
     <footer className="sheet-tabs">{soupSheets.map(([id, label]) => <button disabled={!room && id !== 'home' && id !== 'guide'} className={activeSheet === id ? 'is-current' : ''} onClick={() => id === 'guide' ? openGuide() : setActiveSheet(id)} key={id}>{label}</button>)}<a href="../">目录</a><span /><small>汤底仅本题汤主可见</small></footer>
   </main>;
 }

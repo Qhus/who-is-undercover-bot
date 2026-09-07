@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { CURRENT_RELEASE, RELEASE_NOTES } from '@/lib/release-notes';
 import { ReleaseNotificationButton, ReleaseNotificationPanel } from './release-notification';
 
+import { WorkbookColumns, WorkbookFeedback, WorkbookText, useWorkbookNotes } from './workbook-feedback';
+
 type HubTab = 'catalog' | 'guide' | 'updates';
 
 const columns = ['A', 'B', 'C', 'D', 'E', 'F'];
@@ -27,6 +29,9 @@ function tabLabel(tab: HubTab): string {
 
 export default function GameHub() {
   const [tab, setTab] = useState<HubTab>('catalog');
+  const [returnTab, setReturnTab] = useState<HubTab>('catalog');
+  const { note, setNote } = useWorkbookNotes(tab);
+  const openGuide = () => { if (tab !== 'guide') setReturnTab(tab); setTab('guide'); };
   const [activeCell, setActiveCell] = useState('A2');
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [undercoverRoom, setUndercoverRoom] = useState<string | null>(null);
@@ -69,8 +74,6 @@ export default function GameHub() {
       ['A4', '2–8 人', '15–25 分钟', '围绕同一离谱案件匿名陈词，评选最会狡辩和最像真的答案', <a className="sheet-action hub-launch" href="./court/" key="court" aria-label="打开 A4">{courtRoom ? '继续 / 打开' : '打开'}</a>, courtRoom ? `可恢复编号 ${courtRoom}` : '可创建或加入'],
       ['A5', '3–10 人', '15–35 分钟', '一人掌握完整资料，其余成员轮流提问、还原并共同解开汤面', <a className="sheet-action hub-launch" href="./soup/" key="soup" aria-label="打开 A5">{soupRoom ? '继续 / 打开' : '打开'}</a>, soupRoom ? `可恢复编号 ${soupRoom}` : '开发测试候选'],
       ['', '', '', '', '', ''],
-      ['页面调整', '根页面现为目录', 'A2–A5 使用独立页面', '返回目录不影响进行中的流程', '收藏本页即可', '四项数据相互隔离'],
-      ['使用建议', '第一次先读“玩法说明”', '负责人只需创建和开始', '其余阶段按表格提示操作', '邀请链接可直接发送', '刷新可恢复联机状态'],
     ];
   }, [clueRoom, courtRoom, soupRoom, tab, undercoverRoom]);
 
@@ -78,14 +81,13 @@ export default function GameHub() {
     ? activeCell === 'A5' ? 'A5：轮流提问或尝试还原，由本题汤主进行是非判定' : activeCell === 'A4' ? 'A4：同案匿名陈词，证据突袭后继续补充说明' : activeCell === 'A3' ? 'A3：成员按本题规则填写关联词，负责人最多判断三次' : '目录：根据摘要从 A2、A3、A4 或 A5 选择一个项目'
     : tab === 'guide' ? '五步开始：选游戏 → 建房 → 加入 → 按提示操作 → 返回目录' : `自动更新说明 · 当前版本 ${CURRENT_RELEASE.version}`;
 
-  return <main className="sheet-app hub-sheet">
+  return <main className="sheet-app workbook-unified hub-sheet" data-workbook-sheet={tab}>
     <header className="sheet-titlebar">
       <span className="sheet-filemark" aria-hidden="true">表</span>
       <div><strong>协作工作簿 · 目录</strong><span>流程入口 · {CURRENT_RELEASE.version}</span></div>
       <div className="sheet-title-actions"><a className="sheet-room-action" href="./undercover/" aria-label="打开 A2">A2</a><a className="sheet-room-action" href="./clue/" aria-label="打开 A3">A3</a><a className="sheet-room-action" href="./court/" aria-label="打开 A4">A4</a><a className="sheet-room-action" href="./soup/" aria-label="打开 A5">A5</a><ReleaseNotificationButton open={notificationOpen} onToggle={() => setNotificationOpen((open) => !open)} /></div>
     </header>
-    <nav className="sheet-ribbon" aria-label="游戏工作台工具栏"><button className="is-current" onClick={() => setTab('catalog')}>开始</button><button onClick={() => setTab('guide')}>帮助</button><button onClick={() => setTab('updates')}>更新</button><span /></nav>
-    <div className="sheet-toolbar" aria-hidden="true"><span>撤销</span><span>重做</span><i /><b>系统字体</b><b>11</b><i /><strong>B</strong><em>I</em><u>U</u><i /><span>左对齐</span><span>自动换行</span><span>筛选</span></div>
+    <nav className="sheet-ribbon" aria-label="游戏工作台工具栏"><button className={tab === 'catalog' ? 'is-current' : ''} onClick={() => setTab('catalog')}>开始</button><button className={tab === 'guide' ? 'is-current' : ''} onClick={openGuide}>帮助</button><button className={tab === 'updates' ? 'is-current' : ''} onClick={() => setTab('updates')}>更新</button>{tab === 'guide' && <button onClick={() => setTab(returnTab)}>返回原工作表</button>}<span /></nav>
     <div className="sheet-formula"><span className="sheet-namebox">{activeCell}</span><span className="sheet-fx">fx</span><output>{formula}</output></div>
     <div className="sheet-workspace">
       <div className="sheet-canvas">
@@ -93,16 +95,17 @@ export default function GameHub() {
           <div><span>工作簿说明</span><strong>{tabLabel(tab)}</strong><p>{tab === 'catalog' ? '根据摘要选择 A2、A3、A4 或 A5，再点击绿色按钮打开；已有记录会显示可恢复的编号。' : tab === 'guide' ? '照着表格从上往下做，不需要提前记住完整规则。' : '更新内容随网站版本自动展示，不记录已读状态，也不发送推送。'}</p></div>
           <div className="hub-mobile-launcher"><a href="./undercover/" aria-label="打开 A2">打开 A2</a><a href="./clue/" aria-label="打开 A3">打开 A3</a><a href="./court/" aria-label="打开 A4">打开 A4</a><a href="./soup/" aria-label="打开 A5">打开 A5</a></div>
         </section>
-        <div className="sheet-grid-scroll"><table className="sheet-grid" aria-label={tabLabel(tab)}>
+        <div className="sheet-grid-scroll"><table className="sheet-grid" aria-label={tabLabel(tab)}><WorkbookColumns />
           <thead><tr><th className="sheet-corner" />{columns.map((column) => <th key={column}>{column}</th>)}</tr></thead>
           <tbody>{rows.map((row, rowIndex) => <tr key={rowIndex}><th>{rowIndex + 1}</th>{columns.map((column, columnIndex) => {
             const coordinate = `${column}${rowIndex + 1}`;
-            return <td className={coordinate === activeCell ? 'is-active-cell' : ''} onClick={() => setActiveCell(coordinate)} key={column}>{row[columnIndex] ?? ''}</td>;
+            return <td className={coordinate === activeCell ? 'is-active-cell' : ''} onClick={() => setActiveCell(coordinate)} key={column}>{typeof row[columnIndex] === 'string' && String(row[columnIndex]).length > 16 ? <WorkbookText title={`${coordinate} 完整说明`} text={String(row[columnIndex])} onOpen={setNote} /> : row[columnIndex] ?? ''}</td>;
           })}</tr>)}</tbody>
         </table></div>
       </div>
       <ReleaseNotificationPanel open={notificationOpen} onClose={() => setNotificationOpen(false)} />
     </div>
-    <footer className="sheet-tabs"><button aria-label="新增工作表">＋</button>{(['catalog', 'guide', 'updates'] as const).map((item) => <button className={tab === item ? 'is-current' : ''} onClick={() => setTab(item)} key={item}>{tabLabel(item)}</button>)}<a href="./undercover/" aria-label="打开 A2">A2</a><a href="./clue/" aria-label="打开 A3">A3</a><a href="./court/" aria-label="打开 A4">A4</a><a href="./soup/" aria-label="打开 A5">A5</a><span /><small>就绪 · 四项流程相互独立 · 收藏本页即可</small></footer>
+    <WorkbookFeedback note={note} onClose={() => setNote(null)} status="就绪 · 点击摘要查看完整批注，选择“打开”进入对应页面。" />
+    <footer className="sheet-tabs">{(['catalog', 'guide', 'updates'] as const).map((item) => <button className={tab === item ? 'is-current' : ''} onClick={() => item === 'guide' ? openGuide() : setTab(item)} key={item}>{tabLabel(item)}</button>)}<a href="./undercover/" aria-label="打开 A2">A2</a><a href="./clue/" aria-label="打开 A3">A3</a><a href="./court/" aria-label="打开 A4">A4</a><a href="./soup/" aria-label="打开 A5">A5</a><span /><small>就绪 · 四项流程相互独立 · 收藏本页即可</small></footer>
   </main>;
 }

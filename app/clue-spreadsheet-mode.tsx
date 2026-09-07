@@ -24,10 +24,11 @@ import {
 } from '@/lib/clue-content';
 import { getCloudStore, type ClueActionType } from '@/lib/cloudbase-store';
 import { makeId } from '@/lib/game';
+import { WorkbookColumns, WorkbookFeedback, WorkbookText, useWorkbookNotes, useWorkbookNotice } from './workbook-feedback';
 import { ReleaseNotificationButton, ReleaseNotificationPanel } from './release-notification';
 
 const clueSheets = [
-  ['home', '提示首页'],
+  ['home', '当前流程'],
   ['members', '成员状态'],
   ['clues', '本轮记录'],
   ['scores', '双榜单'],
@@ -72,7 +73,10 @@ export default function ClueSpreadsheetMode() {
   const [guessText, setGuessText] = useState('');
   const [ratings, setRatings] = useState<Record<string, number>>({});
   const [activeSheet, setActiveSheet] = useState<ClueSheetId>('home');
-  const [notice, setNotice] = useState('联想协作记录：每人轮流负责判断，其他成员提交简短关联词；评分后还可送出一枚同行点赞。');
+  const [notice, setNotice, noticeKind] = useWorkbookNotice('就绪 · 填写称呼创建房间，或凭六位编号加入。');
+  const returnSheet = useRef<ClueSheetId>('home');
+  const openGuide = () => { if (activeSheet !== 'guide') returnSheet.current = activeSheet; setActiveSheet('guide'); };
+  const { note, setNote } = useWorkbookNotes(`${room?.code ?? ''}|${room?.sessionNo ?? ''}|${room?.round ?? ''}|${room?.status ?? ''}|${activeSheet}`);
   const [busy, setBusy] = useState(false);
   const [now, setNow] = useState(0);
   const scopeRef = useRef('');
@@ -102,16 +106,16 @@ export default function ClueSpreadsheetMode() {
         if (found.round > 0) await loadPrivateRound(found.code);
         setNotice('已恢复上次打开的提示房间。');
       } catch {
-        setNotice('上次房间暂时无法恢复，可重新输入房间编号加入。');
+        setNotice('上次房间暂时无法恢复，可重新输入房间编号加入。', 'error');
       }
     })();
-  }, [cloudReady, loadPrivateRound]);
+  }, [cloudReady, loadPrivateRound, setNotice]);
 
   const activeCode = room?.code ?? '';
   useEffect(() => {
     if (!activeCode || !playerId || !cloudReady) return;
-    return getCloudStore().watchClueRoom(activeCode, setRoom, (error) => setNotice(readableError(error, '房间同步失败')));
-  }, [activeCode, cloudReady, playerId]);
+    return getCloudStore().watchClueRoom(activeCode, setRoom, (error) => setNotice(readableError(error, '房间同步失败'), 'error'));
+  }, [activeCode, cloudReady, playerId, setNotice]);
 
   useEffect(() => {
     if (!room || !playerId || room.round <= 0) return;
@@ -123,8 +127,8 @@ export default function ClueSpreadsheetMode() {
     setGuessText('');
     setRatings({});
     setPrivateRound(null);
-    void loadPrivateRound(room.code).catch(() => setNotice('本轮私密信息暂时无法读取，请刷新重试。'));
-  }, [loadPrivateRound, playerId, room]);
+    void loadPrivateRound(room.code).catch(() => setNotice('本轮私密信息暂时无法读取，请刷新重试。', 'error'));
+  }, [loadPrivateRound, playerId, room, setNotice]);
 
   useEffect(() => {
     if (!room || !playerId || !scopeRef.current || privateRound?.clueConfirmed) return;
@@ -139,10 +143,10 @@ export default function ClueSpreadsheetMode() {
       setNotice(result.outcome === 'stale' ? '房间状态已经更新，请重新操作。' : result.message);
       return result.state;
     } catch (error) {
-      setNotice(readableError(error, '操作失败'));
+      setNotice(readableError(error, '操作失败'), 'error');
       return null;
     }
-  }, [room]);
+  }, [room, setNotice]);
 
   useEffect(() => {
     const tick = () => {
@@ -163,8 +167,8 @@ export default function ClueSpreadsheetMode() {
   };
 
   const createRemote = async () => {
-    if (!cloudReady) return setNotice('测试站尚未配置 CloudBase 环境变量。');
-    if (!ownerName.trim()) return setNotice('请先填写你的称呼。');
+    if (!cloudReady) return setNotice('测试站尚未配置 CloudBase 环境变量。', 'error');
+    if (!ownerName.trim()) return setNotice('请先填写你的称呼。', 'error');
     setBusy(true);
     try {
       const seed = createClueRoom(ownerName, mode, difficulty);
@@ -174,7 +178,7 @@ export default function ClueSpreadsheetMode() {
       setRoom(next);
       setNotice(`房间 ${next.code} 已创建，请把邀请链接发给朋友。`);
     } catch (error) {
-      setNotice(readableError(error, '创建房间失败'));
+      setNotice(readableError(error, '创建房间失败'), 'error');
     } finally {
       setBusy(false);
     }
@@ -182,8 +186,8 @@ export default function ClueSpreadsheetMode() {
 
   const joinRemote = async () => {
     const code = joinCode.trim().toUpperCase();
-    if (!cloudReady) return setNotice('测试站尚未配置 CloudBase 环境变量。');
-    if (!joinName.trim() || code.length !== 6) return setNotice('请填写称呼和六位房间编号。');
+    if (!cloudReady) return setNotice('测试站尚未配置 CloudBase 环境变量。', 'error');
+    if (!joinName.trim() || code.length !== 6) return setNotice('请填写称呼和六位房间编号。', 'error');
     setBusy(true);
     try {
       const requestedId = window.localStorage.getItem(`clue-player-${code}`) ?? makeId('clue-player');
@@ -193,7 +197,7 @@ export default function ClueSpreadsheetMode() {
       setRoom(joined.room);
       setNotice(`已加入房间 ${code}。`);
     } catch (error) {
-      setNotice(readableError(error, '加入房间失败'));
+      setNotice(readableError(error, '加入房间失败'), 'error');
     } finally {
       setBusy(false);
     }
@@ -222,7 +226,7 @@ export default function ClueSpreadsheetMode() {
       await navigator.clipboard.writeText(invite.toString());
       setNotice('邀请链接已复制，群友打开后只需填写称呼。');
     } catch {
-      setNotice('浏览器未允许复制，请复制地址栏链接并附上房间编号。');
+      setNotice('浏览器未允许复制，请复制地址栏链接并附上房间编号。', 'error');
     }
   };
 
@@ -231,13 +235,13 @@ export default function ClueSpreadsheetMode() {
       const clean = validateClue(clueText, privateRound?.targetWord ?? null, clueMaxLength, clueMinLength);
       void apply('confirm_clue', { clueText: clean }).then((next) => next && loadPrivateRound(next.code));
     } catch (error) {
-      setNotice(readableError(error, '提示确认失败'));
+      setNotice(readableError(error, '提示确认失败'), 'error');
     }
   };
 
   const submitGuess = async () => {
     const clean = guessText.trim();
-    if (!clean) return setNotice('请先填写你的猜测。');
+    if (!clean) return setNotice('请先填写你的猜测。', 'error');
     const next = await apply('submit_clue_guess', { guessText: clean });
     if (next?.status === 'guessing') setGuessText('');
   };
@@ -247,7 +251,7 @@ export default function ClueSpreadsheetMode() {
       validateRatings(ratings, room?.publicClues.map((clue) => clue.clueId) ?? []);
       void apply('confirm_clue_ratings', { ratings });
     } catch (error) {
-      setNotice(readableError(error, '评分确认失败'));
+      setNotice(readableError(error, '评分确认失败'), 'error');
     }
   };
 
@@ -297,13 +301,14 @@ export default function ClueSpreadsheetMode() {
 
   const tableRows = () => {
     if (activeSheet === 'guide') return <>
+      <tr><th>0</th><td>提示大王</td><td colSpan={5}>基于成熟获奖联想机制改编：看答案的人写提示，猜题的人负责发现联系，最后比较提示质量与猜题速度。</td></tr>
       <tr><th>1</th><td>一句话玩法</td><td colSpan={5}>每人轮流当一次猜题者；其他人看答案写提示，猜题者评分，提示者可给同行点赞，最后生成提示分、猜题速度与趣味称号。</td></tr>
       <tr><th>2</th><td>相同内容</td><td colSpan={5}>可以放心按自己的想法填写；相同内容仍按不同成员分别记录、分别计分。</td></tr>
       <tr><th>3</th><td>默认规则</td><td colSpan={5}>提示不能直接写出答案，也不要使用答案中的字；相同提示分别保留。每题如有特殊规则，会在填写处单独显示。</td></tr>
       <tr><th>4</th><td>质量评价</td><td colSpan={5}>1 分有点远，2 分说得通，3 分是好提示；4 分会标记“本轮最独特”。提示者还可给其他一条提示送出不计入总分的同行点赞。</td></tr>
       <tr><th>5</th><td>判断与推进</td><td colSpan={5}>负责人在 60 秒内最多尝试 3 次；猜中、三次未中或超时后都会公布答案并进入评分。</td></tr>
     </>;
-    if (!room) return <tr><th>1</th><td>工作表</td><td colSpan={5}>请先返回“提示首页”创建或加入房间。</td></tr>;
+    if (!room) return <tr><th>1</th><td>工作表</td><td colSpan={5}>请先返回“当前流程”创建或加入房间。</td></tr>;
     if (activeSheet === 'members') return <>
       <tr><th>1</th><td>席位</td><td>称呼</td><td>本轮角色</td><td>提示状态</td><td colSpan={2}>说明</td></tr>
       {room.players.map((player, index) => <tr key={player.id}><th>{index + 2}</th><td>{player.seat}</td><td>{player.name}{player.id === playerId ? '（你）' : ''}</td><td>{player.id === room.guesserId ? '猜题者' : room.status === 'lobby' ? '等待开始' : '提示者'}</td><td>{player.id === room.guesserId ? '无需提交提示' : room.clueStatuses[player.id] === 'confirmed' ? '已确认' : room.clueStatuses[player.id] === 'unconfirmed' ? '超时未确认' : '填写中'}</td><td colSpan={2}>{player.id === room.ownerId ? '房主' : '成员'}</td></tr>)}
@@ -314,22 +319,23 @@ export default function ClueSpreadsheetMode() {
     </>;
     if (activeSheet === 'clues') return <>
       <tr><th>1</th><td>编号</td><td colSpan={2}>提示内容</td><td>本题角色</td><td>作者</td><td>评分</td></tr>
-      {room.publicClues.length ? room.publicClues.map((clue, index) => <tr key={clue.clueId}><th>{index + 2}</th><td>{clue.displayCode}</td><td colSpan={2}>{clue.text}</td><td>{clue.roleName ? `${clue.roleName}：${clue.roleRule}` : room.publicRuleName ? `${room.publicRuleName}：${room.publicRuleText}` : '自由提示'}</td><td>{clue.authorName ?? '评分后揭晓'}</td><td>{clueActionCell(clue)}</td></tr>) : <tr><th>2</th><td>尚未汇总</td><td colSpan={5}>所有成员确认或倒计时结束后集中显示。</td></tr>}
+      {room.publicClues.length ? room.publicClues.map((clue, index) => <tr key={clue.clueId}><th>{index + 2}</th><td>{clue.displayCode}</td><td colSpan={2}><WorkbookText text={clue.text} title={`${clue.displayCode} 完整提示`} onOpen={setNote} /></td><td>{clue.roleName ? `${clue.roleName}：${clue.roleRule}` : room.publicRuleName ? `${room.publicRuleName}：${room.publicRuleText}` : '自由提示'}</td><td>{clue.authorName ?? '评分后揭晓'}</td><td>{clueActionCell(clue)}</td></tr>) : <tr><th>2</th><td>尚未汇总</td><td colSpan={5}>所有成员确认或倒计时结束后集中显示。</td></tr>}
     </>;
     return <tr><th>1</th><td>最近状态</td><td>{room.code}</td><td>第 {room.round}/{room.totalRounds || room.players.length} 轮</td><td>{statusName[room.status]}</td><td colSpan={2}>{notice}</td></tr>;
   };
 
-  return <main className="sheet-app clue-sheet">
+  return <main className="sheet-app workbook-unified clue-sheet" data-workbook-sheet={activeSheet}>
     <header className="sheet-titlebar">
-      <button className="sheet-filemark" onClick={leaveView}>表</button>
-      <div><strong>{room ? `提示填报表 · ${room.code}` : '提示填报表 · 联机工作簿'}</strong><span>联想协作机制 · 两项统计</span></div>
-      <div className="sheet-title-actions"><a href="../" aria-label="返回摸鱼游戏工作台">目录</a><ReleaseNotificationButton open={notificationOpen} onToggle={() => setNotificationOpen((open) => !open)} />{room && <><button className="sheet-room-action" onClick={() => navigator.clipboard?.writeText(room.code)}>复制房间编号</button><button className="sheet-room-action" onClick={copyInviteLink}>复制邀请链接</button><button className="sheet-room-action" onClick={leaveView}>返回提示首页</button></>}</div>
+      <span className="sheet-filemark" aria-hidden="true">表</span>
+      <div><strong>协作工作簿 · A3</strong><span>{room ? `编号 ${room.code}` : '联想填报模板'}</span></div>
+      <div className="sheet-title-actions"><a href="../" aria-label="返回摸鱼游戏工作台">目录</a><ReleaseNotificationButton open={notificationOpen} onToggle={() => setNotificationOpen((open) => !open)} />{room && <><button className="sheet-room-action" onClick={() => navigator.clipboard?.writeText(room.code)}>复制房间编号</button><button className="sheet-room-action" onClick={copyInviteLink}>复制邀请链接</button><button className="sheet-room-action" onClick={leaveView}>离开页面</button></>}</div>
     </header>
-    <nav className="sheet-ribbon"><button className="is-current">开始</button><button onClick={() => setActiveSheet('clues')}>记录</button><button onClick={() => setActiveSheet('scores')}>排名</button><span /></nav>
-    <div className="sheet-formula"><span className="sheet-namebox">A1</span><span className="sheet-fx">fx</span><output>{room ? `${statusName[room.status]} · ${room.guesserName ? `本轮负责人 ${room.guesserName}` : '等待开始'} · ${remaining(room.phaseDeadlineAt, now)} 秒` : '每人轮流负责判断；其他成员填写关联词；每轮结束后评价关联质量'}</output></div>
+    <nav className="sheet-ribbon" aria-label="A3 工具栏"><button className={activeSheet === 'home' ? 'is-current' : ''} onClick={() => setActiveSheet('home')}>开始</button><button disabled={!room} className={activeSheet === 'clues' ? 'is-current' : ''} onClick={() => setActiveSheet('clues')}>记录</button><button disabled={!room} className={activeSheet === 'scores' ? 'is-current' : ''} onClick={() => setActiveSheet('scores')}>统计</button><button className={activeSheet === 'guide' ? 'is-current' : ''} onClick={openGuide}>帮助</button>{activeSheet === 'guide' && <button onClick={() => setActiveSheet(returnSheet.current)}>返回原工作表</button>}<span /></nav>
+    <div className="sheet-formula"><span className="sheet-namebox">A1</span><span className="sheet-fx">fx</span><output>{room ? `${statusName[room.status]} · ${room.guesserName ? `本轮负责人 ${room.guesserName}` : '等待开始'} · ${room.phaseDeadlineAt ? `${remaining(room.phaseDeadlineAt, now)} 秒` : '等待就绪'}` : '填写称呼后创建；已有编号则在下一行加入'}</output></div>
     <section className="sheet-workspace"><div className="sheet-canvas">
       <div className="sheet-commandbar">
-        {!room ? <span>独立 A3 入口 · 2–8 人</span> : room.status === 'lobby' ? <>{isOwner ? <button className="sheet-primary-action" disabled={room.players.length < CLUE_MIN_PLAYERS || busy} onClick={() => void apply('start_clue_game')}>{room.players.length < CLUE_MIN_PLAYERS ? `还需 ${CLUE_MIN_PLAYERS - room.players.length} 人` : '开始第一轮'}</button> : <span>等待房主开始</span>}<span>每个人都会当一次猜题者，开始后不再加入新成员</span></> : room.status === 'finished' ? <>{isOwner && <button className="sheet-primary-action" onClick={() => void apply('restart_clue_game')}>再来一局</button>}<span>{isOwner ? '保留成员，清空本局积分并更换题目' : '等待房主决定是否再来一局'}</span></> : room.status === 'result' ? <>{canSkipResult && <button className="sheet-primary-action" onClick={() => void apply('skip_clue_result')}>提前进入下一轮</button>}<span>{latestResult?.correct ? '评分已完成，正在汇总本轮' : '未猜中，10 秒后自动进入下一轮'}</span></> : <span>系统自动推进 · 提示作者在评分确认前保持匿名</span>}
+        {!room ? <span>创建或加入 · 2–8 人</span> : room.status === 'lobby' ? <>{isOwner ? <button className="sheet-primary-action" disabled={room.players.length < CLUE_MIN_PLAYERS || busy} onClick={() => void apply('start_clue_game')}>{room.players.length < CLUE_MIN_PLAYERS ? `还需 ${CLUE_MIN_PLAYERS - room.players.length} 人` : '开始第一轮'}</button> : <span>等待房主开始</span>}<span>每个人都会当一次猜题者，开始后不再加入新成员</span></> : room.status === 'finished' ? <>{isOwner && <button className="sheet-primary-action" onClick={() => void apply('restart_clue_game')}>再来一局</button>}<span>{isOwner ? '保留成员，清空本局积分并更换题目' : '等待房主决定是否再来一局'}</span></> : room.status === 'result' ? <>{canSkipResult && <button className="sheet-primary-action" onClick={() => void apply('skip_clue_result')}>提前进入下一轮</button>}<span>{latestResult?.correct ? '评分已完成，正在汇总本轮' : '未猜中，10 秒后自动进入下一轮'}</span></> : <span>{room.status === 'clue_writing' ? isGuesser ? '等待提示者确认内容' : clueLocked ? '已确认，等待其他成员' : '按本题规则写提示，然后确认内容' : room.status === 'guessing' ? isGuesser ? '根据公开提示填写答案，最多尝试 3 次' : `等待 ${room.guesserName} 猜题` : room.status === 'rating' ? isGuesser ? '逐条评分后点击“确认全部评分”' : '等待猜题者评分；可给其他提示点赞' : '等待系统推进'}</span>}
+        <button className="workbook-note-trigger" onClick={() => setNote({ title: room?.status === 'rating' ? '评分参考' : '本轮操作说明', text: room?.status === 'clue_writing' ? isGuesser ? '请等待提示者确认，内容汇总后轮到你猜题。' : `${cluePlaceholder}\n填写后点击“确认内容”，确认后不可修改。` : room?.status === 'guessing' ? '猜题者最多尝试 3 次。完整提示一直保留在表格中；猜中、次数用完或时间到后进入评分。' : room?.status === 'rating' ? '无论是否猜中，都由猜题者评分：1 分有点远，2 分说得通，3 分准确有趣。4 分留给你认为最独特的一条，每轮最多一条；结合本题规则，不要使用答案里的字。提示者可给其他一条提示点赞，点赞不计总分。' : '一人创建并分享邀请链接，其他人加入。每人轮流猜一题；房主只需开始，后续自动推进。' })}>操作说明</button>
       </div>
       <div className="clue-mobile-controls">
         {!room ? <>
@@ -339,13 +345,12 @@ export default function ClueSpreadsheetMode() {
           : room.status === 'guessing' && isGuesser ? <div><input value={guessText} maxLength={20} onChange={(event) => setGuessText(event.target.value)} placeholder={`还可尝试 ${CLUE_MAX_GUESS_ATTEMPTS - (room.guessAttemptCount ?? 0)} 次`} /><button onClick={() => void submitGuess()}>确认答案</button></div>
             : room.status === 'rating' && isGuesser ? <div><span>请为每条匿名提示评 1–4 分；4 分每轮最多一条</span><button onClick={confirmRatings}>确认全部评分</button></div> : null}
       </div>
-      <div className="sheet-grid-scroll"><table className="sheet-grid">
+      <div className="sheet-grid-scroll"><table className="sheet-grid"><WorkbookColumns />
         <thead><tr><th /><th>A</th><th>B</th><th>C</th><th>D</th><th>E</th><th>F</th></tr></thead>
         <tbody>{activeSheet !== 'home' ? tableRows() : !room ? <>
           <tr><th>1</th><td>操作</td><td>称呼</td><td>玩法模式</td><td>题目难度</td><td>执行</td><td>说明</td></tr>
-          <tr><th>2</th><td>创建 A3 房间</td><td><input value={ownerName} onChange={(event) => setOwnerName(event.target.value.slice(0, 24))} placeholder="填写称呼" /></td><td><select value={mode} onChange={(event) => setMode(event.target.value as ClueMode)}>{Object.entries(CLUE_MODE_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></td><td><select value={difficulty} onChange={(event) => setDifficulty(event.target.value as ClueDifficulty)}>{Object.entries(CLUE_DIFFICULTY_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></td><td><button className="sheet-action" disabled={busy} onClick={createRemote}>创建联机房间</button></td><td>2–8 人</td></tr>
-          <tr><th>3</th><td>加入 A3 房间</td><td><input value={joinName} onChange={(event) => setJoinName(event.target.value.slice(0, 24))} placeholder="填写称呼" /></td><td><input value={joinCode} maxLength={6} onChange={(event) => setJoinCode(event.target.value.toUpperCase().replace(/[^A-Z2-9]/g, ''))} placeholder="例如 Q7K2P8" /></td><td>跟随房主</td><td><button className="sheet-action" disabled={busy} onClick={joinRemote}>加入房间</button></td><td>开始后停止加入</td></tr>
-          <tr><th>5</th><td>为什么值得玩</td><td colSpan={5}>基于成熟获奖联想机制改编：每个人独立提供关联词，相同想法也各自计分，最终比较“提示质量”和“判断速度”两项统计。</td></tr>
+          <tr><th>2</th><td>创建</td><td><input value={ownerName} onChange={(event) => setOwnerName(event.target.value.slice(0, 24))} placeholder="填写称呼" /></td><td><select value={mode} onChange={(event) => setMode(event.target.value as ClueMode)}>{Object.entries(CLUE_MODE_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></td><td><select value={difficulty} onChange={(event) => setDifficulty(event.target.value as ClueDifficulty)}>{Object.entries(CLUE_DIFFICULTY_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></td><td><button className="sheet-action" disabled={busy} onClick={createRemote}>创建联机房间</button></td><td>2–8 人</td></tr>
+          <tr><th>3</th><td>加入</td><td><input value={joinName} onChange={(event) => setJoinName(event.target.value.slice(0, 24))} placeholder="填写称呼" /></td><td><input value={joinCode} maxLength={6} onChange={(event) => setJoinCode(event.target.value.toUpperCase().replace(/[^A-Z2-9]/g, ''))} placeholder="例如 Q7K2P8" /></td><td>跟随房主</td><td><button className="sheet-action" disabled={busy} onClick={joinRemote}>加入房间</button></td><td>开始后停止加入</td></tr>
           <tr><th>6</th><td>一轮流程</td><td colSpan={5}>成员查看答案 → 各自秘密填一个关联词 → 集中公开 → 负责人最多尝试 3 次 → 公布答案并匿名评分 → 揭晓成员。</td></tr>
         </> : <>
           <tr><th>1</th><td>房间</td><td>{room.code}</td><td>轮次</td><td>{room.round}/{room.totalRounds || room.players.length}</td><td>猜题者</td><td>{room.guesserName ?? '等待开始'}</td></tr>
@@ -358,7 +363,7 @@ export default function ClueSpreadsheetMode() {
           </>}
           {['guessing', 'rating', 'result'].includes(room.status) && <>
             <tr><th>10</th><td>提示编号</td><td colSpan={2}>完整提示</td><td>本题角色</td><td>作者</td><td>{room.status === 'rating' ? '评分' : '状态'}</td></tr>
-            {room.publicClues.map((clue, index) => <tr key={clue.clueId}><th>{11 + index}</th><td>{clue.displayCode}</td><td colSpan={2}>{clue.text}</td><td>{clue.roleName ? `${clue.roleName}：${clue.roleRule}` : room.publicRuleName ? `${room.publicRuleName}：${room.publicRuleText}` : '自由提示'}</td><td>{clue.authorName ?? '暂不公开'}</td><td>{clueActionCell(clue)}</td></tr>)}
+            {room.publicClues.map((clue, index) => <tr key={clue.clueId}><th>{11 + index}</th><td>{clue.displayCode}</td><td colSpan={2}><WorkbookText text={clue.text} title={`${clue.displayCode} 完整提示`} onOpen={setNote} /></td><td>{clue.roleName ? `${clue.roleName}：${clue.roleRule}` : room.publicRuleName ? `${room.publicRuleName}：${room.publicRuleText}` : '自由提示'}</td><td>{clue.authorName ?? '暂不公开'}</td><td>{clueActionCell(clue)}</td></tr>)}
             {room.status === 'guessing' && <tr><th>25</th><td>结果判断</td><td colSpan={4}>{isGuesser ? <><input value={guessText} maxLength={20} onChange={(event) => setGuessText(event.target.value)} placeholder="填写你认为的答案" /><small>已尝试 {room.guessAttemptCount ?? 0}/{CLUE_MAX_GUESS_ATTEMPTS} 次，猜错可继续</small></> : `等待 ${room.guesserName} 判断；本轮最多尝试 ${CLUE_MAX_GUESS_ATTEMPTS} 次`}</td><td>{isGuesser ? <button className="sheet-action" onClick={() => void submitGuess()}>确认答案</button> : '等待中'}</td></tr>}
             {room.status === 'rating' && <><tr><th>25</th><td>评分参考</td><td colSpan={5}>答案：{room.revealedWord ?? '读取中'}。1 分有点远；2 分说得通；3 分是好提示；获评 4 分的提示会标记“本轮最独特”。</td></tr><tr><th>26</th><td>提示评分</td><td colSpan={4}>{isGuesser ? `${room.guessStatus === 'correct' ? '已猜中' : '本轮未猜中'}，请为每条匿名提示选择 1–4 分，确认后揭晓作者。` : room.players.length < 3 ? `等待 ${room.guesserName} 完成评分。` : peerLikeSubmitted ? '同行点赞已记录；等待猜题者完成评分。' : '可给其他一条匿名提示送出同行点赞；不投也不会阻塞下一轮。'}</td><td>{isGuesser ? <button className="sheet-action" onClick={confirmRatings}>确认全部评分</button> : peerLikeSubmitted ? '已点赞' : '可选'}</td></tr></>}
             {room.status === 'result' && <tr><th>25</th><td>{latestResult?.correct ? '猜题成功' : '本轮未猜中'}</td><td>答案：{room.revealedWord}</td><td colSpan={2}>作答：{latestResult?.guessText ?? '未提交'}</td><td>用时：{formatGuessTime(latestResult?.elapsedMs ?? null)}</td><td>{canSkipResult ? <button className="sheet-action" onClick={() => void apply('skip_clue_result')}>进入下一轮</button> : '10 秒后下一轮'}</td></tr>}
@@ -369,8 +374,8 @@ export default function ClueSpreadsheetMode() {
           </>}
         </>}</tbody>
       </table></div>
-      {notice && <div className="sheet-toast sheet-toast--info">{notice}</div>}
     </div><ReleaseNotificationPanel open={notificationOpen} onClose={() => setNotificationOpen(false)} /></section>
-    <footer className="sheet-tabs"><button disabled aria-label="新增工作表不可用">＋</button>{clueSheets.map(([id, label]) => <button className={activeSheet === id ? 'is-current' : ''} onClick={() => setActiveSheet(id)} key={id}>{label}</button>)}</footer>
+    <WorkbookFeedback note={note} onClose={() => setNote(null)} status={notice} kind={noticeKind} />
+    <footer className="sheet-tabs">{clueSheets.map(([id, label]) => <button className={activeSheet === id ? 'is-current' : ''} disabled={!room && id !== 'home' && id !== 'guide'} onClick={() => id === 'guide' ? openGuide() : setActiveSheet(id)} key={id}>{label}</button>)}</footer>
   </main>;
 }

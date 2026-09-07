@@ -1,0 +1,109 @@
+/* Shared desktop-first workbook chrome. Only workbook-unified pages opt in. */
+.workbook-unified { font-size:14px; height:100dvh; min-height:0; --wb-index:40px; --wb-a:100px; --wb-b:21%; --wb-c:14%; --wb-d:auto; --wb-e:138px; --wb-f:160px; --wb-g:110px; }
+.workbook-unified .sheet-filemark { display:grid; place-items:center; font-size:14px; flex-shrink:0; }
+.workbook-unified .sheet-titlebar { flex-shrink:0; }
+.workbook-unified .sheet-titlebar span { font-size:12px; }
+.workbook-unified .sheet-ribbon { flex-shrink:0; }
+.workbook-unified .sheet-ribbon button:disabled { color:#777; cursor:not-allowed; }
+.workbook-unified .sheet-formula { flex-shrink:0; grid-template-columns:64px 34px minmax(0,1fr); }
+.workbook-unified .sheet-formula output { display:block; padding-block:6px; }
+.workbook-unified .sheet-commandbar { flex-wrap:wrap; flex-shrink:0; min-height:40px; }
+.workbook-unified .sheet-commandbar span { font-size:13px; white-space:normal; margin-left:0; }
+.workbook-unified .sheet-commandbar .workbook-note-trigger { margin-left:auto; }
+.workbook-unified .sheet-grid { width:100%; min-width:960px; font-size:14px; }
+.workbook-unified .sheet-grid th,.workbook-unified .sheet-grid td { width:auto!important; }
+.workbook-col-index { width:var(--wb-index); }
+.workbook-col-a { width:var(--wb-a); }
+.workbook-col-b { width:var(--wb-b); }
+.workbook-col-c { width:var(--wb-c); }
+.workbook-col-d { width:var(--wb-d); }
+.workbook-col-e { width:var(--wb-e); }
+.workbook-col-f { width:var(--wb-f); }
+.workbook-col-g { width:var(--wb-g); }
+.workbook-unified .sheet-grid td { height:auto; min-height:36px; padding:7px 10px; white-space:normal; overflow-wrap:anywhere; text-overflow:clip; line-height:1.55; vertical-align:top; }
+.workbook-unified .sheet-grid td.is-active-cell { overflow:visible; }
+.workbook-unified .sheet-grid input,.workbook-unified .sheet-grid select,.workbook-unified .sheet-grid textarea { min-width:0; width:100%; font:inherit; color:#222; border:1px solid #b9c3bc; padding:5px 7px; background:#fff; box-sizing:border-box; }
+.workbook-unified .sheet-grid textarea { min-height:88px; resize:vertical; line-height:1.55; }
+.workbook-unified .sheet-grid input:disabled,.workbook-unified .sheet-grid textarea:disabled { color:#555; background:#f3f5f3; }
+.workbook-unified input::placeholder,.workbook-unified textarea::placeholder { color:#68746c; opacity:1; }
+.workbook-unified button { cursor:pointer; }
+.workbook-unified button:disabled { cursor:not-allowed; }
+.workbook-unified :is(button,a,input,select,textarea,[tabindex]):focus-visible { outline:2px solid #217346; outline-offset:2px; }
+.workbook-unified .sheet-titlebar :is(button,a):focus-visible { outline-color:#fff; }
+.workbook-unified .sheet-grid td[colspan] { font-size:15px; }
+.workbook-unified .sheet-grid small,.workbook-unified .sheet-tabs small,.workbook-unified .clue-peer-count { font-size:12px; line-height:1.5; }
+.workbook-unified .sheet-inline { flex-wrap:wrap; gap:5px; }
+.workbook-unified .sheet-inline button { padding:4px 7px; }
+.workbook-unified .sheet-tabs { flex-shrink:0; min-height:38px; }
+.workbook-unified .sheet-tabs button { white-space:nowrap; padding-inline:12px; }
+.workbook-unified .sheet-tabs button:disabled { opacity:.55; }
+.workbook-unified .sheet-tabs small { padding-right:10px; white-space:nowrap; }
+.workbook-unified .hub-intro { min-height:0; padding:10px 14px; }
+.workbook-unified .hub-intro span { display:none; }
+.workbook-unified .hub-intro strong { font-size:15px; }
+.workbook-unified .hub-intro p { font-size:13px; }
+.workbook-unified .workbook-text { display:block; padding:0; margin:0; width:100%; min-height:0; border:0; background:transparent; color:inherit; text-align:left; font:inherit; line-height:inherit; white-space:pre-wrap; overflow-wrap:anywhere; }
+.workbook-unified .workbook-text:hover { text-decoration:underline; text-decoration-color:#789d84; text-underline-offset:3px; }
+.workbook-unified .workbook-note-trigger { border:1px solid #aabeb0; padding:4px 9px; background:#fff; color:#225437; min-height:28px; text-align:left; line-height:1.5; font-size:13px; }
+.workbook-feedback { flex-shrink:0; min-width:0; border-top:1px solid #c7d2ca; background:#f6f8f6; }
+.workbook-note-heading { display:flex; justify-content:space-between; align-items:center; gap:10px; min-height:32px; padding:3px 12px; border-bottom:1px solid #d6dfd8; }
+.workbook-note-heading button { border:0; background:transparent; color:#255338; text-align:left; font-size:13px; padding:3px 0; }
+.workbook-note-heading button:first-child { flex:1; }
+.workbook-note-content { padding:10px 16px; max-height:min(23vh,190px); overflow:auto; overscroll-behavior:contain; white-space:pre-wrap; overflow-wrap:anywhere; color:#29352d; font-size:15px; line-height:1.65; }
+.workbook-status { display:flex; align-items:baseline; gap:10px; padding:5px 12px; font-size:12px; color:#4c5950; max-height:78px; overflow:auto; }
+.workbook-status>span { flex-shrink:0; }
+.workbook-status p { margin:0; overflow-wrap:anywhere; line-height:1.5; }
+.workbook-status--error { color:#872a22; background:#fff4f1; border-left:3px solid #ad493e; }
+.workbook-unified.hub-sheet { --wb-a:72px; --wb-b:110px; --wb-c:120px; --wb-d:auto; --wb-e:122px; --wb-f:160px; }
+.workbook-unified.hub-sheet[data-workbook-sheet="guide"] { --wb-a:138px; --wb-b:30%; --wb-c:110px; --wb-d:auto; --wb-e:23%; --wb-f:32px; }
+.workbook-unified.hub-sheet[data-workbook-sheet="updates"] { --wb-b:112px; --wb-c:150px; --wb-d:22%; --wb-e:auto; --wb-f:80px; }
+.workbook-unified.undercover-sheet { --wb-a:64px; --wb-b:130px; --wb-c:115px; --wb-d:auto; --wb-e:142px; --wb-f:205px; }
+.workbook-unified.undercover-sheet[data-workbook-sheet="home"] { --wb-a:90px; --wb-b:210px; --wb-c:205px; --wb-d:100px; --wb-e:126px; --wb-f:auto; }
+.workbook-unified.undercover-sheet[data-workbook-sheet="setup"],.workbook-unified.undercover-sheet[data-workbook-sheet="rules"] { --wb-a:148px; --wb-b:248px; --wb-c:112px; --wb-d:auto; --wb-e:104px; --wb-f:32px; }
+.workbook-unified.undercover-sheet[data-workbook-sheet="guide"] { --wb-a:110px; --wb-b:18%; --wb-c:16%; --wb-d:auto; --wb-e:16%; --wb-f:18%; }
+.workbook-unified .undercover-stage-summary { grid-template-columns:auto minmax(0,1fr) auto; min-height:48px; gap:10px; }
+.workbook-unified .undercover-stage-summary>span { font-size:12px; }
+.workbook-unified .undercover-stage-summary strong { font-size:14px; }
+.workbook-unified .undercover-stage-summary p { font-size:13px; }
+.workbook-unified .sheet-content-input { flex-wrap:wrap; }
+.workbook-unified .sheet-content-input input { flex:1 1 160px; }
+.workbook-unified .sheet-rule-banner { min-height:40px; padding-block:5px; grid-template-columns:auto minmax(0,1fr) auto; }
+.workbook-unified .sheet-rule-banner>span,.workbook-unified .sheet-rule-banner>small { font-size:12px; white-space:normal; }
+.workbook-unified.soup-sheet { --wb-a:100px; --wb-b:auto; --wb-c:110px; --wb-d:130px; --wb-e:116px; --wb-f:116px; --wb-g:96px; }
+.workbook-unified.soup-sheet[data-soup-sheet="host"] { --wb-a:108px; --wb-b:46%; --wb-c:140px; --wb-d:auto; --wb-e:32px; --wb-f:32px; --wb-g:32px; }
+.workbook-unified.soup-sheet[data-soup-sheet="records"] { --wb-a:90px; --wb-b:100px; --wb-c:68px; --wb-d:auto; --wb-e:110px; --wb-f:180px; --wb-g:32px; }
+.workbook-unified.soup-sheet[data-soup-sheet="host"] .sheet-grid td:nth-child(3) { font-size:16px; }
+.workbook-unified .sheet-notification-panel { width:340px; min-width:300px; box-shadow:none; }
+.workbook-unified .sheet-notification-panel :is(small,span),.workbook-unified .sheet-notification-policy { font-size:12px; }
+.workbook-unified .sheet-release-detail { font-size:14px; }
+@media (max-width:1300px) and (min-width:601px) {
+  .workbook-unified .sheet-workspace:has(>.sheet-notification-panel) { flex-direction:column; }
+  .workbook-unified .sheet-notification-panel { width:100%; min-width:0; max-height:32vh; display:grid; grid-template-columns:150px 260px minmax(0,1fr); border-top:1px solid #c7d2ca; border-left:0; }
+  .workbook-unified .sheet-notification-panel>header { align-items:start; padding:12px; }
+  .workbook-unified .sheet-notification-policy { display:none; }
+  .workbook-unified .sheet-release-list { max-height:none; border-right:1px solid #d9e1dc; }
+  .workbook-unified .sheet-release-detail { overflow:auto; }
+  .workbook-unified .sheet-tabs small { display:none; }
+  .workbook-unified .sheet-title-actions { gap:4px; }
+  .workbook-unified .sheet-title-actions :is(button,a) { padding-inline:8px; }
+}
+@media (max-width:600px) {
+  .workbook-unified .sheet-grid { width:960px; min-width:960px; }
+  .workbook-unified .sheet-titlebar strong { max-width:none; font-size:13px; }
+  .workbook-unified .sheet-ribbon { overflow-x:auto; }
+  .workbook-unified .sheet-ribbon button:nth-child(n) { display:block; flex-shrink:0; padding-inline:10px; min-height:36px; }
+  .workbook-unified .sheet-commandbar { max-height:126px; overflow:auto; }
+  .workbook-unified .undercover-stage-summary>span { display:none; }
+  .workbook-unified .undercover-stage-summary { grid-template-columns:minmax(0,1fr) auto; }
+  .workbook-unified .sheet-rule-banner { grid-template-columns:1fr; }
+  .workbook-unified .sheet-rule-banner>small { display:none; }
+  .workbook-unified .sheet-notification-panel { width:100%; min-width:0; max-height:38vh; }
+  .workbook-note-content { max-height:20vh; }
+}
+/* Keep local controls in their cells, including checkboxes and a revealed word card. */
+.workbook-unified .sheet-select-wrap { flex-wrap:wrap; }
+.workbook-unified .sheet-select-wrap select { min-width:0; flex:1 1 105px; }
+.workbook-unified .sheet-select-wrap button { flex:1 1 auto; }
+.workbook-unified .sheet-secret--review.is-revealed { position:static; width:auto; max-width:100%; box-shadow:none; }
+.workbook-unified .sheet-grid input[type="checkbox"] { width:auto; min-height:0; flex-shrink:0; }
+.workbook-unified .sheet-grid .soup-choice-line { align-items:start; }

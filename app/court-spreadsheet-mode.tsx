@@ -12,6 +12,7 @@ import {
 } from '@/lib/court-game';
 import { getCloudStore, type CourtActionType } from '@/lib/cloudbase-store';
 import { makeId } from '@/lib/game';
+import { WorkbookColumns, WorkbookFeedback, WorkbookText, useWorkbookNotes, useWorkbookNotice } from './workbook-feedback';
 import { ReleaseNotificationButton, ReleaseNotificationPanel } from './release-notification';
 
 const statusName: Record<string, string> = {
@@ -26,7 +27,7 @@ const statusName: Record<string, string> = {
 };
 
 const courtSheets = [
-  ['home', '法堂首页'],
+  ['home', '当前流程'],
   ['members', '成员列表'],
   ['case', '案件登记'],
   ['statements', '陈述记录'],
@@ -73,7 +74,10 @@ export default function CourtSpreadsheetMode() {
   const [bestChoice, setBestChoice] = useState<string | null>(null);
   const [truthChoice, setTruthChoice] = useState<string | null>(null);
   const [activeSheet, setActiveSheet] = useState<CourtSheetId>('home');
-  const [notice, setNotice] = useState('欢迎进入离谱法堂：同案匿名陈词，最后评选最会狡辩和最像真的答案。');
+  const [notice, setNotice, noticeKind] = useWorkbookNotice('就绪 · 填写称呼创建房间，或凭六位编号加入。');
+  const returnSheet = useRef<CourtSheetId>('home');
+  const openGuide = () => { if (activeSheet !== 'guide') returnSheet.current = activeSheet; setActiveSheet('guide'); };
+  const { note, setNote } = useWorkbookNotes(`${room?.code ?? ''}|${room?.sessionNo ?? ''}|${room?.round ?? ''}|${room?.status ?? ''}|${activeSheet}`);
   const [busy, setBusy] = useState(false);
   const [now, setNow] = useState(0);
   const advancing = useRef(false);
@@ -104,18 +108,18 @@ export default function CourtSpreadsheetMode() {
         if (found.round > 0) await loadSubmission(found.code);
         setNotice('已恢复上次打开的离谱法堂房间。');
       } catch {
-        setNotice('上次房间暂时无法恢复，可重新输入房间编号加入。');
+        setNotice('上次房间暂时无法恢复，可重新输入房间编号加入。', 'error');
       }
     })();
-  }, [cloudReady, loadSubmission]);
+  }, [cloudReady, loadSubmission, setNotice]);
 
   const activeCode = room?.code ?? '';
   useEffect(() => {
     if (!activeCode || !playerId || !cloudReady) return;
     return getCloudStore().watchCourtRoom(activeCode, (next) => {
       setRoom(next);
-    }, (error) => setNotice(readableError(error, '房间同步失败')));
-  }, [activeCode, cloudReady, playerId]);
+    }, (error) => setNotice(readableError(error, '房间同步失败'), 'error'));
+  }, [activeCode, cloudReady, playerId, setNotice]);
 
   useEffect(() => {
     if (!room || !playerId || room.round <= 0) return;
@@ -129,8 +133,8 @@ export default function CourtSpreadsheetMode() {
     setBestChoice(null);
     setTruthChoice(null);
     setPrivateSubmission(null);
-    void loadSubmission(room.code).catch(() => setNotice('本人已确认内容暂时无法读取，请刷新重试。'));
-  }, [loadSubmission, playerId, room]);
+    void loadSubmission(room.code).catch(() => setNotice('本人已确认内容暂时无法读取，请刷新重试。', 'error'));
+  }, [loadSubmission, playerId, room, setNotice]);
 
   useEffect(() => {
     if (!room || !playerId || room.round <= 0 || !draftScope.current) return;
@@ -145,10 +149,10 @@ export default function CourtSpreadsheetMode() {
       setNotice(result.outcome === 'stale' ? '房间状态已经更新，请重新操作。' : result.message);
       return result.state;
     } catch (error) {
-      setNotice(readableError(error, '操作失败'));
+      setNotice(readableError(error, '操作失败'), 'error');
       return null;
     }
-  }, [room]);
+  }, [room, setNotice]);
 
   useEffect(() => {
     const tick = () => {
@@ -169,8 +173,8 @@ export default function CourtSpreadsheetMode() {
   };
 
   const createRemote = async () => {
-    if (!cloudReady) return setNotice('测试站尚未配置 CloudBase 环境变量。');
-    if (!ownerName.trim()) return setNotice('请先填写你的称呼。');
+    if (!cloudReady) return setNotice('测试站尚未配置 CloudBase 环境变量。', 'error');
+    if (!ownerName.trim()) return setNotice('请先填写你的称呼。', 'error');
     setBusy(true);
     try {
       const seed = createCourtRoom(ownerName);
@@ -180,7 +184,7 @@ export default function CourtSpreadsheetMode() {
       setRoom(next);
       setNotice(`房间 ${next.code} 已创建。请朋友从离谱法堂页面输入编号加入。`);
     } catch (error) {
-      setNotice(readableError(error, '创建房间失败'));
+      setNotice(readableError(error, '创建房间失败'), 'error');
     } finally {
       setBusy(false);
     }
@@ -188,8 +192,8 @@ export default function CourtSpreadsheetMode() {
 
   const joinRemote = async () => {
     const code = joinCode.trim().toUpperCase();
-    if (!cloudReady) return setNotice('测试站尚未配置 CloudBase 环境变量。');
-    if (!joinName.trim() || code.length !== 6) return setNotice('请填写称呼和六位房间编号。');
+    if (!cloudReady) return setNotice('测试站尚未配置 CloudBase 环境变量。', 'error');
+    if (!joinName.trim() || code.length !== 6) return setNotice('请填写称呼和六位房间编号。', 'error');
     setBusy(true);
     try {
       const requestedId = window.localStorage.getItem(`court-player-${code}`) ?? makeId('court-player');
@@ -200,7 +204,7 @@ export default function CourtSpreadsheetMode() {
       if (joined.room.round > 0) await loadSubmission(code);
       setNotice(joined.room.status === 'lobby' ? `已加入房间 ${code}。` : `已加入房间 ${code}，你将从下一轮参与。`);
     } catch (error) {
-      setNotice(readableError(error, '加入房间失败'));
+      setNotice(readableError(error, '加入房间失败'), 'error');
     } finally {
       setBusy(false);
     }
@@ -230,7 +234,7 @@ export default function CourtSpreadsheetMode() {
       await navigator.clipboard.writeText(invite.toString());
       setNotice('邀请链接已复制，群友打开后只需填写称呼。');
     } catch {
-      setNotice('浏览器未允许复制，请复制地址栏链接并附上房间编号。');
+      setNotice('浏览器未允许复制，请复制地址栏链接并附上房间编号。', 'error');
     }
   };
 
@@ -241,7 +245,7 @@ export default function CourtSpreadsheetMode() {
         if (next) await loadSubmission(next.code);
       });
     } catch (error) {
-      setNotice(readableError(error, '确认失败'));
+      setNotice(readableError(error, '确认失败'), 'error');
     }
   };
 
@@ -252,7 +256,7 @@ export default function CourtSpreadsheetMode() {
         if (next) await loadSubmission(next.code);
       });
     } catch (error) {
-      setNotice(readableError(error, '确认失败'));
+      setNotice(readableError(error, '确认失败'), 'error');
     }
   };
 
@@ -261,7 +265,7 @@ export default function CourtSpreadsheetMode() {
       validateVote(privateSubmission?.submissionId ?? null, bestChoice, truthChoice, room?.publicEntries.map((entry) => entry.submissionId) ?? []);
       void apply('confirm_court_vote', { bestSubmissionId: bestChoice, truthSubmissionId: truthChoice });
     } catch (error) {
-      setNotice(readableError(error, '确认失败'));
+      setNotice(readableError(error, '确认失败'), 'error');
     }
   };
 
@@ -278,13 +282,14 @@ export default function CourtSpreadsheetMode() {
 
   const worksheetRows = () => {
     if (activeSheet === 'guide') return <>
+      <tr><th>0</th><td>离谱法堂</td><td colSpan={5}>不是找卧底，是围绕同一离谱案件为自己辩护，最后分别选出最会狡辩和最像真的答案。</td></tr>
       <tr><th>1</th><td>流程</td><td colSpan={5}>读案件 → 限时首次陈词 → 查看新证据 → 当庭补述 → 两项匿名投票 → 查看判决</td></tr>
       <tr><th>2</th><td>输入时间</td><td colSpan={5}>首次陈词和当庭补述各有 5 分钟；全部有效玩家提前确认后会立即推进，不必等倒计时结束。</td></tr>
       <tr><th>3</th><td>匿名规则</td><td colSpan={5}>公开前看不到他人正文；投票时陈述顺序随机，结果阶段才揭晓作者和书记员席。</td></tr>
       <tr><th>4</th><td>投票规则</td><td colSpan={5}>“最会狡辩”和“最像真的”各投一票，可以投同一条，但不能投自己的陈述。</td></tr>
       <tr><th>5</th><td>临时离开</td><td colSpan={5}>来不及参与时点击顶部“暂离”，本阶段不会继续等待你；回来后点击“结束暂离”。</td></tr>
     </>;
-    if (!room) return <tr><th>1</th><td>工作表</td><td colSpan={5}>请先返回“法堂首页”创建或加入房间。</td></tr>;
+    if (!room) return <tr><th>1</th><td>工作表</td><td colSpan={5}>请先返回“当前流程”创建或加入房间。</td></tr>;
     if (activeSheet === 'members') return <>
       <tr><th>1</th><td>席位</td><td>称呼</td><td>身份</td><td>参与状态</td><td>本轮状态</td><td>加入轮次</td></tr>
       {room.players.map((player, index) => <tr key={player.id}><th>{2 + index}</th><td>{player.seat}</td><td>{player.name}{player.id === playerId ? '（你）' : ''}</td><td>{player.id === room.ownerId ? '房主' : '成员'}</td><td>{player.away ? '暂离' : '在场'}</td><td>{room.expectedPlayerIds.includes(player.id) && currentStatuses ? phaseStatusLabel(currentStatuses[player.id], room.status === 'voting') : '无需提交'}</td><td>第 {player.eligibleFromRound ?? 1} 轮</td></tr>)}
@@ -303,7 +308,7 @@ export default function CourtSpreadsheetMode() {
     </>;
     if (activeSheet === 'voting') return <>
       <tr><th>1</th><td>编号</td><td colSpan={3}>完整陈词</td><td>最会狡辩</td><td>最像真的</td></tr>
-      {room.status === 'voting' ? entries.map((entry, index) => <tr key={entry.submissionId}><th>{2 + index}</th><td>{entry.displayCode}{entry.submissionId === privateSubmission?.submissionId ? '（你的陈述）' : ''}</td><td colSpan={3}>首次陈词：{entry.statement}<br />当庭补述：{entry.response ?? '未作补充说明'}</td><td><button disabled={voteLocked || entry.submissionId === privateSubmission?.submissionId} onClick={() => setBestChoice(entry.submissionId)}>{bestChoice === entry.submissionId ? '已选' : '选择'}</button></td><td><button disabled={voteLocked || entry.submissionId === privateSubmission?.submissionId} onClick={() => setTruthChoice(entry.submissionId)}>{truthChoice === entry.submissionId ? '已选' : '选择'}</button></td></tr>) : <tr><th>2</th><td>尚未开放</td><td colSpan={5}>进入陪审团表决后，这里会完整展示所有匿名陈词。</td></tr>}
+      {room.status === 'voting' ? entries.map((entry, index) => <tr key={entry.submissionId}><th>{2 + index}</th><td>{entry.displayCode}{entry.submissionId === privateSubmission?.submissionId ? '（你的陈述）' : ''}</td><td colSpan={3}><WorkbookText text={`首次陈词：${entry.statement}\n当庭补述：${entry.response ?? '未作补充说明'}`} title={`${entry.displayCode} 完整陈述`} onOpen={setNote} /></td><td><button disabled={voteLocked || entry.submissionId === privateSubmission?.submissionId} onClick={() => setBestChoice(entry.submissionId)}>{bestChoice === entry.submissionId ? '已选' : '选择'}</button></td><td><button disabled={voteLocked || entry.submissionId === privateSubmission?.submissionId} onClick={() => setTruthChoice(entry.submissionId)}>{truthChoice === entry.submissionId ? '已选' : '选择'}</button></td></tr>) : <tr><th>2</th><td>尚未开放</td><td colSpan={5}>进入陪审团表决后，这里会完整展示所有匿名陈词。</td></tr>}
       {room.status === 'voting' && <tr><th>20</th><td>确认</td><td colSpan={4}>两项都选好后统一确认；确认后不能修改。</td><td><button className="sheet-action" disabled={voteLocked || !isRoundPlayer || me?.away || !bestChoice || !truthChoice} onClick={confirmVote}>{voteLocked ? '双项选票已确认' : '确认两项选票'}</button></td></tr>}
     </>;
     if (activeSheet === 'results') return <>
@@ -318,17 +323,18 @@ export default function CourtSpreadsheetMode() {
     </>;
   };
 
-  return <main className="sheet-app court-sheet">
+  return <main className="sheet-app workbook-unified court-sheet" data-workbook-sheet={activeSheet}>
     <header className="sheet-titlebar">
-      <button className="sheet-filemark" onClick={leaveView}>表</button>
-      <div><strong>{room ? `离谱法堂 · ${room.code}` : '离谱法堂 · 案件管理工作簿'}</strong><span>独立游戏 · 匿名双项评选</span></div>
-      <div className="sheet-title-actions"><a href="../" aria-label="返回摸鱼游戏工作台">目录</a><ReleaseNotificationButton open={notificationOpen} onToggle={() => setNotificationOpen((open) => !open)} />{room && <><button className="sheet-room-action" onClick={() => navigator.clipboard?.writeText(room.code)}>复制房间编号</button><button className="sheet-room-action" onClick={copyInviteLink}>复制邀请链接</button><button className="sheet-room-action" onClick={leaveView}>返回法堂首页</button></>}</div>
+      <span className="sheet-filemark" aria-hidden="true">表</span>
+      <div><strong>协作工作簿 · A4</strong><span>{room ? `编号 ${room.code}` : '陈述登记模板'}</span></div>
+      <div className="sheet-title-actions"><a href="../" aria-label="返回摸鱼游戏工作台">目录</a><ReleaseNotificationButton open={notificationOpen} onToggle={() => setNotificationOpen((open) => !open)} />{room && <><button className="sheet-room-action" onClick={() => navigator.clipboard?.writeText(room.code)}>复制房间编号</button><button className="sheet-room-action" onClick={copyInviteLink}>复制邀请链接</button><button className="sheet-room-action" onClick={leaveView}>离开页面</button></>}</div>
     </header>
-    <nav className="sheet-ribbon"><button className="is-current">开始</button><button>案件</button><button>评选</button><span />{room && <button onClick={() => void apply('change_court_presence', { away: !me?.away })}>{me?.away ? '结束暂离' : '暂离'}</button>}</nav>
-    <div className="sheet-formula"><span className="sheet-namebox">A1</span><span className="sheet-fx">fx</span><output>{room ? `${statusName[room.status]} · 第 ${room.round}/3 轮 · 局次 ${room.sessionNo} · ${remaining(room.phaseDeadlineAt, now)} 秒` : '不是找卧底，是分别选出最会狡辩和最像真的答案'}</output></div>
+    <nav className="sheet-ribbon" aria-label="A4 工具栏"><button className={activeSheet === 'home' ? 'is-current' : ''} onClick={() => setActiveSheet('home')}>开始</button><button disabled={!room} className={activeSheet === 'case' ? 'is-current' : ''} onClick={() => setActiveSheet('case')}>资料</button><button disabled={!room} className={activeSheet === 'voting' ? 'is-current' : ''} onClick={() => setActiveSheet('voting')}>评选</button><button className={activeSheet === 'guide' ? 'is-current' : ''} onClick={openGuide}>帮助</button>{activeSheet === 'guide' && <button onClick={() => setActiveSheet(returnSheet.current)}>返回原工作表</button>}<span />{room && <button onClick={() => void apply('change_court_presence', { away: !me?.away })}>{me?.away ? '结束暂离' : '暂离'}</button>}</nav>
+    <div className="sheet-formula"><span className="sheet-namebox">A1</span><span className="sheet-fx">fx</span><output>{room ? `${statusName[room.status]} · 第 ${room.round}/3 轮 · 局次 ${room.sessionNo} · ${room.phaseDeadlineAt ? `${remaining(room.phaseDeadlineAt, now)} 秒` : '等待就绪'}` : '填写称呼后创建；已有编号则在下一行加入'}</output></div>
     <section className="sheet-workspace"><div className="sheet-canvas">
       <div className="sheet-commandbar">
-        {!room ? <span>独立游戏入口 · 创建新房间或加入朋友的离谱法堂</span> : room.status === 'lobby' ? <>{isOwner ? <button className="sheet-primary-action" disabled={room.players.filter((player) => !player.away).length < 2 || busy} onClick={() => void apply('start_court_game')}>开始第一轮</button> : <span>等待房主开始</span>}<span>当前 {room.players.length}/8 人，至少 2 名未暂离成员开始</span></> : room.status === 'finished' ? <>{isOwner && <button className="sheet-primary-action" onClick={() => void apply('restart_court_game')}>再来一局</button>}<span>{isOwner ? '保留当前房间与成员，清空本局记录' : '等待房主决定是否再来一局'}</span></> : <><span>系统自动推进 · 全员确认会立即跳过等待，超时未确认不会阻塞</span></>}
+        {!room ? <span>创建或加入 · 2–8 人</span> : room.status === 'lobby' ? <>{isOwner ? <button className="sheet-primary-action" disabled={room.players.filter((player) => !player.away).length < 2 || busy} onClick={() => void apply('start_court_game')}>开始第一轮</button> : <span>等待房主开始</span>}<span>当前 {room.players.length}/8 人，至少 2 名未暂离成员开始</span></> : room.status === 'finished' ? <>{isOwner && <button className="sheet-primary-action" onClick={() => void apply('restart_court_game')}>再来一局</button>}<span>{isOwner ? '保留当前房间与成员，清空本局记录' : '等待房主决定是否再来一局'}</span></> : <><span>{me?.away ? '暂离中，本阶段不等待你' : room.status === 'statement' ? statementLocked ? '已确认，请等待其他成员' : isRoundPlayer ? '填写首次陈词，然后确认' : '本轮旁听，无需提交' : room.status === 'response' ? responseLocked ? '已确认，请等待其他成员' : privateSubmission?.statementConfirmed ? '结合新证据补述，然后确认' : '首次陈词未确认，本阶段无需提交' : room.status === 'voting' ? voteLocked ? '选票已确认，请等待揭晓' : '两项各选一条，然后统一确认' : '内容已公开，系统将自动推进'}</span></>}
+        <button className="workbook-note-trigger" onClick={() => setNote({ title: '操作说明', text: room?.status === 'voting' ? '最会狡辩、最像真的各选一条，可以是同一条；不能投自己。两项都选好后点击“确认两项选票”，确认后不能改票。完整陈词与补述可点击查看批注。' : '首次陈词和当庭补述各有 5 分钟。确认前可修改，确认后锁定；全员确认立即推进，超时不阻塞。需要离开可点击“暂离”。' })}>操作说明</button>
       </div>
       <div className="court-mobile-controls">
         {!room ? <>
@@ -338,28 +344,28 @@ export default function CourtSpreadsheetMode() {
           : room.status === 'response' ? <div><input disabled={!privateSubmission?.statementConfirmed || Boolean(responseLocked) || me?.away} value={response} onChange={(event) => setResponse(event.target.value.slice(0, 80))} placeholder={privateSubmission?.statementConfirmed ? '当庭补述，最多 80 字' : '本阶段无需提交'} /><button disabled={!privateSubmission?.statementConfirmed || Boolean(responseLocked) || me?.away} onClick={confirmResponse}>{responseLocked ? '已确认' : '确认当庭补述'}</button></div>
             : room.status === 'voting' ? <div className="court-vote-selects"><label>最会狡辩<select disabled={voteLocked || !isRoundPlayer || me?.away} value={bestChoice ?? ''} onChange={(event) => setBestChoice(event.target.value || null)}><option value="">选择一条陈述</option>{entries.filter((entry) => entry.submissionId !== privateSubmission?.submissionId).map((entry) => <option key={entry.submissionId} value={entry.submissionId}>{entry.displayCode}</option>)}</select></label><label>最像真的<select disabled={voteLocked || !isRoundPlayer || me?.away} value={truthChoice ?? ''} onChange={(event) => setTruthChoice(event.target.value || null)}><option value="">选择一条陈述</option>{entries.filter((entry) => entry.submissionId !== privateSubmission?.submissionId).map((entry) => <option key={entry.submissionId} value={entry.submissionId}>{entry.displayCode}</option>)}</select></label><button disabled={voteLocked || !isRoundPlayer || me?.away || !bestChoice || !truthChoice} onClick={confirmVote}>{voteLocked ? '双项选票已确认' : '确认两项选票'}</button></div> : null}
       </div>
-      <div className="sheet-grid-scroll"><table className="sheet-grid">
+      <div className="sheet-grid-scroll"><table className="sheet-grid"><WorkbookColumns />
         <thead><tr><th /><th>A</th><th>B</th><th>C</th><th>D</th><th>E</th><th>F</th></tr></thead>
         <tbody>{activeSheet !== 'home' ? worksheetRows() : !room ? <>
           <tr><th>1</th><td>操作类型</td><td>你的称呼</td><td>六位房间编号</td><td>人数</td><td>执行</td><td>说明</td></tr>
-          <tr><th>2</th><td>创建离谱法堂</td><td><input value={ownerName} onChange={(event) => setOwnerName(event.target.value.slice(0, 12))} placeholder="填写房主称呼" /></td><td>自动生成</td><td>2–8 人</td><td><button className="sheet-action" disabled={busy} onClick={createRemote}>创建联机房间</button></td><td>房主只需开始一次</td></tr>
-          <tr><th>3</th><td>加入离谱法堂</td><td><input value={joinName} onChange={(event) => setJoinName(event.target.value.slice(0, 12))} placeholder="填写你的称呼" /></td><td><input value={joinCode} maxLength={6} onChange={(event) => setJoinCode(event.target.value.toUpperCase().replace(/[^A-Z2-9]/g, ''))} placeholder="例如 Q7K2P8" /></td><td>自动识别</td><td><button className="sheet-action" disabled={busy} onClick={joinRemote}>加入房间</button></td><td>进行中的房间从下一轮参与</td></tr>
+          <tr><th>2</th><td>创建</td><td><input value={ownerName} onChange={(event) => setOwnerName(event.target.value.slice(0, 12))} placeholder="填写房主称呼" /></td><td>自动生成</td><td>2–8 人</td><td><button className="sheet-action" disabled={busy} onClick={createRemote}>创建联机房间</button></td><td>房主只需开始一次</td></tr>
+          <tr><th>3</th><td>加入</td><td><input value={joinName} onChange={(event) => setJoinName(event.target.value.slice(0, 12))} placeholder="填写你的称呼" /></td><td><input value={joinCode} maxLength={6} onChange={(event) => setJoinCode(event.target.value.toUpperCase().replace(/[^A-Z2-9]/g, ''))} placeholder="例如 Q7K2P8" /></td><td>自动识别</td><td><button className="sheet-action" disabled={busy} onClick={joinRemote}>加入房间</button></td><td>进行中的房间从下一轮参与</td></tr>
           <tr><th>5</th><td>怎么玩</td><td colSpan={5}>同一案件 → 首次陈词 → 证据突袭 → 当庭补述 → 最会狡辩与最像真的各投一票</td></tr>
           <tr><th>6</th><td>确认规则</td><td colSpan={5}>确认前可以修改，确认后锁定；所有人可见确认状态，但公开前看不到正文。</td></tr>
         </> : <>
           <tr><th>1</th><td>案件登记</td><td>第 {room.round}/3 轮</td><td>{room.caseTitle ?? '等待案件'}</td><td colSpan={2}>{room.charge ?? '房主开始后受理案件'}</td><td>{statusName[room.status]}</td></tr>
           {room.status === 'lobby' && room.players.map((player, index) => <tr key={player.id}><th>{2 + index}</th><td>{player.id === room.ownerId ? '房主' : '成员'}</td><td>{player.seat}</td><td>{player.name}{player.id === playerId ? '（你）' : ''}</td><td>{player.away ? '暂离' : '已加入'}</td><td>{(player.eligibleFromRound ?? 1) > 1 ? `第 ${player.eligibleFromRound} 轮参与` : '本局参与'}</td><td>房间 {room.code}</td></tr>)}
           {currentStatuses && room.players.filter((player) => room.expectedPlayerIds.includes(player.id)).map((player, index) => <tr key={player.id}><th>{2 + index}</th><td>{room.status === 'voting' ? '投票状态' : '确认状态'}</td><td>{player.seat}</td><td>{player.name}{player.id === playerId ? '（你）' : ''}</td><td>{phaseStatusLabel(currentStatuses[player.id], room.status === 'voting')}</td><td colSpan={2}>正文与票型不公开</td></tr>)}
-          {room.status === 'statement' && <tr><th>12</th><td>首次陈词</td><td colSpan={4}><input disabled={!isRoundPlayer || Boolean(statementLocked) || me?.away} value={statement} onChange={(event) => setStatement(event.target.value.slice(0, 80))} placeholder={isRoundPlayer ? '围绕案件为自己辩护，最多 80 字' : '本轮旁听，无需提交'} /><small>{statement.length}/80 · 确认后锁定</small></td><td><button className="sheet-action" disabled={!isRoundPlayer || Boolean(statementLocked) || me?.away} onClick={confirmStatement}>{statementLocked ? '首次陈词已确认' : '确认首次陈词'}</button></td></tr>}
+          {room.status === 'statement' && <tr><th>12</th><td>首次陈词</td><td colSpan={4}><textarea rows={3} disabled={!isRoundPlayer || Boolean(statementLocked) || me?.away} value={statement} onChange={(event) => setStatement(event.target.value.slice(0, 80))} placeholder={isRoundPlayer ? '围绕案件为自己辩护，最多 80 字' : '本轮旁听，无需提交'} /><small>{statement.length}/80 · 确认后锁定</small></td><td><button className="sheet-action" disabled={!isRoundPlayer || Boolean(statementLocked) || me?.away} onClick={confirmStatement}>{statementLocked ? '首次陈词已确认' : '确认首次陈词'}</button></td></tr>}
           {room.status === 'statement_reveal' && <tr><th>12</th><td>匿名陈词</td><td colSpan={5}>{entries.length ? entries.map((entry) => <p key={entry.submissionId}><b>{entry.displayCode}{entry.submissionId === privateSubmission?.submissionId ? '（你的陈述）' : ''}</b>：{entry.statement}</p>) : '本轮无人确认首次陈词'}</td></tr>}
           {room.status === 'evidence' && <><tr><th>12</th><td>证据突袭</td><td>{room.evidenceTitle}</td><td colSpan={4}>{room.evidence}</td></tr><tr><th>13</th><td>提示</td><td colSpan={5}>5 秒后开放当庭补述，请把新证据圆回来。</td></tr></>}
-          {room.status === 'response' && <><tr><th>12</th><td>证据突袭</td><td>{room.evidenceTitle}</td><td colSpan={4}>{room.evidence}</td></tr><tr><th>13</th><td>当庭补述</td><td colSpan={4}><input disabled={!privateSubmission?.statementConfirmed || Boolean(responseLocked) || me?.away} value={response} onChange={(event) => setResponse(event.target.value.slice(0, 80))} placeholder={privateSubmission?.statementConfirmed ? '面对新证据继续圆谎，最多 80 字' : '首次陈词未确认，本阶段无需提交'} /><small>{response.length}/80 · 确认后锁定</small></td><td><button className="sheet-action" disabled={!privateSubmission?.statementConfirmed || Boolean(responseLocked) || me?.away} onClick={confirmResponse}>{responseLocked ? '当庭补述已确认' : '确认当庭补述'}</button></td></tr></>}
-          {room.status === 'voting' && <><tr><th>12</th><td>共同证据</td><td>{room.evidenceTitle}</td><td colSpan={4}>{room.evidence}</td></tr>{entries.map((entry, index) => <tr key={entry.submissionId}><th>{13 + index}</th><td>{entry.displayCode}{entry.submissionId === privateSubmission?.submissionId ? '（你的陈述）' : ''}</td><td colSpan={3}>首次陈词：{entry.statement}<br />当庭补述：{entry.response ?? '未作补充说明'}</td><td><button disabled={voteLocked || entry.submissionId === privateSubmission?.submissionId} onClick={() => setBestChoice(entry.submissionId)}>{bestChoice === entry.submissionId ? '已选狡辩' : '最会狡辩'}</button></td><td><button disabled={voteLocked || entry.submissionId === privateSubmission?.submissionId} onClick={() => setTruthChoice(entry.submissionId)}>{truthChoice === entry.submissionId ? '已选可信' : '最像真的'}</button></td></tr>)}<tr><th>25</th><td>陪审团表决</td><td colSpan={4}>两项各选一条，可以选择同一条；不能投自己。书记员也交了一份匿名临场答辩。</td><td><button className="sheet-action" disabled={voteLocked || !isRoundPlayer || me?.away || !bestChoice || !truthChoice} onClick={confirmVote}>{voteLocked ? '双项选票已确认' : '确认两项选票'}</button></td></tr></>}
-          {['result', 'finished'].includes(room.status) && <>{entries.map((entry, index) => { const bestWinner = Boolean(latestResult?.bestWinnerSubmissionIds.includes(entry.submissionId)); const truthWinner = Boolean(latestResult?.truthWinnerSubmissionIds.includes(entry.submissionId)); return <tr key={entry.submissionId}><th>{12 + index}</th><td>{bestWinner && truthWinner ? '双项胜出' : bestWinner ? '最会狡辩' : truthWinner ? '最像真的' : entry.displayCode}</td><td>{entry.isReference ? '书记员席' : entry.authorName ?? '待揭晓'}</td><td colSpan={2}>首次陈词：{entry.statement}<br />当庭补述：{entry.response ?? '未作补充说明'}</td><td>狡辩 {entry.bestVotes ?? 0} · 可信 {entry.truthVotes ?? 0}</td><td>{bestWinner || truthWinner ? room.verdictTemplate : '本轮结果'}</td></tr>; })}<tr><th>25</th><td>狡辩排行榜</td><td colSpan={4}>{[...room.players].sort((a, b) => (room.totalBestScores[b.id] ?? 0) - (room.totalBestScores[a.id] ?? 0)).map((player) => `${player.name} ${room.totalBestScores[player.id] ?? 0} 票`).join('；')}</td><td>{room.status === 'finished' ? '三轮完成' : '10 秒后进入下一轮'}</td></tr><tr><th>26</th><td>可信排行榜</td><td colSpan={4}>{[...room.players].sort((a, b) => (room.totalTruthScores[b.id] ?? 0) - (room.totalTruthScores[a.id] ?? 0)).map((player) => `${player.name} ${room.totalTruthScores[player.id] ?? 0} 票`).join('；')}</td><td>书记员席不计入累计榜</td></tr></>}
+          {room.status === 'response' && <><tr><th>12</th><td>证据突袭</td><td>{room.evidenceTitle}</td><td colSpan={4}>{room.evidence}</td></tr><tr><th>13</th><td>当庭补述</td><td colSpan={4}><textarea rows={3} disabled={!privateSubmission?.statementConfirmed || Boolean(responseLocked) || me?.away} value={response} onChange={(event) => setResponse(event.target.value.slice(0, 80))} placeholder={privateSubmission?.statementConfirmed ? '面对新证据继续圆谎，最多 80 字' : '首次陈词未确认，本阶段无需提交'} /><small>{response.length}/80 · 确认后锁定</small></td><td><button className="sheet-action" disabled={!privateSubmission?.statementConfirmed || Boolean(responseLocked) || me?.away} onClick={confirmResponse}>{responseLocked ? '当庭补述已确认' : '确认当庭补述'}</button></td></tr></>}
+          {room.status === 'voting' && <><tr><th>12</th><td>共同证据</td><td>{room.evidenceTitle}</td><td colSpan={4}>{room.evidence}</td></tr>{entries.map((entry, index) => <tr key={entry.submissionId}><th>{13 + index}</th><td>{entry.displayCode}{entry.submissionId === privateSubmission?.submissionId ? '（你的陈述）' : ''}</td><td colSpan={3}><WorkbookText text={`首次陈词：${entry.statement}\n当庭补述：${entry.response ?? '未作补充说明'}`} title={`${entry.displayCode} 完整陈述`} onOpen={setNote} /></td><td><button disabled={voteLocked || entry.submissionId === privateSubmission?.submissionId} onClick={() => setBestChoice(entry.submissionId)}>{bestChoice === entry.submissionId ? '已选狡辩' : '最会狡辩'}</button></td><td><button disabled={voteLocked || entry.submissionId === privateSubmission?.submissionId} onClick={() => setTruthChoice(entry.submissionId)}>{truthChoice === entry.submissionId ? '已选可信' : '最像真的'}</button></td></tr>)}<tr><th>25</th><td>陪审团表决</td><td colSpan={4}>两项各选一条，可以选择同一条；不能投自己。书记员也交了一份匿名临场答辩。</td><td><button className="sheet-action" disabled={voteLocked || !isRoundPlayer || me?.away || !bestChoice || !truthChoice} onClick={confirmVote}>{voteLocked ? '双项选票已确认' : '确认两项选票'}</button></td></tr></>}
+          {['result', 'finished'].includes(room.status) && <>{entries.map((entry, index) => { const bestWinner = Boolean(latestResult?.bestWinnerSubmissionIds.includes(entry.submissionId)); const truthWinner = Boolean(latestResult?.truthWinnerSubmissionIds.includes(entry.submissionId)); return <tr key={entry.submissionId}><th>{12 + index}</th><td>{bestWinner && truthWinner ? '双项胜出' : bestWinner ? '最会狡辩' : truthWinner ? '最像真的' : entry.displayCode}</td><td>{entry.isReference ? '书记员席' : entry.authorName ?? '待揭晓'}</td><td colSpan={2}><WorkbookText text={`首次陈词：${entry.statement}\n当庭补述：${entry.response ?? '未作补充说明'}`} title={`${entry.displayCode} 完整陈述`} onOpen={setNote} /></td><td>狡辩 {entry.bestVotes ?? 0} · 可信 {entry.truthVotes ?? 0}</td><td>{bestWinner || truthWinner ? room.verdictTemplate : '本轮结果'}</td></tr>; })}<tr><th>25</th><td>狡辩排行榜</td><td colSpan={4}>{[...room.players].sort((a, b) => (room.totalBestScores[b.id] ?? 0) - (room.totalBestScores[a.id] ?? 0)).map((player) => `${player.name} ${room.totalBestScores[player.id] ?? 0} 票`).join('；')}</td><td>{room.status === 'finished' ? '三轮完成' : '10 秒后进入下一轮'}</td></tr><tr><th>26</th><td>可信排行榜</td><td colSpan={4}>{[...room.players].sort((a, b) => (room.totalTruthScores[b.id] ?? 0) - (room.totalTruthScores[a.id] ?? 0)).map((player) => `${player.name} ${room.totalTruthScores[player.id] ?? 0} 票`).join('；')}</td><td>书记员席不计入累计榜</td></tr></>}
         </>}</tbody>
       </table></div>
-      {notice && <div className="sheet-toast sheet-toast--info">{notice}</div>}
     </div><ReleaseNotificationPanel open={notificationOpen} onClose={() => setNotificationOpen(false)} /></section>
-    <footer className="sheet-tabs"><button disabled aria-label="新增工作表不可用">＋</button>{courtSheets.map(([id, label]) => <button className={activeSheet === id ? 'is-current' : ''} onClick={() => setActiveSheet(id)} key={id}>{label}</button>)}</footer>
+    <WorkbookFeedback note={note} onClose={() => setNote(null)} status={notice} kind={noticeKind} />
+    <footer className="sheet-tabs">{courtSheets.map(([id, label]) => <button className={activeSheet === id ? 'is-current' : ''} disabled={!room && id !== 'home' && id !== 'guide'} onClick={() => id === 'guide' ? openGuide() : setActiveSheet(id)} key={id}>{label}</button>)}</footer>
   </main>;
 }

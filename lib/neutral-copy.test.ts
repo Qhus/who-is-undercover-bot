@@ -28,7 +28,7 @@ test('表格模式在输入框外和输入提示中同时展示公共规则', ()
   assert.match(spreadsheetSource, /sheet-rule-banner/);
   assert.match(spreadsheetSource, /Round_.*公共规则/);
   assert.match(spreadsheetSource, /placeholder="填写本轮描述｜点击查看规则"/);
-  assert.match(spreadsheetSource, /sheet-detail-popover/);
+  assert.match(spreadsheetSource, /WorkbookFeedback/);
   assert.match(spreadsheetSource, /Round_.*完整规则/);
 });
 
@@ -46,8 +46,8 @@ test('Excel 玩法说明保持表格界面并可返回原工作表', () => {
   assert.match(spreadsheetSource, /sheetTab === 'guide'/);
   assert.match(spreadsheetSource, /返回之前的工作表/);
   assert.match(spreadsheetSource, /返回后恢复：\{tabLabel\(returnSheetTab\)\}/);
-  assert.match(spreadsheetSource, /创建房间（房主入口）/);
-  assert.match(spreadsheetSource, /加入房间（玩家入口）/);
+  assert.match(spreadsheetSource, /\['创建',/);
+  assert.match(spreadsheetSource, /\['加入',/);
   assert.match(styles, /sheet-app--guide[\s\S]*white-space:normal/);
   assert.doesNotMatch(styles, /content:\s*"当前"/);
 });
@@ -157,9 +157,10 @@ test('四项游戏使用独立页面和独立入口', () => {
   assert.match(undercoverPage, /GameApp/);
   assert.doesNotMatch(undercoverSheet, /离谱法堂|情况说明表（实验）/);
   assert.match(courtPage, /CourtSpreadsheetMode/);
-  assert.match(courtApp, /创建离谱法堂/);
-  assert.match(courtApp, /加入离谱法堂/);
-  assert.match(courtApp, /不是找卧底，是分别选出最会狡辩和最像真的答案/);
+  assert.match(courtApp, /<td>创建<\/td>/);
+  assert.match(courtApp, /<td>加入<\/td>/);
+  assert.match(courtApp, /<td>离谱法堂<\/td>/);
+  assert.match(courtApp, /分别选出最会狡辩和最像真的答案/);
   assert.doesNotMatch(courtApp, /demo-b|demo-c|创建本机演示/);
   assert.match(cluePage, /ClueSpreadsheetMode/);
   assert.match(clueApp, /获奖联想机制改编/);

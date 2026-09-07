@@ -75,7 +75,7 @@ test('离谱法堂工作表标签可切换且长陈述完整换行', () => {
   for (const sheet of ['成员列表', '案件登记', '陈述记录', '证据附件', '陪审投票', '判决统计', '玩法说明', '操作记录']) {
     assert.match(courtAppSource, new RegExp(`'${sheet}'`));
   }
-  assert.match(courtAppSource, /onClick=\{\(\) => setActiveSheet\(id\)\}/);
+  assert.match(courtAppSource, /onClick=\{\(\) => id === 'guide' \? openGuide\(\) : setActiveSheet\(id\)\}/);
   assert.match(courtAppSource, /activeSheet !== 'home' \? worksheetRows\(\)/);
   assert.match(globalStyles, /\.court-sheet \.sheet-grid td[\s\S]*white-space:normal/);
   assert.match(globalStyles, /\.court-sheet \.sheet-grid td[\s\S]*overflow-wrap:anywhere/);

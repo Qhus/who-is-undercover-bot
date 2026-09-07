@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import './workbook.css';
 
 export const metadata: Metadata = {
   title: '协作工作簿',
