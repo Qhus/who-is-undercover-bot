@@ -267,7 +267,7 @@ export class CloudBaseRoomStore {
 
   async joinRoom(code: string, playerId: string, nickname: string): Promise<{ room: GameRoom; playerId: string }> {
     await this.connect();
-    const { data, error } = await this.db().rpc('join_game', {
+    const { data, error } = await this.db().rpc('join_game_v34', {
       p_code: code,
       p_player_id: playerId,
       p_nickname: nickname,
@@ -306,7 +306,7 @@ export class CloudBaseRoomStore {
     payload?: Record<string, unknown>;
   }): Promise<GameActionResult> {
     await this.connect();
-    const { data, error } = await this.db().rpc('apply_game_action_v31', {
+    const { data, error } = await this.db().rpc('apply_game_action_v34', {
       p_code: input.room.code,
       p_action_id: input.actionId,
       p_action_type: input.actionType,

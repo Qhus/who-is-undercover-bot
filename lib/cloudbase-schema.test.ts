@@ -19,6 +19,8 @@ const versionedRpcMigration = readFileSync(new URL('../cloudbase/concurrency-v3-
 const versionedRpcVerification = readFileSync(new URL('../cloudbase/verify-v3-2-versioned-rpc.sql', import.meta.url), 'utf8');
 const undercoverUxMigration = readFileSync(new URL('../cloudbase/experience-v3-3-undercover-ux.sql', import.meta.url), 'utf8');
 const undercoverUxVerification = readFileSync(new URL('../cloudbase/verify-v3-3-undercover-ux.sql', import.meta.url), 'utf8');
+const undercoverManualHostMigration = readFileSync(new URL('../cloudbase/concurrency-v11-undercover-manual-host.sql', import.meta.url), 'utf8');
+const undercoverManualHostVerification = readFileSync(new URL('../cloudbase/verify-v11-undercover-manual-host.sql', import.meta.url), 'utf8');
 const courtPlayableMigration = readFileSync(new URL('../cloudbase/concurrency-v4-1-court-playable.sql', import.meta.url), 'utf8');
 const courtPlayableVerification = readFileSync(new URL('../cloudbase/verify-v4-1-court-playable.sql', import.meta.url), 'utf8');
 const courtV5Migration = readFileSync(new URL('../cloudbase/concurrency-v5-court-draft-02.sql', import.meta.url), 'utf8');
@@ -113,8 +115,22 @@ test('谁是卧底称呼增量将前后端上限统一为 24 字', () => {
   assert.match(undercoverUxVerification, /anon can execute create and join RPCs/);
 });
 
+test('谁是卧底手动填词房主不占玩家名额，并使用 V3.4 增量 RPC', () => {
+  assert.match(undercoverManualHostMigration, /create or replace function public\.join_game_v34/i);
+  assert.match(undercoverManualHostMigration, /create or replace function public\.apply_game_action_v34/i);
+  assert.match(undercoverManualHostMigration, /not coalesce\(\(player->>'hostOnly'\)::boolean, false\)/i);
+  assert.match(undercoverManualHostMigration, /return public\.apply_game_action_v31/i);
+  assert.doesNotMatch(undercoverManualHostMigration, /drop\s+(?:table|function)|truncate\s+/i);
+  assert.match(undercoverManualHostVerification, /manual host is excluded from room capacity/i);
+  assert.match(undercoverManualHostVerification, /lobby settings count actual players only/i);
+  assert.match(storeSource, /rpc\('join_game_v34'/);
+  assert.match(storeSource, /rpc\('apply_game_action_v34'/);
+  assert.match(appSource, /wordSource: customWords \? 'manual' : 'random'/);
+  assert.match(appSource, /房主作为出题人/);
+});
+
 test('联机客户端使用同一操作 ID 重试并以服务端状态为准', () => {
-  assert.match(storeSource, /rpc\('apply_game_action_v31'/);
+  assert.match(storeSource, /rpc\('apply_game_action_v34'/);
   assert.match(storeSource, /p_action_id:\s*input\.actionId/);
   assert.match(appSource, /const actionId = makeId\('action'\)/);
   assert.ok((appSource.match(/applyGameAction\(\{ room: sourceRoom, actionId, actionType, payload \}\)/g) ?? []).length >= 2);

@@ -3,6 +3,7 @@ export type Winner = Role | null;
 export type GameStatus = 'lobby' | 'cards' | 'discussion' | 'voting' | 'guessing' | 'result' | 'finished';
 export type ChallengeMode = 'off' | 'light' | 'random';
 export type DescriptionRevealMode = 'sequential' | 'all_submitted';
+export type WordSource = 'random' | 'manual';
 export type GuessingReason = 'elimination' | 'buzzer';
 export type BuzzerStatus = 'idle' | 'guessing' | 'success' | 'failed';
 
@@ -57,6 +58,8 @@ export interface Player {
   alive: boolean;
   cardReady: boolean;
   away?: boolean;
+  /** 手动填词的房主只作为出题人，保留房主权限但不进入玩家流程。 */
+  hostOnly?: boolean;
 }
 
 export interface Assignment {
@@ -92,6 +95,8 @@ export interface GameRoom {
   ownerId: string;
   status: GameStatus;
   playerLimit: number;
+  /** 手动模式下 playerLimit 只计算实际玩家，不包含出题房主。 */
+  wordSource?: WordSource;
   undercoverCount: number;
   blankCardCount?: number;
   civilianAccuseEnabled?: boolean;
@@ -218,8 +223,25 @@ export function validateRoleCounts(playerLimit: number, undercoverCount: number,
   if (special >= playerLimit - special) throw new Error('卧底人数不合法：特殊阵营人数必须少于平民人数');
 }
 
+export function playingPlayers(room: Pick<GameRoom, 'players'>): Player[] {
+  return room.players.filter((player) => !player.hostOnly);
+}
+
+export function joinedPlayerCount(room: Pick<GameRoom, 'players'>): number {
+  return playingPlayers(room).length;
+}
+
+export function lobbyIsReady(room: Pick<GameRoom, 'players' | 'playerLimit'>): boolean {
+  return joinedPlayerCount(room) === room.playerLimit;
+}
+
+function reseatPlayers(players: Player[]): Player[] {
+  let nextSeat = 0;
+  return players.map((player) => player.hostOnly ? { ...player, seat: 0 } : { ...player, seat: ++nextSeat });
+}
+
 export function eligibleVoters(room: GameRoom): Player[] {
-  return room.players.filter((player) => player.alive && !player.away);
+  return playingPlayers(room).filter((player) => player.alive && !player.away);
 }
 
 export function eligibleCandidates(room: GameRoom): Player[] {
@@ -271,7 +293,7 @@ export function determineWinner(room: Pick<GameRoom, 'players' | 'assignments'>)
   let civilians = 0;
   let undercovers = 0;
   for (const player of room.players) {
-    if (!player.alive) continue;
+    if (player.hostOnly || !player.alive) continue;
     if (room.assignments[player.id]?.role === 'undercover' || room.assignments[player.id]?.role === 'blank') undercovers += 1;
     else civilians += 1;
   }
@@ -681,6 +703,7 @@ function refreshDiscussionAfterPresenceChange(room: GameRoom, now: number): Game
 export function setPlayerAway(room: GameRoom, playerId: string, away: boolean, now = Date.now()): GameRoom {
   if (room.status === 'finished') return room;
   const target = room.players.find((player) => player.id === playerId);
+  if (target?.hostOnly) throw new Error('出题人不参与暂退流程');
   if (!target?.alive) throw new Error('已退出玩家不能切换暂退状态');
   if (Boolean(target.away) === away) return room;
   let next: GameRoom = {
@@ -704,9 +727,10 @@ export function setPlayerAway(room: GameRoom, playerId: string, away: boolean, n
 export function exitPlayer(room: GameRoom, playerId: string, now = Date.now()): GameRoom {
   if (room.status === 'finished') return room;
   const target = room.players.find((player) => player.id === playerId);
+  if (target?.hostOnly) throw new Error('出题人不参与退出流程');
   if (!target?.alive) return room;
   if (room.status === 'lobby') {
-    const players = room.players.filter((player) => player.id !== playerId).map((player, index) => ({ ...player, seat: index + 1 }));
+    const players = reseatPlayers(room.players.filter((player) => player.id !== playerId));
     return {
       ...room,
       players,
@@ -774,6 +798,7 @@ export function createRoom(input: {
   descriptionRevealMode?: DescriptionRevealMode;
   buzzerEnabled?: boolean;
   autoAdvanceEnabled?: boolean;
+  wordSource?: WordSource;
 }): GameRoom {
   const ownerName = input.ownerName.trim();
   if (!ownerName || ownerName.length > PLAYER_NAME_MAX_LENGTH) throw new Error(`称呼须为 1–${PLAYER_NAME_MAX_LENGTH} 字`);
@@ -782,11 +807,14 @@ export function createRoom(input: {
   }
   validateRoleCounts(input.playerLimit, input.undercoverCount, input.blankCardCount ?? 0);
   const now = Date.now();
+  const wordSource = input.wordSource ?? 'random';
+  const hostOnly = wordSource === 'manual';
   return {
     code: input.code ?? makeRoomCode(),
     ownerId: input.ownerId,
     status: 'lobby',
     playerLimit: input.playerLimit,
+    wordSource,
     undercoverCount: input.undercoverCount,
     blankCardCount: input.blankCardCount ?? 0,
     civilianAccuseEnabled: input.civilianAccuseEnabled ?? false,
@@ -813,7 +841,7 @@ export function createRoom(input: {
     buzzerUsedBy: null,
     buzzerStatus: 'idle',
     pausedStatus: null,
-    players: [{ id: input.ownerId, name: ownerName, seat: 1, alive: true, cardReady: false, away: false }],
+    players: [{ id: input.ownerId, name: ownerName, seat: hostOnly ? 0 : 1, alive: !hostOnly, cardReady: hostOnly, away: false, hostOnly }],
     assignments: {},
     round: 1,
     ballot: 1,
@@ -835,13 +863,16 @@ export function createRoom(input: {
 }
 
 export function dealRoom(room: GameRoom, random: RandomSource = Math.random): GameRoom {
-  if (room.players.length !== room.playerLimit) throw new Error('玩家尚未到齐');
-  const assignments = assignCards(room.players, room.undercoverCount, room.civilianWord, room.undercoverWord, room.blankCardCount ?? 0, random);
+  const participants = playingPlayers(room);
+  if (participants.length !== room.playerLimit) throw new Error('玩家尚未到齐');
+  const assignments = assignCards(participants, room.undercoverCount, room.civilianWord, room.undercoverWord, room.blankCardCount ?? 0, random);
   return {
     ...room,
     status: 'cards',
     assignments,
-    players: room.players.map((player) => ({ ...player, alive: true, cardReady: false, away: false })),
+    players: room.players.map((player) => player.hostOnly
+      ? { ...player, alive: false, cardReady: true, away: false }
+      : { ...player, alive: true, cardReady: false, away: false }),
     round: 1,
     ballot: 1,
     votes: {},
@@ -882,7 +913,7 @@ export function updateLobbySettings(
   if (room.status !== 'lobby') throw new Error('只有等待房间可以修改设置');
   if (room.ownerId !== actorId) throw new Error('只有房主可以修改设置');
   if (!Number.isInteger(settings.playerLimit) || settings.playerLimit < MIN_PLAYERS || settings.playerLimit > MAX_PLAYERS) throw new Error(`玩家人数必须为 ${MIN_PLAYERS}–${MAX_PLAYERS} 人`);
-  if (settings.playerLimit < room.players.length) throw new Error('总人数不能少于当前已加入人数');
+  if (settings.playerLimit < joinedPlayerCount(room)) throw new Error('总人数不能少于当前已加入玩家数');
   validateRoleCounts(settings.playerLimit, settings.undercoverCount, settings.blankCardCount);
   return {
     ...room,

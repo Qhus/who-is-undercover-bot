@@ -16,6 +16,7 @@
 
 - 3–8 人默认 1 名卧底，9–10 人默认 2 名；3–4 人只允许 1 名卧底；
 - 105 组分级趣味词库与自定义词对，最近 10 局自动避重；
+- 系统随机词时房主正常参与且创建前不展示词组；手动填词时房主改为不占玩家名额的出题人，不参与发牌、描述、投票和胜负；
 - 按住鼠标或空格键只查看自己的秘密词语，不提示平民或卧底角色，失焦立即遮挡；
 - 存活玩家匿名投票，不公开个人投票流向；
 - 唯一高票淘汰、首次平票复投、二次平票无人出局；
@@ -72,8 +73,9 @@ npm run dev -- --hostname localhost --port 43210
 10. 升级 A3 V1.9.2 时，执行 [`cloudbase/concurrency-v9-2-clue-peer-awards.sql`](cloudbase/concurrency-v9-2-clue-peer-awards.sql)，再运行 [`cloudbase/verify-v9-2-clue-peer-awards.sql`](cloudbase/verify-v9-2-clue-peer-awards.sql)，确认每行 `ok=true`。该脚本已包含 4 分约束修正，可直接接在 V3 后执行。
 11. A5 获得用户明确的云端迁移确认后，执行 [`cloudbase/concurrency-v10-soup-detective.sql`](cloudbase/concurrency-v10-soup-detective.sql)，再运行 [`cloudbase/verify-v10-soup-detective.sql`](cloudbase/verify-v10-soup-detective.sql)。当前开发轮次不得代替用户执行该迁移。
 12. A5 升级 V1.10.1：在已完成 V10 的环境中，仅增量执行 [`cloudbase/concurrency-v10-1-soup-reliability.sql`](cloudbase/concurrency-v10-1-soup-reliability.sql)，再运行 [`cloudbase/verify-v10-1-soup-reliability.sql`](cloudbase/verify-v10-1-soup-reliability.sql)，确认每行 `ok=true` 后部署前端。无需重跑 V10 或题库种子。新前端使用 V1.1 RPC，漏迁移会明确提示；旧入口保留。
-13. 复制 `.env.example` 为 `.env.local`，填写环境 ID、上海地域和 Publishable Key。
-14. 安全来源中加入本地地址和实际 CloudBase/GitHub Pages 域名。
+13. A2 升级 V1.11.0 前，仅增量执行 [`cloudbase/concurrency-v11-undercover-manual-host.sql`](cloudbase/concurrency-v11-undercover-manual-host.sql)，再运行 [`cloudbase/verify-v11-undercover-manual-host.sql`](cloudbase/verify-v11-undercover-manual-host.sql)，确认每行 `ok=true` 后部署前端。新函数不覆盖旧 RPC，无需重跑旧迁移。
+14. 复制 `.env.example` 为 `.env.local`，填写环境 ID、上海地域和 Publishable Key。
+15. 安全来源中加入本地地址和实际 CloudBase/GitHub Pages 域名。
 
 只允许将 Publishable Key 暴露到浏览器。不要把 CloudBase API Key、SecretId 或 SecretKey 写入环境文件或 GitHub。
 
@@ -109,7 +111,7 @@ npm run build:pages
 
 ### 检查范围
 
-`npm test` 包含 A2/A3/A4 原有回归，以及 A5 本地 PostgreSQL（PGlite）函数执行测试和异步草稿队列测试。SQL 用例不连接 CloudBase、不读取云密钥，覆盖 3/5/8/10 人、私密读取、重复操作、过期题次、草稿版本冲突、问题上限和题后反馈。PGlite 为单连接，不能代替云端多浏览器并发与断线验收。
+`npm test` 包含 A2/A3/A4 原有回归，以及 A2 手动填词出题人的本地 PostgreSQL 容量测试、A5 函数执行测试和异步草稿队列测试。SQL 用例不连接 CloudBase、不读取云密钥。PGlite 为单连接，不能代替云端多浏览器并发与断线验收。
 
 本轮检查结果、剩余风险和部署顺序见 [`docs/review-2026-09-07.md`](docs/review-2026-09-07.md)。
 

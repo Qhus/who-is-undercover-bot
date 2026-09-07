@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { accuseUndercover, applyBallotResult, assignCards, autoAdvanceDue, autoVotingDue, blankCardOptions, canAccuseUndercover, canBeginVoting, canTriggerBuzzer, createRoom, dealRoom, determineWinner, discussionComplete, eligibleVoters, exitPlayer, getDescriptionTurnPlayer, getRoundChallenge, getRoundContents, getVotingOpensAt, isRoundContentVisible, PLAYER_LIMIT_OPTIONS, RANDOM_CHALLENGE_RULES, resolveBallot, resolveUndercoverComeback, revealDescriptions, selectChallengeRule, setAutoAdvancePaused, setPlayerAway, skipDescription, startDiscussion, startNextRound, startVoting, submitRoundContent, triggerBuzzer, undercoverOptions, updateLobbySettings, type GameRoom, type Player } from './game.ts';
+import { accuseUndercover, applyBallotResult, assignCards, autoAdvanceDue, autoVotingDue, blankCardOptions, canAccuseUndercover, canBeginVoting, canTriggerBuzzer, createRoom, dealRoom, determineWinner, discussionComplete, eligibleVoters, exitPlayer, getDescriptionTurnPlayer, getRoundChallenge, getRoundContents, getVotingOpensAt, isRoundContentVisible, joinedPlayerCount, lobbyIsReady, PLAYER_LIMIT_OPTIONS, playingPlayers, RANDOM_CHALLENGE_RULES, resolveBallot, resolveUndercoverComeback, revealDescriptions, selectChallengeRule, setAutoAdvancePaused, setPlayerAway, skipDescription, startDiscussion, startNextRound, startVoting, submitRoundContent, triggerBuzzer, undercoverOptions, updateLobbySettings, type GameRoom, type Player } from './game.ts';
 import { randomWordPairAvoiding, randomWordPairExcluding, WORD_PAIR_ENTRIES, wordPairHint, wordPairKey } from './words.ts';
 
 function players(count = 8): Player[] {
@@ -64,6 +64,45 @@ test('玩家称呼最多允许 24 字', () => {
   const accepted = createRoom({ ownerId: 'owner', ownerName: '甲'.repeat(24), playerLimit: 3, undercoverCount: 1, civilianWord: '周报', undercoverWord: '复盘' });
   assert.equal(accepted.players[0].name.length, 24);
   assert.throws(() => createRoom({ ownerId: 'owner', ownerName: '甲'.repeat(25), playerLimit: 3, undercoverCount: 1, civilianWord: '周报', undercoverWord: '复盘' }), /1–24/);
+});
+
+test('手动填词时房主只做出题人，人数、发牌和胜负只计实际玩家', () => {
+  const created = createRoom({ ownerId: 'host', ownerName: '出题人', playerLimit: 3, undercoverCount: 1, civilianWord: '周报', undercoverWord: '复盘', wordSource: 'manual' });
+  assert.equal(created.wordSource, 'manual');
+  assert.deepEqual(created.players[0], { id: 'host', name: '出题人', seat: 0, alive: false, cardReady: true, away: false, hostOnly: true });
+  assert.equal(joinedPlayerCount(created), 0);
+  assert.equal(lobbyIsReady(created), false);
+
+  const participantRoster = players(3).map((player, index) => ({ ...player, id: `guest${index}`, cardReady: false }));
+  const waiting = { ...created, players: [created.players[0], ...participantRoster] };
+  assert.equal(joinedPlayerCount(waiting), 3);
+  assert.equal(lobbyIsReady(waiting), true);
+  const dealt = dealRoom(waiting, () => 0);
+  assert.equal(Object.keys(dealt.assignments).length, 3);
+  assert.equal(dealt.assignments.host, undefined);
+  assert.equal(dealt.players[0].hostOnly, true);
+  assert.equal(dealt.players[0].alive, false);
+  assert.deepEqual(playingPlayers(dealt).map((player) => player.id), ['guest0', 'guest1', 'guest2']);
+  assert.deepEqual(eligibleVoters(dealt).map((player) => player.id), ['guest0', 'guest1', 'guest2']);
+  assert.throws(() => setPlayerAway(dealt, 'host', true), /出题人/);
+  assert.throws(() => exitPlayer(dealt, 'host'), /出题人/);
+  assert.equal(updateLobbySettings({ ...waiting, playerLimit: 5 }, 'host', { playerLimit: 3, undercoverCount: 1, blankCardCount: 0 }).playerLimit, 3);
+
+  const assignments = {
+    guest0: { role: 'undercover' as const, word: '复盘' },
+    guest1: { role: 'civilian' as const, word: '周报' },
+    guest2: { role: 'civilian' as const, word: '周报' },
+  };
+  assert.equal(determineWinner({ players: dealt.players, assignments }), null);
+  assert.equal(determineWinner({ players: dealt.players.map((player) => player.id === 'guest0' ? { ...player, alive: false } : player), assignments }), 'civilian');
+});
+
+test('系统随机词时房主仍是第一名实际玩家', () => {
+  const room = createRoom({ ownerId: 'host', ownerName: '房主', playerLimit: 3, undercoverCount: 1, civilianWord: '周报', undercoverWord: '复盘', wordSource: 'random' });
+  assert.equal(room.players[0].hostOnly, false);
+  assert.equal(room.players[0].alive, true);
+  assert.equal(room.players[0].seat, 1);
+  assert.equal(joinedPlayerCount(room), 1);
 });
 
 test('系统词组为同步提交模式的空白牌提供宽泛范围提示', () => {
