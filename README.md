@@ -6,7 +6,7 @@
 
 - `/`：游戏目录，通过 A2、A3、A4、A5 进入四项独立玩法；
 - `/undercover/`：谁是卧底，负责私密发词、描述、匿名投票与自动判胜；
-- `/clue/`：提示大王，每人轮流判断答案，其他成员独立提交关联词，命中后匿名评分并生成双榜单；
+- `/clue/`：提示大王，每人轮流判断答案，其他成员独立提交关联词，无论是否命中均匿名评分并生成双榜单；
 - `/court/`：离谱法堂，围绕成套案件进行匿名陈词、证据突袭、补述与陪审投票；
 - `/soup/`：汤底侦探，一名汤主掌握完整资料，其余侦探在表格内轮流提问、还原和共同解题；
 - 四个游戏都可复制带房间编号的邀请链接，群友打开后只需填写称呼；
@@ -43,7 +43,7 @@
 - 描述公开后显示 5 秒倒计时并自动开放投票，房主可提前开放；退出玩家当轮“本轮内容”显示“无需提交”。
 - 本局结束后点击“换词再来一局”会保留玩家名单、重新分配身份，并保证新词组与上一局不同。
 - 联机关键操作通过数据库房间锁和唯一操作 ID 合并；同时确认、提交描述或投票不会再覆盖其他玩家的结果，重复请求保持幂等。
-- 游戏目录标题栏提供显示当前版本号的通知入口；更新说明在目录工作簿右侧窗格内展开，可查看完整版本内容，不使用弹窗、不记录已读状态且不发送推送；具体游戏页不再重复展示通知。
+- 目录和四个游戏页的标题栏均提供当前版本号通知入口；更新说明在工作簿右侧展开，不使用弹窗、不记录已读状态且不发送推送。
 - 离谱法堂当前使用 V6 简易流程：案件、首次陈词、证据突袭、当庭补述和双项评选；陈词与补述各 5 分钟、投票 2 分钟，不包含辩护招式或玩家质询。
 - 提示大王支持 2–8 人，可选自由、公共规则或角色扮演模式以及四档题目难度；角色每题重新分配。关联词填写 120 秒，判断阶段 60 秒内最多尝试 3 次；无论是否猜中都会公布答案并为匿名关联词评 1–4 分，4 分会标记“本轮最独特”。三人及以上时，提示者还可给其他一条提示送出不计入总分的同行点赞，最终生成双榜单、最独特次数和“同行最爱”称号。
 - 汤底侦探支持 3–10 人，随机选出首位汤主并在全员担任前不重复；每名侦探拥有独立草稿，正式行动按顺序三选一，汤主判定后自动轮转。默认 20 个有效问题，可延长 5 问一次，并可公开最多 2 个渐进提示。
@@ -71,8 +71,9 @@ npm run dev -- --hostname localhost --port 43210
 9. 升级 A3 V1.9.1 时，执行 [`cloudbase/concurrency-v9-1-clue-rating.sql`](cloudbase/concurrency-v9-1-clue-rating.sql)，再运行 [`cloudbase/verify-v9-1-clue-rating.sql`](cloudbase/verify-v9-1-clue-rating.sql)，确认每行 `ok=true`。
 10. 升级 A3 V1.9.2 时，执行 [`cloudbase/concurrency-v9-2-clue-peer-awards.sql`](cloudbase/concurrency-v9-2-clue-peer-awards.sql)，再运行 [`cloudbase/verify-v9-2-clue-peer-awards.sql`](cloudbase/verify-v9-2-clue-peer-awards.sql)，确认每行 `ok=true`。该脚本已包含 4 分约束修正，可直接接在 V3 后执行。
 11. A5 获得用户明确的云端迁移确认后，执行 [`cloudbase/concurrency-v10-soup-detective.sql`](cloudbase/concurrency-v10-soup-detective.sql)，再运行 [`cloudbase/verify-v10-soup-detective.sql`](cloudbase/verify-v10-soup-detective.sql)。当前开发轮次不得代替用户执行该迁移。
-12. 复制 `.env.example` 为 `.env.local`，填写环境 ID、上海地域和 Publishable Key。
-13. 安全来源中加入本地地址和最终 GitHub Pages 域名。
+12. A5 升级 V1.10.1：在已完成 V10 的环境中，仅增量执行 [`cloudbase/concurrency-v10-1-soup-reliability.sql`](cloudbase/concurrency-v10-1-soup-reliability.sql)，再运行 [`cloudbase/verify-v10-1-soup-reliability.sql`](cloudbase/verify-v10-1-soup-reliability.sql)，确认每行 `ok=true` 后部署前端。无需重跑 V10 或题库种子。新前端使用 V1.1 RPC，漏迁移会明确提示；旧入口保留。
+13. 复制 `.env.example` 为 `.env.local`，填写环境 ID、上海地域和 Publishable Key。
+14. 安全来源中加入本地地址和实际 CloudBase/GitHub Pages 域名。
 
 只允许将 Publishable Key 暴露到浏览器。不要把 CloudBase API Key、SecretId 或 SecretKey 写入环境文件或 GitHub。
 
@@ -93,12 +94,26 @@ npm run build:pages
 
 ## GitHub Pages
 
+### CloudBase Git 静态托管
+
+当前 CloudBase 测试应用继续使用 `test` 分支，目录 `./`、安装 `npm ci`、构建 **`npm run build`**（`npm run build:pages` 也可）、产物 **`./out`**、部署路径 `/`，原有公开环境变量保持不变。自 V1.10.1 起默认构建统一为 Next.js 静态导出，旧 Vinext 构建仅保留为 `npm run build:sites`，不要用于 CloudBase 静态部署。验证通过并得到用户确认前不合并 `main`。
+
+### GitHub Pages 自动构建
+
 仓库包含 `.github/workflows/pages.yml`。在 GitHub 仓库的 Actions variables 中设置：
 
 - `CLOUDBASE_ENV_ID`
 - `CLOUDBASE_PUBLISHABLE_KEY`
 
 然后在 Settings → Pages 中选择 GitHub Actions 作为来源。推送 `main` 后会先测试、构建，再部署 `out/`。
+
+### 检查范围
+
+`npm test` 包含 A2/A3/A4 原有回归，以及 A5 本地 PostgreSQL（PGlite）函数执行测试和异步草稿队列测试。SQL 用例不连接 CloudBase、不读取云密钥，覆盖 3/5/8/10 人、私密读取、重复操作、过期题次、草稿版本冲突、问题上限和题后反馈。PGlite 为单连接，不能代替云端多浏览器并发与断线验收。
+
+本轮检查结果、剩余风险和部署顺序见 [`docs/review-2026-09-07.md`](docs/review-2026-09-07.md)。
+
+清晰版项目总览见 [`0907总体结论html展示.html`](docs/0907总体结论html展示.html)，可下载后离线打开；仅作为文档保存，不新增游戏页面或公开托管入口。
 
 ## 信任边界
 

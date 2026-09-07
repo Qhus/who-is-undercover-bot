@@ -5,6 +5,7 @@ import type { AbsurdCourtRoom, CourtPrivateSubmission } from './court-game';
 import type { ClueKingRoom, CluePrivateRound } from './clue-game';
 import type { ClueDifficulty, ClueMode } from './clue-content';
 import type { SoupFeedbackInput, SoupPrivateRound, SoupRoom } from './soup-game';
+import type { SoupDraftSaveResult } from './soup-draft';
 
 type GameRow = { state: GameRoom; version: number };
 type PgClient = ReturnType<IPgClient>;
@@ -224,7 +225,7 @@ export class CloudBaseRoomStore {
 
   async applySoupAction(input: { room: SoupRoom; actionId: string; actionType: SoupActionType; payload?: Record<string, unknown> }): Promise<SoupActionResult> {
     await this.connect();
-    const { data, error } = await this.db().rpc('apply_soup_action_v1', {
+    const { data, error } = await this.db().rpc('apply_soup_action_v11', {
       p_code: input.room.code,
       p_action_id: input.actionId,
       p_action_type: input.actionType,
@@ -240,21 +241,26 @@ export class CloudBaseRoomStore {
 
   async getMySoupRound(code: string): Promise<SoupPrivateRound | null> {
     await this.connect();
-    const { data, error } = await this.db().rpc('get_my_soup_round_v1', { p_code: code }).single();
+    const { data, error } = await this.db().rpc('get_my_soup_round_v11', { p_code: code }).single();
     if (error) throw error;
     return data as SoupPrivateRound | null;
   }
 
-  async saveSoupDraft(code: string, draftText: string): Promise<SoupPrivateRound> {
+  async saveSoupDraft(room: Pick<SoupRoom, 'code' | 'sessionNo' | 'round'>, draftText: string, revision: number): Promise<SoupDraftSaveResult> {
     await this.connect();
-    const { data, error } = await this.db().rpc('save_soup_draft_v1', { p_code: code, p_draft_text: draftText }).single();
+    const { data, error } = await this.db().rpc('save_soup_draft_v11', {
+      p_code: room.code, p_expected_session: room.sessionNo, p_expected_round: room.round,
+      p_expected_revision: revision, p_draft_text: draftText,
+    }).single();
     if (error) throw error;
-    return data as SoupPrivateRound;
+    return data as unknown as SoupDraftSaveResult;
   }
 
-  async submitSoupFeedback(code: string, feedback: SoupFeedbackInput): Promise<{ accepted: boolean }> {
+  async submitSoupFeedback(room: Pick<SoupRoom, 'code' | 'sessionNo' | 'round'>, feedback: SoupFeedbackInput): Promise<{ accepted: boolean }> {
     await this.connect();
-    const { data, error } = await this.db().rpc('submit_soup_feedback_v1', { p_code: code, p_feedback: feedback }).single();
+    const { data, error } = await this.db().rpc('submit_soup_feedback_v11', {
+      p_code: room.code, p_expected_session: room.sessionNo, p_expected_round: room.round, p_feedback: feedback,
+    }).single();
     if (error) throw error;
     return data as unknown as { accepted: boolean };
   }

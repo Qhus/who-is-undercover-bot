@@ -5,6 +5,12 @@ import { COURT_CASE_PACKS } from './court-content.ts';
 import { SOUP_CASES } from './soup-content.ts';
 
 const schema = readFileSync(new URL('../cloudbase/schema.sql', import.meta.url), 'utf8');
+test('CloudBase 默认构建与 Pages 均生成 Next 静态产物', () => {
+  const config = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  assert.equal(config.scripts.build, 'next build');
+  assert.equal(config.scripts['build:pages'], 'next build');
+  assert.equal(config.scripts['build:sites'], 'vinext build');
+});
 const verification = readFileSync(new URL('../cloudbase/verify.sql', import.meta.url), 'utf8');
 const concurrencyBase = readFileSync(new URL('../cloudbase/concurrency-v2.sql', import.meta.url), 'utf8');
 const concurrencyMigration = readFileSync(new URL('../cloudbase/concurrency-v3-special-roles.sql', import.meta.url), 'utf8');
@@ -343,7 +349,8 @@ test('A5 使用独立私密表、并行草稿与版本化顺序行动 RPC', () =
   }
   for (const rpc of ['create_soup_game_v1', 'join_soup_game_v1', 'get_my_soup_round_v1', 'save_soup_draft_v1', 'submit_soup_feedback_v1', 'apply_soup_action_v1']) {
     assert.match(soupV1Migration, new RegExp(rpc));
-    assert.ok(storeSource.includes(`rpc('${rpc}'`));
+    const currentRpc = /^(create|join)_/.test(rpc) ? rpc : `${rpc}1`;
+    assert.ok(storeSource.includes(`rpc('${currentRpc}'`));
   }
   for (const action of ['start_soup_game', 'acknowledge_soup_host', 'submit_soup_question', 'submit_soup_solution', 'skip_soup_turn', 'judge_soup_question', 'judge_soup_solution', 'use_soup_hint', 'extend_soup_limit', 'reveal_soup_bottom', 'next_soup_round', 'end_soup_game']) {
     assert.match(soupV1Migration, new RegExp(action));

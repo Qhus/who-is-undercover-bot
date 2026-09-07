@@ -104,6 +104,8 @@ export interface SoupPrivateRound {
   hints: readonly string[];
   draftText: string;
   draftUpdatedAt: number | null;
+  draftRevision?: number;
+  feedbackSubmitted?: boolean;
 }
 
 export interface SoupRoundStart { room: SoupRoom; secret: SoupRoundSecret; }
@@ -142,6 +144,10 @@ function requireHost(room: SoupRoom, playerId: string) {
   if (room.hostId !== playerId) throw new Error('仅本题汤主可以判定');
 }
 
+function requireCurrentSecret(room: SoupRoom, secret: SoupRoundSecret) {
+  if (secret.sessionNo !== room.sessionNo || secret.round !== room.round) throw new Error('本题资料已过期');
+}
+
 function cleanActionContent(content: string) {
   const clean = content.trim();
   if (!clean) throw new Error('内容不能为空');
@@ -177,6 +183,7 @@ function chooseCase(room: SoupRoom, cards: readonly SoupCaseCard[], random: Rand
   const enabled = cards.filter((card) => card.reviewStatus !== 'disabled');
   if (!enabled.length) throw new Error('当前没有可用题卡');
   const fresh = enabled.filter((card) => !room.usedCaseIds.includes(card.id));
+  if (!fresh.length) room.usedCaseIds = [];
   const pool = fresh.length ? fresh : enabled;
   return pool[Math.floor(random() * pool.length)] ?? pool[0];
 }
@@ -271,6 +278,7 @@ export function acknowledgeSoupHost(room: SoupRoom, actorId: string, now = Date.
   if (room.status !== 'host_reading') throw new Error('当前无需确认汤底');
   const next = cloneRoom(room);
   next.status = 'investigating';
+  next.roundStartedAt = now;
   return touch(next, now);
 }
 
@@ -319,6 +327,7 @@ export function judgeSoupQuestion(room: SoupRoom, actorId: string, verdict: Soup
 
 export function judgeSoupSolution(room: SoupRoom, actorId: string, verdict: SoupSolutionVerdict, secret: SoupRoundSecret, note = '', now = Date.now()) {
   requireHost(room, actorId);
+  requireCurrentSecret(room, secret);
   if (room.status !== 'judging_solution' || room.pendingAction?.type !== 'solution') throw new Error('当前没有待判定还原');
   if (!['success', 'close', 'wrong'].includes(verdict)) throw new Error('还原判定无效');
   const next = cloneRoom(room);
@@ -342,6 +351,7 @@ export function judgeSoupSolution(room: SoupRoom, actorId: string, verdict: Soup
 
 export function useSoupHint(room: SoupRoom, actorId: string, secret: SoupRoundSecret, now = Date.now()) {
   requireHost(room, actorId);
+  requireCurrentSecret(room, secret);
   if (!['investigating', 'limit_reached'].includes(room.status)) throw new Error('当前不能给提示');
   if (room.hintsUsed >= SOUP_MAX_HINTS) throw new Error('本题两次提示已经用完');
   const next = cloneRoom(room);
@@ -365,6 +375,7 @@ export function extendSoupLimit(room: SoupRoom, actorId: string, now = Date.now(
 
 export function revealSoupBottom(room: SoupRoom, actorId: string, secret: SoupRoundSecret, now = Date.now(), reason: SoupResult['revealedReason'] = 'host_reveal') {
   requireHost(room, actorId);
+  requireCurrentSecret(room, secret);
   if (!['investigating', 'limit_reached', 'judging_question', 'judging_solution'].includes(room.status)) throw new Error('当前不能公布汤底');
   const next = cloneRoom(room);
   next.pendingAction = null;
@@ -380,16 +391,20 @@ export function revealSoupBottom(room: SoupRoom, actorId: string, secret: SoupRo
 export function nextSoupRound(room: SoupRoom, actorId: string, cards: readonly SoupCaseCard[], now = Date.now(), random: RandomSource = Math.random) {
   requireOwner(room, actorId);
   if (room.status !== 'feedback') throw new Error('请先完成本题反馈');
+  if (room.feedbackCount < activePlayers(room).length) throw new Error('请等待所有成员完成题后反馈');
   return beginRound(room, cards, now, random);
 }
 
-export function endSoupGame(room: SoupRoom, actorId: string, now = Date.now()) {
+export function endSoupGame(room: SoupRoom, actorId: string, secret: SoupRoundSecret, now = Date.now()) {
   requireOwner(room, actorId);
-  if (room.status === 'lobby') throw new Error('游戏尚未开始');
+  requireCurrentSecret(room, secret);
+  if (room.status === 'lobby' || room.status === 'finished') throw new Error('当前不能结束本局');
   const next = cloneRoom(room);
   next.status = 'finished';
+  next.pendingAction = null;
+  next.revealedBottom = secret.bottom;
   if (!next.result && next.roundStartedAt) {
-    next.result = { success: false, validQuestions: next.effectiveQuestionCount, hintsUsed: next.hintsUsed, solverId: null, solverName: null, elapsedMs: Math.max(0, now - next.roundStartedAt), revealedReason: 'ended' };
+    next.result = { success: false, validQuestions: next.effectiveQuestionCount, hintsUsed: next.hintsUsed, solverId: null, solverName: null, elapsedMs: room.status === 'host_reading' ? 0 : Math.max(0, now - next.roundStartedAt), revealedReason: 'ended' };
   }
   return touch(next, now);
 }

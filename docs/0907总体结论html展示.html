@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="摸鱼游戏工作台 2026 年 9 月 7 日项目结论、四款游戏进度、版本状态、验证结果和下一步。">
+  <title>0907总体结论html展示</title>
+  <style>
+    :root{color-scheme:light;--green:#216c48;--deep:#184b35;--ink:#23332b;--muted:#55645b;--line:#d6e0d9;--paper:#fff;--canvas:#f2f5f3;--pale:#eaf4ee;--amber:#885515;--amber-bg:#fff4df}
+    *{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:24px}body{margin:0;background:var(--canvas);color:var(--ink);font:16px/1.65 system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif}a{color:var(--deep);text-underline-offset:4px}a:focus-visible,summary:focus-visible{outline:3px solid #348e61;outline-offset:5px}p,h1,h2,h3,ul,ol{margin:0}code{font:0.9em ui-monospace,Consolas,monospace;overflow-wrap:anywhere}strong{font-weight:650}
+    .masthead{background:var(--deep);color:#fff}.masthead-inner{max-width:1180px;margin:auto;padding:16px 30px;display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap}.masthead strong{font-size:1rem;letter-spacing:.06em}.masthead span{font-size:.875rem;color:#d9ede1}
+    main{max-width:1180px;margin:auto;padding:30px}.report-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;margin-bottom:20px}.eyebrow{color:var(--green);font-size:.875rem;font-weight:650;letter-spacing:.1em;margin-bottom:6px}h1{font-size:clamp(1.6rem,3vw,2.25rem);line-height:1.3;letter-spacing:-.035em}.date{padding-top:8px;white-space:nowrap;color:var(--muted);font-size:.875rem}
+    .conclusion{background:var(--paper);border:1px solid var(--line);border-left:5px solid var(--green);padding:24px 26px;margin-bottom:20px}.conclusion h2{font-size:1.35rem;line-height:1.45;margin-bottom:9px}.conclusion p{max-width:880px;color:var(--muted)}.conclusion .recommendation{display:inline-block;margin-top:14px;padding:7px 12px;background:var(--pale);color:var(--deep);font-size:.9375rem}
+    .metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:24px}.metric{background:var(--paper);border:1px solid var(--line);padding:18px 20px}.metric dt{color:var(--muted);font-size:.875rem}.metric dd{margin:6px 0 4px;font-size:2rem;font-weight:650;line-height:1.25;letter-spacing:-.03em;font-variant-numeric:tabular-nums}.metric p{font-size:.875rem;color:var(--muted)}dl{margin:0}
+    .jump-links{display:flex;gap:8px 22px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding:0 0 16px;margin-bottom:28px;font-size:.9375rem}.jump-links a{text-decoration:none}.jump-links a:hover{text-decoration:underline}
+    section{margin-bottom:30px}.section-title{display:flex;align-items:baseline;gap:12px;margin-bottom:16px}.section-title .number{font:600 .875rem ui-monospace,Consolas,monospace;color:var(--green)}h2{font-size:1.25rem;line-height:1.4}h3{font-size:1.05rem;line-height:1.45}.section-note{font-size:.875rem;color:var(--muted);margin:-7px 0 15px}
+    .game-list{display:grid;grid-template-columns:1fr 1fr;gap:16px}.game{background:var(--paper);border:1px solid var(--line);padding:22px}.game-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:13px}.game-id{display:inline-block;font:650 .875rem ui-monospace,Consolas,monospace;color:var(--green);padding-right:8px}.game h3{display:inline}.game-meta{font-size:.875rem;color:var(--muted);margin-top:5px}.badge{display:inline-block;white-space:nowrap;background:var(--pale);color:var(--deep);font-size:.8125rem;font-weight:650;padding:3px 9px;border-radius:4px}.badge.pending{background:var(--amber-bg);color:var(--amber)}.game p{font-size:.9375rem}.game .next{margin-top:14px;padding-top:12px;border-top:1px solid var(--line);color:var(--muted)}.game .next strong{color:var(--ink)}
+    .version-list{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.version{background:var(--paper);border:1px solid var(--line);padding:20px}.version.active{border-top:3px solid var(--green);padding-top:18px}.version dt{font-size:.875rem;color:var(--muted)}.version dd{margin:6px 0;font-size:1.4rem;font-weight:650}.version p{font-size:.9375rem;color:var(--muted)}.version .mono{display:block;font:0.875rem ui-monospace,Consolas,monospace;color:var(--green);margin-bottom:10px}.notice{margin-top:14px;border-left:3px solid #c18b3d;background:var(--amber-bg);color:#644218;padding:12px 16px;font-size:.9375rem}
+    .two-col{display:grid;grid-template-columns:1fr 1fr;gap:24px}.list-panel{background:var(--paper);border:1px solid var(--line);padding:22px}.list-panel h3{margin-bottom:14px}.checklist{list-style:none;padding:0}.checklist li{position:relative;padding-left:25px;margin:12px 0}.checklist li::before{content:"✓";position:absolute;left:0;color:var(--green);font-weight:700}.checklist li small{display:block;color:var(--muted);font-size:.875rem}.pending-list{list-style:none;padding:0}.pending-list li{margin:13px 0;padding-left:17px;border-left:2px solid #bdcfc2}.pending-list p{font-size:.9375rem;color:var(--muted)}
+    .risk-list{border:1px solid var(--line);background:var(--paper)}.risk{display:grid;grid-template-columns:46px 200px 1fr;gap:12px;padding:18px 22px;border-bottom:1px solid var(--line);align-items:start}.risk:last-child{border-bottom:0}.priority{font-size:.8125rem;font-weight:650;color:var(--amber)}.risk p{color:var(--muted);font-size:.9375rem}.risk h3{font-size:1rem}
+    .steps{counter-reset:step;list-style:none;padding:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.steps li{counter-increment:step;border-top:3px solid var(--line);padding:15px 10px 0 0}.steps li:first-child{border-color:var(--green)}.steps li::before{content:"0" counter(step);display:block;font:600 .875rem ui-monospace,Consolas,monospace;color:var(--green);margin-bottom:8px}.steps p{font-size:.9375rem;color:var(--muted);margin-top:7px}.owner{display:inline-block;font-size:.8125rem;color:var(--muted);margin-top:9px}
+    details{background:var(--paper);border:1px solid var(--line);padding:16px 20px}summary{cursor:pointer;font-weight:650}details[open] summary{margin-bottom:14px}.deployment{display:grid;grid-template-columns:150px 1fr;gap:8px 18px;font-size:.9375rem}.deployment dt{color:var(--muted)}.deployment dd{margin:0;overflow-wrap:anywhere}.footnote{font-size:.875rem;color:var(--muted);margin-top:14px}.source{border-top:1px solid var(--line);padding-top:20px;display:flex;justify-content:space-between;gap:20px;font-size:.8125rem;color:var(--muted)}.source p{max-width:850px}.source a{white-space:nowrap}.build-note{margin-top:8px;font-size:.875rem;color:var(--muted)}
+    @media(max-width:900px){.risk{grid-template-columns:42px 1fr}.risk p{grid-column:2}.steps{grid-template-columns:1fr 1fr}.metrics{grid-template-columns:1fr 1fr}.version-list{grid-template-columns:1fr}.version{display:grid;grid-template-columns:170px 1fr;gap:6px 18px}.version p{grid-column:2;grid-row:1/4}.version dd{margin:0}.version .mono{margin:0}}
+    @media(max-width:620px){main{padding:22px 16px}.masthead-inner{padding:14px 16px;gap:5px}.report-heading{display:block}.date{margin-top:7px}.conclusion{padding:20px}.conclusion h2{font-size:1.2rem}.metrics{gap:10px}.metric{padding:15px}.metric dd{font-size:1.6rem}.game-list,.two-col{grid-template-columns:1fr}.game-head{flex-wrap:wrap}.game{padding:19px}.version{display:block}.version p{margin-top:10px}.steps{gap:20px}.risk{padding:18px 16px;gap:6px 10px}.deployment{grid-template-columns:1fr;gap:2px}.deployment dd{margin-bottom:8px}.source{display:block}.source a{display:inline-block;margin-top:10px}}
+    @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+    @media print{body{background:#fff;color:#111;font-size:10pt}main{max-width:none;padding:16px 0}.masthead-inner{padding:10px 0}.masthead{background:none;color:#111;border-bottom:2px solid var(--green)}.masthead span{color:#444}.jump-links,.source a{display:none}h1{font-size:23pt}.metrics{grid-template-columns:repeat(4,1fr)}.game-list,.two-col{grid-template-columns:1fr 1fr}.version-list{grid-template-columns:repeat(3,1fr)}.version{display:block}.game,.metric,.version,.list-panel,.risk,.steps li{break-inside:avoid}.steps{grid-template-columns:repeat(4,1fr)}.conclusion,.metric,.game,.version,.list-panel{box-shadow:none}a{color:inherit;text-decoration:none}section{margin-bottom:20px}.source{font-size:9pt}}
+  </style>
+</head>
+<body id="top">
+  <header class="masthead"><div class="masthead-inner"><strong>摸鱼游戏工作台 · 项目简报</strong><span>2026.09.07 / 阶段快照 / V1.10.1 测试交付</span></div></header>
+  <main>
+    <div class="report-heading"><div><p class="eyebrow">PROJECT REVIEW · 0907</p><h1>总体结论与进度</h1></div><p class="date">本次范围：HTML 总览 + test 分支推送</p></div>
+    <div class="conclusion">
+      <h2>四款游戏已成型，下一阶段是稳定性与内容质量。</h2>
+      <p>项目已从单一“谁是卧底”发展为统一入口下的四款独立联机游戏。当前的重点不是增加更多规则，而是把已实现的功能、数据库、部署版本和真实试玩结果对齐。</p>
+      <p class="recommendation"><strong>建议：</strong>先验收本次测试版本，再合并稳定版；随后优先打磨 A3 题库、完成 A5 盲测。</p>
+    </div>
+    <div class="metrics" aria-label="项目关键事实">
+      <dl class="metric"><dt>独立游戏</dt><dd>4 款<p>A2 · A3 · A4 · A5</p></dd></dl>
+      <dl class="metric"><dt>本地自动测试</dt><dd>120 / 120<p>全部通过，含旧游戏回归</p></dd></dl>
+      <dl class="metric"><dt>A5 V10.1 数据库核验</dt><dd>7 / 7<p>用户已回传全部通过</p></dd></dl>
+      <dl class="metric"><dt>本次候选版本</dt><dd>V1.10.1<p>交付 test，main 不合并</p></dd></dl>
+    </div>
+    <nav class="jump-links" aria-label="报告章节"><a href="#games">四款游戏进度</a><a href="#versions">版本与部署</a><a href="#validation">验证边界</a><a href="#risks">关键问题</a><a href="#next">下一步</a></nav>
+
+    <section id="games" aria-labelledby="games-title">
+      <div class="section-title"><span class="number">01</span><h2 id="games-title">四款游戏，各有明确的位置</h2></div>
+      <p class="section-note">以下为当前实现与阶段判断，不用未经定义的“完成百分比”代替验收状态。</p>
+      <div class="game-list">
+        <article class="game"><div class="game-head"><div><span class="game-id">A2</span><h3>谁是卧底</h3><p class="game-meta">3–10 人 · 隐藏身份与推理 · /undercover/</p></div><span class="badge">维护与回归</span></div><p>发词、空白牌提示、描述投票、爆灯与指认、暂退退出、自动推进、换词重开已实现。界面持续向紧凑、清楚的表格操作收敛。</p><p class="next"><strong>接下来：</strong>重点回归特殊身份、多人同时操作和断线恢复，保持玩法稳定。</p></article>
+        <article class="game"><div class="game-head"><div><span class="game-id">A3</span><h3>提示大王</h3><p class="game-meta">2–8 人 · 联想与创作 · /clue/</p></div><span class="badge">优先打磨</span></div><p>默认“普通 + 角色扮演”；120 题、三种模式。一批提示最多猜三次，失败也评分；支持 1–4 分、同行点赞和双榜单。</p><p class="next"><strong>判断：</strong>已有明确正向试玩反馈。优先改善题目与角色搭配，不急着增加流程负担。</p></article>
+        <article class="game"><div class="game-head"><div><span class="game-id">A4</span><h3>离谱法堂</h3><p class="game-meta">2–8 人 · 圆谎与表达 · /court/</p></div><span class="badge">简易流程保留</span></div><p>当前使用 V6：案件、首次陈词、证据突袭、补述、双项评选。三轮制；两段写作各 5 分钟，投票 2 分钟。</p><p class="next"><strong>注意：</strong>V7 质询与招式按试玩反馈主动停用，不是漏开发；正文 SPEC 尚需同步。</p></article>
+        <article class="game"><div class="game-head"><div><span class="game-id">A5</span><h3>汤底侦探</h3><p class="game-meta">3–10 人 · 合作解谜 · /soup/</p></div><span class="badge pending">候选版待实测</span></div><p>汤主轮换、私密资料、独立草稿、轮流行动、判定、20+5 问、两次提示、揭晓与反馈均已实现。本次补齐保存与轮次保护。</p><p class="next"><strong>未完成：</strong>云上多人验收与题卡盲测。20 张题卡仍为 pilot，不能称为已审核题库。</p></article>
+      </div>
+    </section>
+
+    <section id="versions" aria-labelledby="versions-title">
+      <div class="section-title"><span class="number">02</span><h2 id="versions-title">代码版本 ≠ 网站已上线版本</h2></div>
+      <div class="version-list">
+        <div class="version"><dl><dt>稳定基线 · main</dt><dd>V1.8.1</dd></dl><span class="mono">479a4e8</span><p>保留较早的稳定记录。本次不向 main 合并，不触发它的 GitHub Pages 发布流程。</p></div>
+        <div class="version active"><dl><dt>本次测试交付 · test</dt><dd>V1.10.1</dd></dl><span class="mono">基于 9332b7b / V1.10.0</span><p>包含 A3 后续功能、A2 界面调整、A5 初版与本次可靠性修正。用户已确认推送 test。</p></div>
+        <div class="version"><dl><dt>CloudBase 数据库</dt><dd>V10.1 已核验</dd></dl><span class="mono">V10：10/10 · V10.1：7/7</span><p>迁移由用户完成，已回传通过结果。无需重跑 SQL，下一步是部署前端和多人试玩。</p></div>
+      </div>
+      <p class="notice"><strong>网站状态仍待确认：</strong>GitHub 推送不等于 CloudBase 已部署。本页不自动查询云控制台，也不声称当前网站已经运行 V1.10.1。</p>
+    </section>
+
+    <section id="validation" aria-labelledby="validation-title">
+      <div class="section-title"><span class="number">03</span><h2 id="validation-title">本次交付解决了什么，哪些还没有证明</h2></div>
+      <div class="two-col">
+        <div class="list-panel"><h3>已完成的修正与验证</h3><ul class="checklist">
+          <li>草稿不被旧响应覆盖<small>顺序保存、临时断网保留文字、版本冲突显式选择。</small></li>
+          <li>正式操作和反馈有轮次保护<small>拒绝上一题延迟写入；重复请求保持幂等。</small></li>
+          <li>阅读与结束流程更完整<small>汤主长资料不再只显示 4 秒；多行输入、帮助返回、行内确认。</small></li>
+          <li>120 项自动测试全部通过<small>含 A2/A3/A4 回归，以及 3/5/8/10 人本地 PostgreSQL 流程测试。</small></li>
+          <li>静态构建与类型、代码检查通过<small>默认 npm run build 生成完整目录和四个游戏页面。</small></li>
+        </ul></div>
+        <div class="list-panel"><h3>仍需真实场景验证</h3><ul class="pending-list">
+          <li><strong>多连接并发与断线恢复</strong><p>本地 PGlite 是单连接环境，不能证明云端多个浏览器同时操作一定正常。</p></li>
+          <li><strong>实际页面体验</strong><p>需在部署站检查长内容、切换工作表、窗口失焦、重新加入和下一碗。</p></li>
+          <li><strong>题卡是否真的好玩且公平</strong><p>A5 每题至少 3 次盲测；普通题至少 2/3 试玩组在 20 问内解决，好玩度与公平度平均不低于 4/5。</p></li>
+          <li><strong>发布前后的版本一致性</strong><p>确认前端提交、数据库版本、测试结果属于同一次交付，不混用旧页面验收。</p></li>
+        </ul></div>
+      </div>
+    </section>
+
+    <section id="risks" aria-labelledby="risks-title">
+      <div class="section-title"><span class="number">04</span><h2 id="risks-title">影响后续迭代的四个问题</h2></div>
+      <div class="risk-list">
+        <article class="risk"><span class="priority">优先</span><h3>文档落后于代码</h3><p>A4 SPEC 仍以 V7 为主，A3 部分记录仍写“等待迁移”。后续应明确区分当前规则与历史方案，避免根据旧文档重新走偏。</p></article>
+        <article class="risk"><span class="priority">优先</span><h3>题库质量闭环未完成</h3><p>A5 部分题材反转相似；A3、A4 也需持续淘汰难理解、难发挥或重复感强的内容。数量达标不代表趣味性达标。</p></article>
+        <article class="risk"><span class="priority">待办</span><h3>依赖与旧接口维护</h3><p>最近依赖审计记录 11 项告警（10 high、1 low），尚待兼容升级验证。历史 RPC 保留但需梳理权限；A2 仍以熟人正常游玩为信任边界。</p></article>
+        <article class="risk"><span class="priority">待办</span><h3>两套构建增加成本</h3><p>CloudBase 默认打包已统一为 Next 静态导出；旧 Vinext 可选链路存在跳过路由和 Windows 退出异常，不用于本次部署。</p></article>
+      </div>
+    </section>
+
+    <section id="next" aria-labelledby="next-title">
+      <div class="section-title"><span class="number">05</span><h2 id="next-title">下一步：先收尾，再扩展</h2></div>
+      <ol class="steps">
+        <li><h3>交付测试版本</h3><p>将 V1.10.1 和本报告推送 test；SQL 已核验，无需重跑。</p><span class="owner">本次任务</span></li>
+        <li><h3>部署并邀请朋友测试</h3><p>至少三个独立身份，测试并行输入、重复点击、断线、反馈与下一碗。</p><span class="owner">用户部署 · 联机验收</span></li>
+        <li><h3>同步文档，确认稳定</h3><p>校准当前规则和版本记录；用户明确确认后，再合并 main。</p><span class="owner">后续收尾</span></li>
+        <li><h3>打磨内容与维护</h3><p>优先 A3 词库与角色、A5 题卡盲测和安全升级；暂缓新增游戏。</p><span class="owner">下一阶段建议</span></li>
+      </ol>
+    </section>
+
+    <section aria-label="部署参数与来源">
+      <details><summary>部署时查看：CloudBase 参数与验证重点</summary>
+        <dl class="deployment"><dt>Git 分支</dt><dd><code>test</code>（本次不合并 main）</dd><dt>目标目录</dt><dd><code>./</code></dd><dt>安装命令</dt><dd><code>npm ci</code></dd><dt>构建命令</dt><dd><code>npm run build</code>，也兼容 <code>npm run build:pages</code></dd><dt>构建产物</dt><dd><code>./out</code></dd><dt>部署路径</dt><dd><code>/</code></dd><dt>数据库</dt><dd>V10.1 已由用户核验；原环境变量保持不变。</dd></dl>
+        <p class="footnote">新建 A5 房间验收：等待时输入草稿 → 当前侦探正式提交 → 汤主判定 → 自动轮转 → 还原或揭晓 → 所有人反馈 → 下一碗。穿插测试短暂断网、重复点击与 Esc 隐藏资料。</p>
+      </details>
+      <p class="build-note">本报告可离线打开；仅保存项目状态与分析，不包含账号密钥、汤底内容或外部统计脚本。</p>
+    </section>
+    <footer class="source"><p>依据：2026-09-07 项目代码、GitHub 分支核对、本地验证结果、项目检查报告，以及用户回传的 V10/V10.1 核验结果。状态以明确证据为准；本页为阶段快照，不是实时监控。</p><a href="#top">返回顶部 ↑</a></footer>
+  </main>
+</body>
+</html>

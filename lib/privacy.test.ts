@@ -38,6 +38,17 @@ test('闲置超时会恢复遮挡', () => {
   guard.dispose();
 });
 
+test('A5 长资料可持续阅读而不改变 A2 的默认遮挡时限', () => {
+  let visible = false;
+  const timers = fakeScheduler();
+  const guard = createPrivacyGuard({ scheduler: timers.scheduler, revealMs: 300_000, idleMs: 60_000, onVisibilityChange: (value) => { visible = value; } });
+  guard.reveal(); timers.runDelay(4_000); assert.equal(visible, true);
+  timers.runDelay(60_000); assert.equal(visible, false);
+  guard.reveal(); timers.runDelay(300_000); assert.equal(visible, false);
+  guard.reveal(); guard.mask('blur'); assert.equal(visible, false);
+  guard.dispose();
+});
+
 test('Esc 和窗口失焦会立即遮挡', () => {
   const events: Array<string | undefined> = [];
   const guard = createPrivacyGuard({ onVisibilityChange: (_visible, reason) => events.push(reason) });

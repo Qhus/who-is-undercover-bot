@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { SOUP_CASES, validateSoupCaseLibrary } from './soup-content.ts';
 import {
-  acknowledgeSoupHost, createSoupRoom, extendSoupLimit, judgeSoupQuestion, judgeSoupSolution,
+  acknowledgeSoupHost, createSoupRoom, endSoupGame, extendSoupLimit, judgeSoupQuestion, judgeSoupSolution,
   nextSoupRound, revealSoupBottom, skipSoupTurn, startSoupGame, submitSoupQuestion, submitSoupSolution,
   useSoupHint, validateSoupFeedback, type SoupRoom,
 } from './soup-game.ts';
@@ -89,6 +89,7 @@ test('host rotation avoids repeats until everyone has served and cases do not re
   const firstCase = started.secret.caseId;
   let room = acknowledgeSoupHost(started.room, firstHost!, 11);
   room = revealSoupBottom(room, firstHost!, started.secret, 12);
+  room.feedbackCount = 3;
   started = nextSoupRound(room, 'p1', SOUP_CASES, 13, () => 0);
   assert.notEqual(started.room.hostId, firstHost);
   assert.notEqual(started.secret.caseId, firstCase);
@@ -98,4 +99,30 @@ test('feedback validation preserves explicit quality flags', () => {
   assert.deepEqual(validateSoupFeedback({ difficulty: 'just_right', ambiguous: true, unsuitable: false, note: '边界可再清楚些' }), {
     difficulty: 'just_right', ambiguous: true, unsuitable: false, note: '边界可再清楚些',
   });
+});
+
+test('reading time is excluded, old secret is rejected and ending clears a pending action', () => {
+  const started = startSoupGame(roomWithPlayers(3), 'p1', SOUP_CASES, 10, () => 0.999);
+  let room = acknowledgeSoupHost(started.room, started.room.hostId!, 300_000);
+  assert.equal(room.roundStartedAt, 300_000);
+  assert.throws(() => useSoupHint(room, room.hostId!, { ...started.secret, round: 0 }), /过期/);
+  room = submitSoupQuestion(room, room.currentDetectiveId!, '是吗？', 300_005);
+  room = endSoupGame(room, 'p1', started.secret, 300_010);
+  assert.equal(room.pendingAction, null); assert.equal(room.revealedBottom, started.secret.bottom); assert.equal(room.result?.elapsedMs, 10);
+  assert.throws(() => endSoupGame(room, 'p1', started.secret), /不能结束/);
+});
+
+test('each cycle through a small case pool stays nonrepeating', () => {
+  const cards = SOUP_CASES.slice(0, 3);
+  let started = startSoupGame(roomWithPlayers(3), 'p1', cards, 10, () => 0.999);
+  const ids: string[] = [];
+  for (let i = 0; i < 9; i++) {
+    ids.push(started.secret.caseId);
+    let room = acknowledgeSoupHost(started.room, started.room.hostId!, 11 + i);
+    room = revealSoupBottom(room, room.hostId!, started.secret, 12 + i);
+    assert.throws(() => nextSoupRound(room, 'p1', cards), /等待所有成员/);
+    room.feedbackCount = 3;
+    started = nextSoupRound(room, 'p1', cards, 13 + i, () => 0.999);
+  }
+  for (let i = 0; i < 9; i += 3) assert.equal(new Set(ids.slice(i, i + 3)).size, 3);
 });
