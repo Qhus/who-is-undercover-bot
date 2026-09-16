@@ -169,8 +169,9 @@ test('四项游戏使用独立页面和独立入口', () => {
   assert.match(soupPage, /SoupSpreadsheetMode/);
   assert.match(soupApp, /提交问题/);
   assert.match(soupApp, /提交还原/);
-  assert.match(soupApp, /跳过本轮/);
-  assert.match(soupApp, /我已看懂/);
+  assert.match(soupApp, /每人最多 1 条/);
+  assert.match(soupApp, /随机汤主并开始/);
+  assert.match(soupApp, /手动出题/);
 });
 
 test('四个游戏都支持返回目录和带房间编号的邀请链接', () => {

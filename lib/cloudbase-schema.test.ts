@@ -45,6 +45,8 @@ const cluePeerAwardsMigration = readFileSync(new URL('../cloudbase/concurrency-v
 const cluePeerAwardsVerification = readFileSync(new URL('../cloudbase/verify-v9-2-clue-peer-awards.sql', import.meta.url), 'utf8');
 const soupV1Migration = readFileSync(new URL('../cloudbase/concurrency-v10-soup-detective.sql', import.meta.url), 'utf8');
 const soupV1Verification = readFileSync(new URL('../cloudbase/verify-v10-soup-detective.sql', import.meta.url), 'utf8');
+const soupV12Migration = readFileSync(new URL('../cloudbase/concurrency-v12-soup-manual-queue.sql', import.meta.url), 'utf8');
+const soupV12Verification = readFileSync(new URL('../cloudbase/verify-v12-soup-manual-queue.sql', import.meta.url), 'utf8');
 const concurrencySource = `${concurrencyBase}\n${concurrencyMigration}\n${concurrencyHotfix}\n${versionedRpcMigration}`;
 const storeSource = readFileSync(new URL('./cloudbase-store.ts', import.meta.url), 'utf8');
 const appSource = readFileSync(new URL('../app/game-app.tsx', import.meta.url), 'utf8');
@@ -359,14 +361,12 @@ test('A3 V3.2 标记最独特、支持非阻塞同行点赞并更新话痨', () 
   assert.match(clueAppSource, /room\.players\.length >= 3/);
 });
 
-test('A5 使用独立私密表、并行草稿与版本化顺序行动 RPC', () => {
+test('A5 V1 基线保留独立私密表、题库与版本化 RPC', () => {
   for (const table of ['soup_case_bank_v1', 'soup_round_secrets_v1', 'soup_drafts_v1', 'soup_feedback_v1', 'soup_actions_v1']) {
     assert.match(soupV1Migration, new RegExp(`create table if not exists public\.${table}`));
   }
   for (const rpc of ['create_soup_game_v1', 'join_soup_game_v1', 'get_my_soup_round_v1', 'save_soup_draft_v1', 'submit_soup_feedback_v1', 'apply_soup_action_v1']) {
     assert.match(soupV1Migration, new RegExp(rpc));
-    const currentRpc = /^(create|join)_/.test(rpc) ? rpc : `${rpc}1`;
-    assert.ok(storeSource.includes(`rpc('${currentRpc}'`));
   }
   for (const action of ['start_soup_game', 'acknowledge_soup_host', 'submit_soup_question', 'submit_soup_solution', 'skip_soup_turn', 'judge_soup_question', 'judge_soup_solution', 'use_soup_hint', 'extend_soup_limit', 'reveal_soup_bottom', 'next_soup_round', 'end_soup_game']) {
     assert.match(soupV1Migration, new RegExp(action));
@@ -385,7 +385,25 @@ test('A5 使用独立私密表、并行草稿与版本化顺序行动 RPC', () =
   for (const expected of ['exactly 20 pilot case cards with 6/10/4 difficulty', 'all launch cards remain pilot until real blind tests', 'private packet exposes case material only to current host', 'drafts are keyed by room session round and player']) {
     assert.match(soupV1Verification, new RegExp(expected));
   }
-  for (const copy of ['提交问题', '提交还原', '跳过本轮', '我已看懂', '下一碗', '题后反馈']) {
+});
+
+test('A5 V1.2 使用手动题目、多人等待队列、十秒冷却与点击图片', () => {
+  assert.match(soupV12Migration, /create table if not exists public\.soup_manual_secrets_v12/i);
+  assert.match(soupV12Migration, /alter table public\.soup_manual_secrets_v12 enable row level security/i);
+  assert.match(soupV12Migration, /你已有一条内容正在等待汤主回答/);
+  assert.match(soupV12Migration, /now_ms-last_at<10000/);
+  assert.match(soupV12Migration, /order by random\(\)/i);
+  assert.match(soupV12Migration, /surfaceImageUrl/);
+  assert.match(soupV12Migration, /bottomImageUrl/);
+  assert.doesNotMatch(soupV12Migration, /drop\s+(?:table|function)|truncate\s+/i);
+  for (const rpc of ['create_soup_game_v12', 'join_soup_game_v12', 'get_my_soup_round_v12', 'save_soup_draft_v12', 'apply_soup_action_v12']) {
+    assert.match(soupV12Migration, new RegExp(rpc));
+    assert.match(storeSource, new RegExp(`rpc\\('${rpc}'`));
+  }
+  for (const expected of ['manual secret table exists with RLS', 'queue enforces one unresolved item per player', 'questions use ten second cooldown', 'host is randomly selected', 'manual mode supports text and clickable image links']) {
+    assert.match(soupV12Verification, new RegExp(expected));
+  }
+  for (const copy of ['猜题区', '公共提示区', '故事还原区', '玩家与汤主', '每人最多 1 条', '随机汤主并开始', '查看图片']) {
     assert.match(soupAppSource, new RegExp(copy));
   }
 });

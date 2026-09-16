@@ -117,9 +117,9 @@ test('private cells and drafts are not automatic annotation sources', () => {
   assert.match(a2, /onNote=\{sheetTab === 'guide' \|\| sheetTab === 'rules' \|\| props.screen !== 'game' \? setDetailHint : undefined\}/);
   assert.match(a2, /round < room.round \|\| isRoundContentVisible\(room, player.id, props.currentPlayerId\)/);
   const soup = read('app/soup-spreadsheet-mode.tsx');
-  const hostSheet = soup.slice(soup.indexOf("if (activeSheet === 'host')"), soup.indexOf("if (activeSheet === 'feedback')"));
-  assert.doesNotMatch(hostSheet, /WorkbookText|setNote/);
-  assert.match(soup, /activeSheet === 'guide' \|\| activeSheet === 'records'/);
+  assert.match(soup, /activeSheet !== 'people'.*WorkbookText/);
+  assert.match(soup, /privateRound\?\.bottom/);
+  assert.match(soup, /图片仅在点击后加载/);
 });
 
 test('desktop layout keeps feedback in flow and preserves readable long cells', () => {

@@ -51,6 +51,7 @@ export type ClueActionType = 'start_clue_game' | 'confirm_clue' | 'submit_clue_g
 export interface ClueActionResult { outcome: GameActionOutcome; code: string; message: string; state: ClueKingRoom; version: number; }
 export type SoupActionType =
   | 'start_soup_game'
+  | 'prepare_soup_case'
   | 'acknowledge_soup_host'
   | 'submit_soup_question'
   | 'submit_soup_solution'
@@ -58,6 +59,7 @@ export type SoupActionType =
   | 'judge_soup_question'
   | 'judge_soup_solution'
   | 'use_soup_hint'
+  | 'publish_soup_note'
   | 'extend_soup_limit'
   | 'reveal_soup_bottom'
   | 'next_soup_round'
@@ -202,7 +204,7 @@ export class CloudBaseRoomStore {
 
   async createSoupRoom(room: SoupRoom): Promise<SoupRoom> {
     await this.connect();
-    const { data, error } = await this.db().rpc('create_soup_game_v1', {
+    const { data, error } = await this.db().rpc('create_soup_game_v12', {
       p_code: room.code,
       p_owner_player_id: room.ownerId,
       p_owner_name: room.players[0]?.name ?? '负责人',
@@ -213,7 +215,7 @@ export class CloudBaseRoomStore {
 
   async joinSoupRoom(code: string, playerId: string, nickname: string): Promise<{ room: SoupRoom; playerId: string }> {
     await this.connect();
-    const { data, error } = await this.db().rpc('join_soup_game_v1', {
+    const { data, error } = await this.db().rpc('join_soup_game_v12', {
       p_code: code,
       p_player_id: playerId,
       p_nickname: nickname,
@@ -225,7 +227,7 @@ export class CloudBaseRoomStore {
 
   async applySoupAction(input: { room: SoupRoom; actionId: string; actionType: SoupActionType; payload?: Record<string, unknown> }): Promise<SoupActionResult> {
     await this.connect();
-    const { data, error } = await this.db().rpc('apply_soup_action_v11', {
+    const { data, error } = await this.db().rpc('apply_soup_action_v12', {
       p_code: input.room.code,
       p_action_id: input.actionId,
       p_action_type: input.actionType,
@@ -241,16 +243,16 @@ export class CloudBaseRoomStore {
 
   async getMySoupRound(code: string): Promise<SoupPrivateRound | null> {
     await this.connect();
-    const { data, error } = await this.db().rpc('get_my_soup_round_v11', { p_code: code }).single();
+    const { data, error } = await this.db().rpc('get_my_soup_round_v12', { p_code: code }).single();
     if (error) throw error;
     return data as SoupPrivateRound | null;
   }
 
-  async saveSoupDraft(room: Pick<SoupRoom, 'code' | 'sessionNo' | 'round'>, draftText: string, revision: number): Promise<SoupDraftSaveResult> {
+  async saveSoupDraft(room: Pick<SoupRoom, 'code' | 'sessionNo' | 'round'>, draftText: string, solutionText: string, revision: number): Promise<SoupDraftSaveResult> {
     await this.connect();
-    const { data, error } = await this.db().rpc('save_soup_draft_v11', {
+    const { data, error } = await this.db().rpc('save_soup_draft_v12', {
       p_code: room.code, p_expected_session: room.sessionNo, p_expected_round: room.round,
-      p_expected_revision: revision, p_draft_text: draftText,
+      p_expected_revision: revision, p_question_text: draftText, p_solution_text: solutionText,
     }).single();
     if (error) throw error;
     return data as unknown as SoupDraftSaveResult;

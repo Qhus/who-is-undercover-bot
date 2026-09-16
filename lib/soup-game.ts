@@ -2,7 +2,7 @@ import { makeRoomCode, shuffle, type Player, type RandomSource } from './game.ts
 import type { SoupCaseCard, SoupCategory, SoupDifficulty, SoupQuestionVerdict } from './soup-content.ts';
 export type { SoupQuestionVerdict } from './soup-content.ts';
 
-export type SoupStatus = 'lobby' | 'host_reading' | 'investigating' | 'judging_question' | 'judging_solution' | 'limit_reached' | 'feedback' | 'finished';
+export type SoupStatus = 'lobby' | 'host_preparing' | 'host_reading' | 'investigating' | 'judging_question' | 'judging_solution' | 'limit_reached' | 'round_result' | 'feedback' | 'finished';
 export type SoupActionType = 'question' | 'solution';
 export type SoupSolutionVerdict = 'success' | 'close' | 'wrong';
 export type SoupRecordType = 'question' | 'solution' | 'skip' | 'hint';
@@ -30,6 +30,14 @@ export interface SoupRecord {
   createdAt: number;
 }
 
+export interface SoupPublicPost {
+  id: string;
+  kind: 'hint' | 'evidence';
+  text: string;
+  imageUrl: string | null;
+  createdAt: number;
+}
+
 export interface SoupResult {
   success: boolean;
   validQuestions: number;
@@ -43,7 +51,7 @@ export interface SoupResult {
 export interface SoupRoom {
   code: string;
   gameType: 'soup_detective';
-  soupVersion: 1;
+  soupVersion: 1 | 2;
   sessionNo: number;
   ownerId: string;
   players: SoupPlayer[];
@@ -62,6 +70,7 @@ export interface SoupRoom {
   currentDetectiveName: string | null;
   actionCycle: number;
   surface: string | null;
+  surfaceImageUrl?: string | null;
   caseTitle: string | null;
   caseCategory: SoupCategory | null;
   difficulty: SoupDifficulty | null;
@@ -71,10 +80,16 @@ export interface SoupRoom {
   extended: boolean;
   hintsUsed: number;
   publicHints: string[];
+  publicPosts?: SoupPublicPost[];
   pendingAction: SoupPendingAction | null;
+  /** V1.2：每名侦探最多占一个位置，汤主按提交顺序处理。 */
+  questionQueue?: SoupPendingAction[];
+  /** 最近一次入队时间；回答完成且提交满 10 秒后才可再次入队。 */
+  lastQuestionAtByPlayer?: Record<string, number>;
   records: SoupRecord[];
   usedCaseIds: string[];
   revealedBottom: string | null;
+  revealedBottomImageUrl?: string | null;
   result: SoupResult | null;
   feedbackCount: number;
 }
@@ -103,9 +118,20 @@ export interface SoupPrivateRound {
   commonQuestions: SoupCaseCard['commonQuestions'];
   hints: readonly string[];
   draftText: string;
+  solutionDraft?: string;
+  bottomImageUrl?: string | null;
   draftUpdatedAt: number | null;
   draftRevision?: number;
   feedbackSubmitted?: boolean;
+}
+
+export interface SoupManualCaseInput {
+  surface: string;
+  surfaceImageUrl?: string;
+  bottom: string;
+  bottomImageUrl?: string;
+  keyFacts?: string;
+  boundary?: string;
 }
 
 export interface SoupRoundStart { room: SoupRoom; secret: SoupRoundSecret; }
@@ -264,6 +290,20 @@ export function createSoupRoom(ownerName: string, now = Date.now(), random: Rand
     roundStartedAt: null, effectiveQuestionCount: 0, maxQuestions: SOUP_DEFAULT_QUESTION_LIMIT, extended: false,
     hintsUsed: 0, publicHints: [], pendingAction: null, records: [], usedCaseIds: [], revealedBottom: null,
     result: null, feedbackCount: 0,
+  };
+}
+
+/** A5 V1.2：只创建手动出题房间；开始后由系统随机指定汤主录入已准备的题目。 */
+export function createManualSoupRoom(ownerName: string, now = Date.now(), random: RandomSource = Math.random): SoupRoom {
+  const room = createSoupRoom(ownerName, now, random);
+  return {
+    ...room,
+    soupVersion: 2,
+    surfaceImageUrl: null,
+    publicPosts: [],
+    questionQueue: [],
+    lastQuestionAtByPlayer: {},
+    revealedBottomImageUrl: null,
   };
 }
 

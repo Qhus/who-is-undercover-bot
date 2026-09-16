@@ -1,50 +1,42 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import Image from 'next/image';
 import { getCloudStore, type SoupActionType } from '@/lib/cloudbase-store';
 import { makeId } from '@/lib/game';
 import { createPrivacyGuard, type PrivacyGuard } from '@/lib/privacy';
 import {
-  SOUP_MIN_PLAYERS, createSoupRoom, soupVerdictLabel, validateSoupFeedback,
-  type SoupFeedbackInput, type SoupPrivateRound, type SoupQuestionVerdict, type SoupRoom, type SoupSolutionVerdict,
+  SOUP_MIN_PLAYERS, createManualSoupRoom, soupVerdictLabel,
+  type SoupPendingAction, type SoupPrivateRound, type SoupPublicPost, type SoupQuestionVerdict, type SoupRoom, type SoupSolutionVerdict,
 } from '@/lib/soup-game';
+import { acceptSoupRoom, canEditSoupDraft, createSoupDraftController, soupRoundScope, type SoupDraftStatus } from '@/lib/soup-draft';
 import { WorkbookColumns, WorkbookFeedback, WorkbookText, useWorkbookNotes, useWorkbookNotice } from './workbook-feedback';
 import { ReleaseNotificationButton, ReleaseNotificationPanel } from './release-notification';
-import { acceptSoupRoom, canEditSoupDraft, createSoupDraftController, soupRoundScope, type SoupDraftStatus } from '@/lib/soup-draft';
 
 const columns = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
-const soupSheets = [['home', '当前汤面'], ['members', '玩家轮次'], ['records', '问答记录'], ['host', '汤主资料'], ['feedback', '题后反馈'], ['guide', '玩法说明']] as const;
-type SoupSheetId = typeof soupSheets[number][0];
+const sheets = [['play', '猜题区'], ['public', '公共提示区'], ['solution', '故事还原区'], ['people', '玩家与汤主'], ['guide', '玩法说明']] as const;
+type SheetId = typeof sheets[number][0];
+type ImageView = { url: string; title: string } | null;
 
 const statusLabels: Record<SoupRoom['status'], string> = {
-  lobby: '等待成员', host_reading: '汤主阅读', investigating: '轮流调查', judging_question: '等待判定',
-  judging_solution: '等待判定', limit_reached: '问题已达上限', feedback: '题后反馈', finished: '本局结束',
+  lobby: '等待成员', host_preparing: '汤主录题', host_reading: '汤主阅读', investigating: '开放提问',
+  judging_question: '汤主回答', judging_solution: '汤主判定', limit_reached: '问题已达上限',
+  round_result: '本题揭晓', feedback: '本题揭晓', finished: '本局结束',
 };
-
-const categoryLabels: Record<string, string> = {
-  daily_misunderstanding: '日常误会', office_fun: '职场趣事', animal_behavior: '动物行为',
-  transport: '交通出行', tech_life: '科技生活', perspective: '视角错位',
-};
-
-function readableError(error: unknown, fallback: string) {
-  const raw = error instanceof Error ? error.message : JSON.stringify(error ?? '');
-  if (/STALE_ROUND|STALE_VERSION|WRONG_PHASE/.test(raw)) return '当前题次或阶段已更新，请确认页面后重试。';
-  if (/PGRST202|function.*v11.*does not exist|Could not find.*v11/.test(raw)) return 'A5 可靠性更新尚未完成，请管理员先执行 V10.1 增量 SQL。';
-  if (error instanceof Error && error.message) return error.message;
-  if (!error || typeof error !== 'object') return fallback;
-  const value = error as { code?: unknown; message?: unknown; msg?: unknown };
-  const message = typeof value.message === 'string' ? value.message : typeof value.msg === 'string' ? value.msg : '';
-  const code = typeof value.code === 'string' ? value.code : '';
-  return message ? `${message}${code && !message.includes(code) ? `（${code}）` : ''}` : code || fallback;
-}
-
-function formatElapsed(ms: number | undefined) {
-  if (ms === undefined) return '—';
-  const seconds = Math.floor(ms / 1000);
-  return `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`;
-}
 
 function row(values: ReactNode[]): ReactNode[] { return values; }
+function readableError(error: unknown, fallback: string) {
+  const raw = error instanceof Error ? error.message : JSON.stringify(error ?? '');
+  if (/STALE_ROUND|STALE_VERSION|STALE_STATE|WRONG_PHASE/.test(raw)) return '队列或阶段刚刚更新，请确认页面后重试。';
+  if (/PGRST202|function.*v12.*does not exist|Could not find.*v12/.test(raw)) return 'A5 手动出题更新尚未完成，请管理员先执行 V12 增量 SQL。';
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+function safeImageUrl(value: string | null | undefined) { const clean = value?.trim() ?? ''; return /^https?:\/\//i.test(clean) ? clean : null; }
+function queuePosition(queue: SoupPendingAction[], playerId: string) { const index = queue.findIndex((item) => item.playerId === playerId); return index < 0 ? 0 : index + 1; }
+function ImageButton({ url, title, onOpen }: { url?: string | null; title: string; onOpen: (value: ImageView) => void }) {
+  const safe = safeImageUrl(url);
+  return safe ? <button className="soup-image-button" onClick={() => onOpen({ url: safe, title })}>查看图片</button> : <span>—</span>;
+}
 
 export default function SoupSpreadsheetMode() {
   const [ownerName, setOwnerName] = useState('');
@@ -53,77 +45,59 @@ export default function SoupSpreadsheetMode() {
   const [room, setRoom] = useState<SoupRoom | null>(null);
   const [playerId, setPlayerId] = useState('');
   const [privateRound, setPrivateRound] = useState<SoupPrivateRound | null>(null);
-  const [draftText, setDraftText] = useState('');
+  const [questionDraft, setQuestionDraft] = useState('');
+  const [solutionDraft, setSolutionDraft] = useState('');
   const [draftState, setDraftState] = useState<SoupDraftStatus>('loading');
   const [judgeNote, setJudgeNote] = useState('');
-  const [feedback, setFeedback] = useState<SoupFeedbackInput>({ difficulty: 'just_right', ambiguous: false, unsuitable: false, note: '' });
-  const [feedbackSent, setFeedbackSent] = useState(false);
-  const [activeSheet, setActiveSheet] = useState<SoupSheetId>('home');
+  const [publicKind, setPublicKind] = useState<'hint' | 'evidence'>('hint');
+  const [publicText, setPublicText] = useState('');
+  const [publicImageUrl, setPublicImageUrl] = useState('');
+  const [caseForm, setCaseForm] = useState({ surface: '', surfaceImageUrl: '', bottom: '', bottomImageUrl: '', keyFacts: '', boundary: '' });
+  const [activeSheet, setActiveSheet] = useState<SheetId>('play');
   const [activeCell, setActiveCell] = useState('A1');
-  const [notice, setNotice, noticeKind] = useWorkbookNotice('就绪 · 题库为盲测候选内容，欢迎题后反馈。');
-  const { note, setNote } = useWorkbookNotes(`${room?.code ?? ''}|${room?.sessionNo ?? ''}|${room?.round ?? ''}|${room?.status ?? ''}|${activeSheet}`);
+  const [notice, setNotice, noticeKind] = useWorkbookNotice('就绪 · 手动出题模式，开始前请每人准备一题。');
+  const { note, setNote } = useWorkbookNotes(`${room?.code ?? ''}|${room?.round ?? ''}|${room?.version ?? ''}|${activeSheet}`);
   const [busy, setBusy] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [secretVisible, setSecretVisible] = useState(false);
   const [privateReload, setPrivateReload] = useState(0);
   const [confirmation, setConfirmation] = useState<'reveal_soup_bottom' | 'end_soup_game' | null>(null);
-  const scopeRef = useRef('');
+  const [imageView, setImageView] = useState<ImageView>(null);
+  const [clockNow, setClockNow] = useState(0);
   const busyRef = useRef(false);
-  const viewEpoch = useRef(0);
-  const returnSheet = useRef<SoupSheetId>('home');
+  const returnSheet = useRef<SheetId>('play');
   const draftController = useRef<ReturnType<typeof createSoupDraftController> | null>(null);
   const retryAction = useRef<{ key: string; actionId: string; room: SoupRoom } | null>(null);
   const privacy = useRef<PrivacyGuard | null>(null);
   const cloudReady = Boolean(process.env.NEXT_PUBLIC_CLOUDBASE_ENV_ID && process.env.NEXT_PUBLIC_CLOUDBASE_ACCESS_KEY);
 
   useEffect(() => {
-    // Long reference material needs reading time; A2's four-second word card stays unchanged.
+    const timer = window.setInterval(() => setClockNow(Date.now()), 1000);
     privacy.current = createPrivacyGuard({ onVisibilityChange: setSecretVisible, revealMs: 300_000, idleMs: 60_000 });
     const onKeyDown = (event: KeyboardEvent) => event.key === 'Escape' ? privacy.current?.mask('escape') : privacy.current?.activity();
     const onBlur = () => privacy.current?.mask('blur');
     const onVisibility = () => { if (document.hidden) privacy.current?.mask('hidden'); };
-    const onActivity = () => privacy.current?.activity();
-    window.addEventListener('keydown', onKeyDown);
-    window.addEventListener('blur', onBlur);
-    document.addEventListener('visibilitychange', onVisibility);
-    window.addEventListener('pointerdown', onActivity);
-    window.addEventListener('wheel', onActivity, { passive: true });
-    return () => {
-      privacy.current?.dispose();
-      window.removeEventListener('keydown', onKeyDown);
-      window.removeEventListener('blur', onBlur);
-      document.removeEventListener('visibilitychange', onVisibility);
-      window.removeEventListener('pointerdown', onActivity);
-      window.removeEventListener('wheel', onActivity);
-    };
+    window.addEventListener('keydown', onKeyDown); window.addEventListener('blur', onBlur); document.addEventListener('visibilitychange', onVisibility);
+    return () => { window.clearInterval(timer); privacy.current?.dispose(); window.removeEventListener('keydown', onKeyDown); window.removeEventListener('blur', onBlur); document.removeEventListener('visibilitychange', onVisibility); };
   }, []);
-
   useEffect(() => { privacy.current?.mask('sheet-change'); }, [activeSheet]);
 
   useEffect(() => {
     let disposed = false;
-    const epoch = viewEpoch.current;
     const invitedCode = new URLSearchParams(window.location.search).get('room')?.toUpperCase().replace(/[^A-Z2-9]/g, '').slice(0, 6) ?? '';
     if (invitedCode) window.queueMicrotask(() => setJoinCode(invitedCode));
     if (!cloudReady) return;
-    const saved = window.localStorage.getItem('soup-active-remote');
-    if (!saved) return;
+    const saved = window.localStorage.getItem('soup-active-remote'); if (!saved) return;
     void (async () => {
       try {
         const active = JSON.parse(saved) as { code: string; playerId: string };
         if (invitedCode && invitedCode !== active.code) return;
         const found = await getCloudStore().getSoupRoom(active.code);
-        if (disposed || epoch !== viewEpoch.current || !found || found.soupVersion !== 1 || !found.players.some((p) => p.id === active.playerId)) return;
-        setPlayerId(active.playerId);
-        setRoom(found);
-        setNotice('已恢复上次打开的调查房间。');
-      } catch {
-        if (!disposed && epoch === viewEpoch.current) setNotice('上次房间暂时无法恢复，可重新输入房间编号加入。', 'error');
-      }
+        if (!disposed && found?.soupVersion === 2 && found.players.some((p) => p.id === active.playerId)) { setPlayerId(active.playerId); setRoom(found); setNotice('已恢复手动出题房间。'); }
+      } catch { if (!disposed) setNotice('上次房间暂时无法恢复，可重新加入。', 'error'); }
     })();
     return () => { disposed = true; };
   }, [cloudReady, setNotice]);
-
   useEffect(() => {
     if (!room?.code || !playerId || !cloudReady) return;
     const code = room.code;
@@ -137,278 +111,158 @@ export default function SoupSpreadsheetMode() {
   const formScope = `${draftRoomCode}:${draftSession}:${draftRound}:${playerId}:${privateReload}`;
   const [renderedFormScope, setRenderedFormScope] = useState(formScope);
   if (renderedFormScope !== formScope) {
-    setRenderedFormScope(formScope);
-    setDraftText(''); setDraftState('loading'); setPrivateRound(null); setSecretVisible(false);
-    setFeedback({ difficulty: 'just_right', ambiguous: false, unsuitable: false, note: '' }); setFeedbackSent(false);
-  }
-  const actionScope = `${formScope}:${room?.status}:${room?.pendingAction?.id}`;
-  const [renderedActionScope, setRenderedActionScope] = useState(actionScope);
-  if (renderedActionScope !== actionScope) {
-    setRenderedActionScope(actionScope); setJudgeNote(''); setConfirmation(null);
+    setRenderedFormScope(formScope); setQuestionDraft(''); setSolutionDraft(''); setDraftState('loading'); setPrivateRound(null); setSecretVisible(false);
+    setCaseForm({ surface: '', surfaceImageUrl: '', bottom: '', bottomImageUrl: '', keyFacts: '', boundary: '' });
   }
   useEffect(() => {
     const context = { code: draftRoomCode, sessionNo: draftSession, round: draftRound };
     const scope = soupRoundScope(context, playerId);
-    scopeRef.current = scope;
-    privacy.current?.mask('sheet-change');
     if (!draftRoomCode || !playerId || draftRound <= 0) return;
-    let disposed = false;
-    const cacheKey = `soup-draft:${scope}`;
+    let disposed = false; const cacheKey = `soup-draft-v12:${scope}`;
     const controller = createSoupDraftController({
-      save: (text, revision) => getCloudStore().saveSoupDraft(context, text, revision),
-      onChange: (value) => { setDraftText(value.text); setDraftState(value.status); },
-      cache: (text) => { try { if (text === null) sessionStorage.removeItem(cacheKey); else sessionStorage.setItem(cacheKey, text); } catch { /* Cloud save remains available without browser storage. */ } },
+      save: (question, solution, revision) => getCloudStore().saveSoupDraft(context, question, solution, revision),
+      onChange: (value) => { setQuestionDraft(value.text); setSolutionDraft(value.solutionText); setDraftState(value.status); },
+      cache: (text) => { try { if (text === null) sessionStorage.removeItem(cacheKey); else sessionStorage.setItem(cacheKey, text); } catch { /* optional */ } },
     });
     draftController.current = controller;
-    void getCloudStore().getMySoupRound(draftRoomCode).then((found) => {
-      if (disposed || !found || found.sessionNo !== draftSession || found.round !== draftRound) return;
-      setPrivateRound(found);
-      setFeedbackSent(found.feedbackSubmitted ?? false);
-      let local: string | null = null;
-      try { local = sessionStorage.getItem(cacheKey); } catch { /* Storage can be disabled. */ }
-      controller.hydrate(found, local);
-    }).catch((error) => { if (!disposed) setNotice(readableError(error, '个人工作区暂时无法读取，请点击“重新读取”。'), 'error'); });
-    const retry = () => { void controller.flush(); };
-    window.addEventListener('online', retry);
+    void getCloudStore().getMySoupRound(draftRoomCode).then((packet) => {
+      if (disposed || !packet || packet.sessionNo !== draftSession || packet.round !== draftRound) return;
+      setPrivateRound(packet); let local: string | null = null; try { local = sessionStorage.getItem(cacheKey); } catch { /* optional */ }
+      controller.hydrate(packet, local);
+    }).catch((error) => { if (!disposed) setNotice(readableError(error, '个人工作区读取失败，请重试。'), 'error'); });
+    const retry = () => { void controller.flush(); }; window.addEventListener('online', retry);
     return () => { disposed = true; controller.dispose(); window.removeEventListener('online', retry); if (draftController.current === controller) draftController.current = null; };
   }, [draftRoomCode, draftRound, draftSession, playerId, privateReload, setNotice]);
-
   useEffect(() => {
-    draftController.current?.setEnabled(draftEditable);
-    if (!draftEditable) return;
-    const timer = window.setTimeout(() => { void draftController.current?.flush(); }, 550);
-    return () => window.clearTimeout(timer);
-  }, [draftEditable, draftText, draftRoomCode, draftRound, draftSession, privateReload]);
+    draftController.current?.setEnabled(draftEditable); if (!draftEditable) return;
+    const timer = window.setTimeout(() => { void draftController.current?.flush(); }, 550); return () => window.clearTimeout(timer);
+  }, [draftEditable, questionDraft, solutionDraft]);
 
   const apply = useCallback(async (actionType: SoupActionType, payload: Record<string, unknown> = {}) => {
     if (!room || busyRef.current) return null;
-    busyRef.current = true;
-    const epoch = viewEpoch.current;
-    const key = JSON.stringify([room.code, room.sessionNo, room.round, room.status, room.actionCycle, room.currentDetectiveId, room.pendingAction?.id, actionType, payload]);
-    const intent = retryAction.current?.key === key ? retryAction.current : { key, actionId: makeId('soup-action'), room };
-    retryAction.current = intent;
-    setBusy(true);
+    busyRef.current = true; setBusy(true);
+    const key = JSON.stringify([room.code, room.round, room.status, room.version, actionType, payload]);
+    const intent = retryAction.current?.key === key ? retryAction.current : { key, actionId: makeId('soup-action'), room }; retryAction.current = intent;
     try {
       const result = await getCloudStore().applySoupAction({ room: intent.room, actionId: intent.actionId, actionType, payload });
-      retryAction.current = null;
-      if (epoch !== viewEpoch.current) return null;
-      setRoom((current) => current?.code === result.state.code ? acceptSoupRoom(current, result.state) : current);
-      setNotice(result.outcome === 'stale' ? '状态已更新，请确认当前轮次后重试。' : result.message);
-      return result.state;
-    } catch (error) {
-      if (epoch === viewEpoch.current) setNotice(readableError(error, '操作未确认，可重试；本地草稿仍保留。'), 'error');
-      return null;
-    } finally {
-      setBusy(false);
-      busyRef.current = false;
-    }
+      retryAction.current = null; setRoom((current) => current?.code === result.state.code ? acceptSoupRoom(current, result.state) : current); setNotice(result.message || '操作已记录。'); return result.state;
+    } catch (error) { setNotice(readableError(error, '操作未确认，请重试。'), 'error'); return null; }
+    finally { busyRef.current = false; setBusy(false); }
   }, [room, setNotice]);
 
-  const remember = (code: string, id: string) => {
-    window.localStorage.setItem(`soup-player-${code}`, id);
-    window.localStorage.setItem('soup-active-remote', JSON.stringify({ code, playerId: id }));
-  };
-
+  const remember = (code: string, id: string) => { window.localStorage.setItem(`soup-player-${code}`, id); window.localStorage.setItem('soup-active-remote', JSON.stringify({ code, playerId: id })); };
   const createRemote = async () => {
-    if (busyRef.current) return;
-    if (!cloudReady) return setNotice('测试站尚未配置 CloudBase 环境变量。', 'error');
-    if (!ownerName.trim()) return setNotice('请先填写你的称呼。', 'error');
-    busyRef.current = true;
-    viewEpoch.current += 1;
-    setBusy(true);
-    try {
-      const seed = createSoupRoom(ownerName);
-      const next = await getCloudStore().createSoupRoom(seed);
-      remember(next.code, next.ownerId);
-      setRoom(next);
-      setPlayerId(next.ownerId);
-      setNotice(`房间 ${next.code} 已创建，请把邀请链接发给朋友。`);
-    } catch (error) {
-      setNotice(readableError(error, '创建房间失败'), 'error');
-    } finally { setBusy(false); busyRef.current = false; }
-  };
-
-  const joinRemote = async () => {
-    if (busyRef.current) return;
-    const code = joinCode.trim().toUpperCase();
-    if (!cloudReady) return setNotice('测试站尚未配置 CloudBase 环境变量。', 'error');
-    if (!joinName.trim() || code.length !== 6) return setNotice('请填写称呼和六位房间编号。', 'error');
-    busyRef.current = true;
-    viewEpoch.current += 1;
-    setBusy(true);
-    try {
-      const requestedId = window.localStorage.getItem(`soup-player-${code}`) ?? makeId('soup-player');
-      const joined = await getCloudStore().joinSoupRoom(code, requestedId, joinName.trim());
-      remember(code, joined.playerId);
-      setRoom(joined.room);
-      setPlayerId(joined.playerId);
-      setNotice(`已加入房间 ${code}。`);
-    } catch (error) {
-      setNotice(readableError(error, '加入房间失败'), 'error');
-    } finally { setBusy(false); busyRef.current = false; }
-  };
-
-  const submitFormal = (type: 'question' | 'solution') => {
-    const content = draftText.trim();
-    if (!content) return setNotice(type === 'question' ? '请先在草稿格填写一道能用“是/否”判断的问题。' : '请先写下完整还原。');
-    void apply(type === 'question' ? 'submit_soup_question' : 'submit_soup_solution', { content });
-  };
-
-  const submitFeedback = async () => {
-    if (!room || busyRef.current) return;
-    const scope = scopeRef.current;
+    if (!cloudReady || !ownerName.trim()) return setNotice(!cloudReady ? '测试站尚未配置 CloudBase。' : '请填写称呼。', 'error');
     busyRef.current = true; setBusy(true);
-    try {
-      const clean = validateSoupFeedback(feedback);
-      await getCloudStore().submitSoupFeedback(room, clean);
-      if (scope !== scopeRef.current) return;
-      setFeedbackSent(true);
-      setNotice('本题反馈已记录，谢谢。');
-    } catch (error) { if (scope === scopeRef.current) setNotice(readableError(error, '反馈提交失败'), 'error'); }
-    finally { busyRef.current = false; setBusy(false); }
+    try { const seed = createManualSoupRoom(ownerName); const next = await getCloudStore().createSoupRoom(seed); remember(next.code, next.ownerId); setRoom(next); setPlayerId(next.ownerId); setNotice(`房间 ${next.code} 已创建；请提醒每个人提前准备一题。`); }
+    catch (error) { setNotice(readableError(error, '创建房间失败'), 'error'); } finally { busyRef.current = false; setBusy(false); }
+  };
+  const joinRemote = async () => {
+    const code = joinCode.trim().toUpperCase(); if (!cloudReady || !joinName.trim() || code.length !== 6) return setNotice('请填写称呼和六位房间编号。', 'error');
+    busyRef.current = true; setBusy(true);
+    try { const requestedId = window.localStorage.getItem(`soup-player-${code}`) ?? makeId('soup-player'); const joined = await getCloudStore().joinSoupRoom(code, requestedId, joinName.trim()); if (joined.room.soupVersion !== 2) throw new Error('这是旧版题库房间，请新建手动出题房间'); remember(code, joined.playerId); setRoom(joined.room); setPlayerId(joined.playerId); setNotice(`已加入房间 ${code}。`); }
+    catch (error) { setNotice(readableError(error, '加入房间失败'), 'error'); } finally { busyRef.current = false; setBusy(false); }
   };
 
-  const leaveView = () => {
-    if (busyRef.current) return;
-    viewEpoch.current += 1;
-    draftController.current?.dispose();
-    privacy.current?.mask('sheet-change');
-    window.localStorage.removeItem('soup-active-remote');
-    setRoom(null); setPlayerId(''); setPrivateRound(null); setDraftText(''); setActiveSheet('home'); scopeRef.current = '';
-    setNotice('已返回调查首页。');
-  };
-
-  const copyInvite = async () => {
-    if (!room) return;
-    const invite = new URL(window.location.href);
-    invite.search = ''; invite.hash = ''; invite.searchParams.set('room', room.code);
-    try { await navigator.clipboard.writeText(invite.toString()); setNotice('邀请链接已复制。'); }
-    catch { setNotice('浏览器未允许复制，请复制地址栏并附上房间编号。', 'error'); }
-  };
-
+  const queue = room?.questionQueue ?? (room?.pendingAction ? [room.pendingAction] : []);
+  const myQueuePosition = queuePosition(queue, playerId);
+  const lastSubmittedAt = room?.lastQuestionAtByPlayer?.[playerId] ?? 0;
+  const cooldownSeconds = clockNow <= 0 ? 0 : Math.max(0, Math.ceil((lastSubmittedAt + 10_000 - clockNow) / 1000));
   const isOwner = room?.ownerId === playerId;
   const isHost = room?.hostId === playerId;
-  const isCurrentDetective = room?.currentDetectiveId === playerId;
-  const activeCount = room?.players.filter((player) => player.alive && !player.away).length ?? 0;
-  const feedbackComplete = Boolean(room && room.feedbackCount >= activeCount);
-  const awaitingHost = room?.status === 'judging_question' || room?.status === 'judging_solution';
-  const judgeQuestion = (event: MouseEvent<HTMLButtonElement>) => { void apply('judge_soup_question', { verdict: event.currentTarget.dataset.verdict, note: judgeNote }); };
-  const judgeSolution = (event: MouseEvent<HTMLButtonElement>) => { void apply('judge_soup_solution', { verdict: event.currentTarget.dataset.verdict, note: judgeNote }); };
+  const activeCount = room?.players.filter((p) => p.alive && !p.away).length ?? 0;
+  const canQueue = Boolean(room && room.status === 'investigating' && !isHost && !myQueuePosition && cooldownSeconds === 0);
+  const head = queue[0] ?? null;
+  const submitQueue = async (type: 'question' | 'solution') => {
+    const content = (type === 'question' ? questionDraft : solutionDraft).trim(); if (!content) return setNotice(type === 'question' ? '请先填写一道是非问题。' : '请先写下完整故事还原。');
+    const next = await apply(type === 'question' ? 'submit_soup_question' : 'submit_soup_solution', { content });
+    if (next) { if (type === 'question') draftController.current?.update(''); else draftController.current?.updateSolution(''); }
+  };
+  const judge = (event: MouseEvent<HTMLButtonElement>) => { const verdict = event.currentTarget.dataset.verdict; void apply(head?.type === 'question' ? 'judge_soup_question' : 'judge_soup_solution', { verdict, note: judgeNote }).then((next) => { if (next) setJudgeNote(''); }); };
+  const submitCase = async () => { if (!caseForm.surface.trim() || !caseForm.bottom.trim()) return setNotice('汤面和完整汤底都必须填写。', 'error'); const next = await apply('prepare_soup_case', caseForm); if (next) { setPrivateReload((value) => value + 1); setActiveSheet('play'); } };
+  const publishPost = async () => { if (!publicText.trim() && !publicImageUrl.trim()) return setNotice('提示或证据至少需要文字或图片链接。'); const next = await apply('publish_soup_note', { kind: publicKind, text: publicText, imageUrl: publicImageUrl }); if (next) { setPublicText(''); setPublicImageUrl(''); } };
 
-  const openGuide = () => { if (activeSheet !== 'guide') returnSheet.current = activeSheet; setActiveSheet('guide'); };
-
+  const flowText = !room ? '创建或加入房间' : room.status === 'lobby'
+    ? isOwner ? `等待至少 ${SOUP_MIN_PLAYERS} 人到齐，然后点击“随机汤主并开始”` : '等待负责人开始；请先准备一道海龟汤题目'
+    : room.status === 'host_preparing' ? isHost ? '你是本题汤主：请在“玩家与汤主”录入提前准备的题目' : `等待汤主 ${room.hostName ?? ''} 录入题目`
+    : room.status === 'investigating' ? isHost ? (head ? `请回答队首：${head.playerName} 的${head.type === 'question' ? '问题' : '还原'}` : '等待侦探加入待回答队列') : myQueuePosition ? `你的内容排在第 ${myQueuePosition} 位，等待汤主处理` : cooldownSeconds ? `回答已完成，${cooldownSeconds} 秒后可再次提交` : '你可以提交一条问题或故事还原'
+    : room.status === 'limit_reached' ? isHost ? '问题已达上限：延长 5 问或公布汤底' : '有效问题已达上限，等待汤主处理'
+    : room.status === 'round_result' ? isOwner ? '本题已揭晓：可以开始下一题' : '本题已揭晓，等待负责人开始下一题'
+    : room.status === 'finished' ? '本局已结束' : '请查看当前区域的操作提示';
+  const imageCell = (url: string | null | undefined, title: string) => <ImageButton url={url} title={title} onOpen={setImageView} />;
+  const publicPosts = room?.publicPosts ?? [];
   const guideRows = [
-    row(['汤底侦探', '一人掌握汤底，其余人轮流提问或尝试还原，共同解开汤面。', '', '', '', '', '']),
-    row(['步骤', '谁操作', '要做什么', '完成标志', '规则', '遇到问题', '']),
-    row(['01 开始煲汤', '负责人', '3–10 人到齐后开始', '随机选出汤主', '人人担任过汤主前不重复', '人数不足不能开始', '']),
-    row(['02 阅读资料', '汤主', '打开“汤主资料”，查看汤底、关键事实和参考判定', '点击“我已看懂”', '侦探只能看到汤面', 'Esc、切换工作表或离开窗口即隐藏；闲置 60 秒也会隐藏', '']),
-    row(['03 轮流行动', '当前侦探', '提交问题、提交还原、跳过本轮三选一', '出现待判定记录', '其他侦探可同时改自己的草稿', '草稿自动保存，不等于正式提交', '']),
-    row(['04 汤主判定', '汤主', '为问题或还原选择结论', '系统自动换下一人', '“请换个问法”不计有效问题', '可在判定前填写补充说明', '']),
-    row(['05 上限处理', '汤主', '20 问未解可延长 5 问一次或揭晓', '进入反馈', '每题最多两个提示', '完整记录见“问答记录”', '']),
-    row(['06 题后反馈', '所有人', '评价难度、歧义与内容适宜度', '全员提交后负责人点“下一碗”', '反馈关联当前题卡版本', '有人不能继续时，负责人可结束本局', '']),
+    row(['手动出题模式', '开始前每个人都准备一题；系统随机指定汤主，本题不使用内置题库。', '', '', '', '', '']),
+    row(['步骤', '谁操作', '要做什么', '完成标志', '队列规则', '图片规则', '']),
+    row(['01 随机汤主', '负责人', '3–10 人到齐后开始', '系统随机指定汤主', '所有人担任过前不重复', '题目需要提前准备', '']),
+    row(['02 录入题目', '汤主', '填写汤面、完整汤底和可选补充资料', '点击“提交并开放提问”', '只有汤主能看到汤底', '只填链接；其他人点击后才加载图片', '']),
+    row(['03 排队提问', '所有侦探', '每人最多提前提交一条问题或还原', '队列显示自己的顺序', '汤主按队首回答；未回答前不能重复入队', '问题正文不自动展开图片', '']),
+    row(['04 回答与冷却', '汤主／侦探', '汤主回答队首；该玩家提交满 10 秒且已回答后可再次提问', '队首自动移除', '其他人的排队内容继续保留', '提示、证据、结局图片均需点击查看', '']),
+    row(['05 提示与还原', '汤主／侦探', '汤主可贴提示或证据；侦探在“故事还原区”提交完整还原', '还原成功后公开汤底', '问题最多 20 个，可延长 5 个一次', '文字和图片可任选或同时使用', '']),
   ];
 
   const rows: ReactNode[][] = (() => {
     if (activeSheet === 'guide') return guideRows;
     if (!room) return [
-      row(['入口', '称呼', '房间编号', '说明', '操作', '状态', '']),
-      row(['新建', <input value={ownerName} maxLength={24} placeholder="填写称呼" onChange={(event) => setOwnerName(event.target.value)} key="owner" />, '自动生成', `至少 ${SOUP_MIN_PLAYERS} 人`, <button className="sheet-action" disabled={busy} onClick={createRemote} key="create">创建联机房间</button>, cloudReady ? '可用' : '缺少环境参数', '']),
-      row(['加入', <input value={joinName} maxLength={24} placeholder="填写称呼" onChange={(event) => setJoinName(event.target.value)} key="join-name" />, <input value={joinCode} maxLength={6} placeholder="六位编号" onChange={(event) => setJoinCode(event.target.value.toUpperCase().replace(/[^A-Z2-9]/g, ''))} key="join-code" />, '打开邀请链接时会自动带入编号', <button className="sheet-action" disabled={busy} onClick={joinRemote} key="join">加入房间</button>, '等待输入', '']),
-      row(['玩法', '一人查看完整汤底', '其余人轮流行动', '提问、还原或跳过三选一', '汤主判定后自动换人', '题后收集反馈', '']),
+      row(['入口', '称呼', '房间编号', '模式说明', '操作', '状态', '']),
+      row(['新建', <input value={ownerName} maxLength={24} placeholder="填写称呼" onChange={(e) => setOwnerName(e.target.value)} key="owner" />, '自动生成', '手动出题；每个人需提前准备题目', <button className="sheet-action" disabled={busy} onClick={createRemote} key="create">创建联机房间</button>, cloudReady ? '可用' : '缺少环境参数', '']),
+      row(['加入', <input value={joinName} maxLength={24} placeholder="填写称呼" onChange={(e) => setJoinName(e.target.value)} key="join-name" />, <input value={joinCode} maxLength={6} placeholder="六位编号" onChange={(e) => setJoinCode(e.target.value.toUpperCase().replace(/[^A-Z2-9]/g, ''))} key="join-code" />, '汤主由系统随机指定', <button className="sheet-action" disabled={busy} onClick={joinRemote} key="join">加入房间</button>, '等待输入', '']),
+      row(['开局前', '每人准备：汤面＋完整汤底', '可选准备图片链接', '至少 3 人', '流程见“流程说明”', '', '']),
     ];
-
-    if (activeSheet === 'members') return [
-      row(['座位', '成员', '本题身份', '当前状态', '已担任汤主', '行动顺序', '备注']),
-      ...room.players.map((player) => row([
-        player.seat, player.name, room.round === 0 ? '待分配' : player.id === room.hostId ? '汤主' : '侦探',
-        player.away ? '暂退' : player.id === room.currentDetectiveId ? '当前行动' : player.alive ? '在线' : '已退出',
-        room.servedHostIds.includes(player.id) ? '是' : '否', room.detectiveOrder.indexOf(player.id) >= 0 ? room.detectiveOrder.indexOf(player.id) + 1 : '—',
-        player.id === room.ownerId ? '负责人' : '',
-      ])),
+    if (activeSheet === 'public') return [
+      row(['公共提示区', '内容', '图片', '发布人', '操作', '状态', '']),
+      ...(publicPosts.length ? publicPosts.map((post: SoupPublicPost, index) => row([`${post.kind === 'hint' ? '提示' : '证据'} ${index + 1}`, post.text || '仅图片', imageCell(post.imageUrl, `${post.kind === 'hint' ? '提示' : '证据'} ${index + 1}`), room.hostName ?? '汤主', '', '已公开', ''])) : [row(['—', '尚无公开提示或证据', '—', '—', '', '等待汤主按需发布', ''])]),
+      row(['汤主发布', isHost ? <textarea value={publicText} maxLength={600} placeholder="填写提示或证据；可只发图片" onChange={(e) => setPublicText(e.target.value)} key="public-text" /> : '仅汤主可操作', isHost ? <input value={publicImageUrl} placeholder="可选：https:// 图片链接" onChange={(e) => setPublicImageUrl(e.target.value)} key="public-image" /> : '—', isHost ? <select value={publicKind} onChange={(e) => setPublicKind(e.target.value as 'hint' | 'evidence')} key="public-kind"><option value="hint">提示</option><option value="evidence">证据</option></select> : '—', isHost ? <button className="sheet-action" disabled={busy || !['investigating', 'limit_reached'].includes(room.status)} onClick={publishPost} key="publish">公开贴出</button> : '', '', '公开后不能撤回']),
     ];
-
-    if (activeSheet === 'records') return [
-      row(['序号', '玩家', '类型', '内容', '汤主判定', '补充说明', '计入问题数']),
-      ...(room.records.length ? room.records.map((record) => row([
-        record.sequence, record.playerName, record.type === 'question' ? '问题' : record.type === 'solution' ? '还原' : record.type === 'skip' ? '跳过' : '提示',
-        record.content, soupVerdictLabel(record.verdict), record.note ?? '—', record.counted ? '是' : '否',
-      ])) : [row(['—', '—', '—', '尚无正式记录', '—', '—', '—'])]),
+    if (activeSheet === 'solution') return [
+      row(['故事还原区', '内容', '排队状态', '操作', '判定', '图片', '']),
+      row(['我的完整还原', isHost ? '汤主不提交还原' : <textarea value={solutionDraft} maxLength={240} disabled={!draftEditable} placeholder="把完整因果和反转写清楚" onChange={(e) => draftController.current?.updateSolution(e.target.value)} key="solution" />, myQueuePosition ? `已排第 ${myQueuePosition} 位` : cooldownSeconds ? `冷却 ${cooldownSeconds}s` : canQueue ? '可提交' : '暂不可提交', <button className="sheet-action" disabled={busy || !canQueue || !solutionDraft.trim()} onClick={() => void submitQueue('solution')} key="submit-solution">提交还原</button>, '汤主判定成功／差一点／错误', '', '']),
+      ...room.records.filter((record) => record.type === 'solution').map((record) => row([`还原 ${record.sequence}`, record.content, record.playerName, '', soupVerdictLabel(record.verdict), '', record.note ?? '—'])),
+      row(['最终结果', room.revealedBottom ?? '尚未揭晓', room.result?.success ? `由 ${room.result.solverName} 还原成功` : room.status === 'round_result' ? '汤主已公布' : '进行中', '', '', imageCell(room.revealedBottomImageUrl, '最终结果图片'), '']),
     ];
-
-    if (activeSheet === 'host') return [
-      row(['项目', '内容', '用途', '可见范围', '', '', '']),
-      row(['资料开关', isHost ? <button disabled={!privateRound} aria-expanded={secretVisible} onClick={() => secretVisible ? privacy.current?.mask() : privacy.current?.reveal()} key="bottom">{secretVisible ? '收起资料' : '查看汤底资料'}</button> : '仅本题汤主可见', 'Esc 可立即隐藏', '汤主', '', '', '']),
-      row(['完整汤底', isHost && secretVisible ? privateRound?.bottom : '隐藏', '判断完整还原', '汤主', '', '', '']),
-      row(['关键事实', isHost && secretVisible ? privateRound?.keyFacts.join('；') : '隐藏', '核对推理进度', '汤主', '', '', '']),
-      row(['等价答案', isHost && secretVisible ? privateRound?.equivalentAnswers.join('；') : '隐藏', '接受合理同义还原', '汤主', '', '', '']),
-      row(['判定边界', isHost && secretVisible ? privateRound?.boundary : '隐藏', '处理歧义', '汤主', '', '', '']),
-      ...(isHost && secretVisible ? (privateRound?.hints ?? []).map((hint, index) => row([`预设提示 ${index + 1}`, hint, index < room.hintsUsed ? '已公开' : '尚未公开', '汤主', '', '', ''])) : []),
-      ...(isHost && secretVisible ? (privateRound?.commonQuestions ?? []).map((item, index) => row([`参考 ${index + 1}`, item.question, soupVerdictLabel(item.verdict), item.note ?? '—', '', '', ''])) : []),
+    if (activeSheet === 'people') return [
+      row(['玩家与汤主操作区', '内容', '状态', '操作一', '操作二', '操作三', '']),
+      ...room.players.map((player) => row([player.seat, player.name, player.id === room.hostId ? '本题汤主' : player.id === room.ownerId ? '负责人／侦探' : '侦探', room.servedHostIds.includes(player.id) ? '已当过汤主' : '尚未当过', queuePosition(queue, player.id) ? `排队第 ${queuePosition(queue, player.id)} 位` : '未排队', '', ''])),
+      ...(room.status === 'host_preparing' ? [
+        row(['汤面', isHost ? <textarea value={caseForm.surface} maxLength={600} placeholder="所有人首先看到的谜面" onChange={(e) => setCaseForm((v) => ({ ...v, surface: e.target.value }))} key="surface" /> : `等待汤主 ${room.hostName} 录入`, isHost ? <input value={caseForm.surfaceImageUrl} placeholder="可选：https:// 汤面图片" onChange={(e) => setCaseForm((v) => ({ ...v, surfaceImageUrl: e.target.value }))} key="surface-image" /> : '', '', '', '', '']),
+        row(['完整汤底', isHost ? <textarea value={caseForm.bottom} maxLength={2000} placeholder="完整事实、因果和反转" onChange={(e) => setCaseForm((v) => ({ ...v, bottom: e.target.value }))} key="bottom" /> : '仅汤主可见', isHost ? <input value={caseForm.bottomImageUrl} placeholder="可选：https:// 结局图片" onChange={(e) => setCaseForm((v) => ({ ...v, bottomImageUrl: e.target.value }))} key="bottom-image" /> : '', '', '', '', '']),
+        row(['补充资料', isHost ? <textarea value={caseForm.keyFacts} maxLength={1000} placeholder="可选：关键事实，帮助自己判定" onChange={(e) => setCaseForm((v) => ({ ...v, keyFacts: e.target.value }))} key="facts" /> : '隐藏', isHost ? <textarea value={caseForm.boundary} maxLength={1000} placeholder="可选：判定边界或可接受答案" onChange={(e) => setCaseForm((v) => ({ ...v, boundary: e.target.value }))} key="boundary" /> : '', isHost ? <button className="sheet-action" disabled={busy} onClick={submitCase} key="prepare">提交并开放提问</button> : '', '', '', '题目需要提前准备']),
+      ] : []),
+      ...(isHost && room.status !== 'host_preparing' && room.status !== 'lobby' ? [
+        row(['汤主资料', <button aria-expanded={secretVisible} disabled={!privateRound} onClick={() => secretVisible ? privacy.current?.mask() : privacy.current?.reveal()} key="secret-toggle">{secretVisible ? '收起汤底' : '复看汤底'}</button>, secretVisible ? privateRound?.bottom ?? '正在读取' : '已隐藏', secretVisible ? (privateRound?.keyFacts.join('；') || '未填写关键事实') : '', secretVisible ? privateRound?.boundary ?? '未填写判定边界' : '', secretVisible ? imageCell(privateRound?.bottomImageUrl, '汤底参考图片') : '', 'Esc 或切换页面会隐藏']),
+      ] : []),
+      ...(head ? [row(['当前队首', `${head.playerName}：${head.content}`, head.type === 'question' ? '问题' : '故事还原', isHost && head.type === 'question' ? <span className="soup-judge-buttons" key="q-buttons">{(['yes', 'no', 'irrelevant', 'partial', 'rephrase'] as SoupQuestionVerdict[]).map((verdict) => <button data-verdict={verdict} disabled={busy} onClick={judge} key={verdict}>{soupVerdictLabel(verdict)}</button>)}</span> : isHost ? <span className="soup-judge-buttons" key="s-buttons">{(['success', 'close', 'wrong'] as SoupSolutionVerdict[]).map((verdict) => <button data-verdict={verdict} disabled={busy} onClick={judge} key={verdict}>{soupVerdictLabel(verdict)}</button>)}</span> : '等待汤主', isHost ? <input value={judgeNote} maxLength={160} placeholder="补充说明（可选）" onChange={(e) => setJudgeNote(e.target.value)} key="judge-note" /> : '', '', '只处理队首'])] : []),
+      row(['题目控制', `${room.effectiveQuestionCount}/${room.maxQuestions} 个有效问题`, room.extended ? '已延长' : '未延长', isHost ? <button disabled={busy || room.status !== 'limit_reached' || room.extended} onClick={() => void apply('extend_soup_limit')} key="extend">延长 5 问</button> : '', isHost ? <button disabled={busy || !['investigating', 'limit_reached'].includes(room.status)} onClick={() => setConfirmation('reveal_soup_bottom')} key="reveal">公布汤底</button> : '', isOwner && room.status === 'round_result' ? <button className="sheet-action" disabled={busy} onClick={() => void apply('next_soup_round')} key="next">随机汤主 · 下一题</button> : '', isOwner && !['lobby', 'finished'].includes(room.status) ? <button disabled={busy} onClick={() => setConfirmation('end_soup_game')} key="end">结束本局</button> : '']),
     ];
-
-    if (activeSheet === 'feedback') return [
-      row(['项目', '选择', '说明', '提交', '进度', '', '']),
-      row(['难度感受', <select disabled={feedbackSent || room.status !== 'feedback'} value={feedback.difficulty} onChange={(event) => setFeedback((value) => ({ ...value, difficulty: event.target.value as SoupFeedbackInput['difficulty'] }))} key="difficulty"><option value="too_easy">太简单</option><option value="just_right">刚刚好</option><option value="too_hard">太难</option></select>, '三选一', <button className="sheet-action" disabled={busy || !privateRound || room.status !== 'feedback' || feedbackSent} onClick={submitFeedback} key="feedback">{feedbackSent ? '已提交' : '提交反馈'}</button>, `${room.feedbackCount}/${activeCount}`, '', '']),
-      row(['补充标记', <span className="soup-choice-line" key="flags"><label><input disabled={feedbackSent || room.status !== 'feedback'} type="checkbox" checked={feedback.ambiguous} onChange={(event) => setFeedback((value) => ({ ...value, ambiguous: event.target.checked }))} /> 有歧义</label><label><input disabled={feedbackSent || room.status !== 'feedback'} type="checkbox" checked={feedback.unsuitable} onChange={(event) => setFeedback((value) => ({ ...value, unsuitable: event.target.checked }))} /> 内容不适</label></span>, '可多选', '', '', '', '']),
-      row(['文字反馈', <textarea disabled={feedbackSent || room.status !== 'feedback'} aria-label="文字反馈" value={feedback.note ?? ''} maxLength={300} placeholder="可选：哪里卡住、哪里最好玩" onChange={(event) => setFeedback((value) => ({ ...value, note: event.target.value }))} key="note" />, '最多 300 字', '', '', '', '']),
-      row(['本题结果', room.result ? room.result.success ? `已还原 · ${room.result.solverName}` : '已揭晓' : '尚未结束', `${room.result?.validQuestions ?? 0} 个有效问题`, `${room.result?.hintsUsed ?? 0} 次提示`, formatElapsed(room.result?.elapsedMs), '', '']),
-      row(['完整汤底', room.revealedBottom ?? '结束后展示', '', '', '', '', '']),
-    ];
-
     return [
-      row(['项目', '内容', '当前人员', '进度', '操作一', '操作二', '说明']),
-      row(['房间编号', room.code, `${activeCount}/${room.playerLimit}`, statusLabels[room.status], <button onClick={copyInvite} key="copy">复制邀请链接</button>, <button disabled={busy} onClick={leaveView} key="leave">仅离开页面</button>, `第 ${room.round || 0} 题`]),
-      row(['当前汤面', room.surface ?? '开始后显示', room.hostName ? `汤主：${room.hostName}` : '尚未分配', room.caseCategory ? `${categoryLabels[room.caseCategory]} · ${{ easy: '简单', normal: '普通', hard: '困难' }[room.difficulty ?? 'normal']}` : '—', '', '', '']),
-      row(['行动轮次', room.currentDetectiveName ?? '—', `第 ${room.actionCycle || 0} 轮`, `${room.effectiveQuestionCount}/${room.maxQuestions} 个有效问题`, '', '', room.extended ? '已延长一次' : '尚未延长']),
-      row(['我的草稿', isHost ? '汤主无需填写' : <textarea aria-label="我的独立草稿" disabled={!draftEditable || !privateRound} value={draftText} maxLength={240} placeholder="等待时可先写，轮到你再正式提交" onChange={(event) => draftController.current?.update(event.target.value)} key="draft" />, isHost ? '汤主' : `${{ loading: '读取中', idle: '待保存', saving: '保存中', saved: '已保存', error: '保存失败，本地保留', conflict: '草稿版本待确认' }[draftState]} · ${draftText.length}/240`,
-        room.status === 'feedback' || room.status === 'finished' ? '本题已结束' : isCurrentDetective ? '轮到你' : '等待中',
-        <button disabled={busy || !privateRound || !isCurrentDetective || room.status !== 'investigating'} onClick={() => submitFormal('question')} key="question">提交问题</button>,
-        <button disabled={busy || !privateRound || !isCurrentDetective || room.status !== 'investigating'} onClick={() => submitFormal('solution')} key="solution">提交还原</button>,
-        <button disabled={busy || !isCurrentDetective || room.status !== 'investigating'} onClick={() => void apply('skip_soup_turn')} key="skip">跳过本轮</button>]),
-      row(['待汤主判定', room.pendingAction?.content ?? '—', room.pendingAction?.playerName ?? '—', room.pendingAction?.type === 'question' ? '问题' : room.pendingAction?.type === 'solution' ? '还原' : '—',
-        awaitingHost && isHost ? <span className="soup-judge-buttons" key="judge-question">{room.status === 'judging_question' && (['yes', 'no', 'irrelevant', 'partial', 'rephrase'] as SoupQuestionVerdict[]).map((verdict) => <button disabled={busy} data-verdict={verdict} onClick={judgeQuestion} key={verdict}>{soupVerdictLabel(verdict)}</button>)}{room.status === 'judging_solution' && (['success', 'close', 'wrong'] as SoupSolutionVerdict[]).map((verdict) => <button disabled={busy} data-verdict={verdict} onClick={judgeSolution} key={verdict}>{soupVerdictLabel(verdict)}</button>)}</span> : awaitingHost ? '等待汤主' : '—',
-        awaitingHost && isHost ? <input value={judgeNote} maxLength={160} placeholder="补充说明（可选）" onChange={(event) => setJudgeNote(event.target.value)} key="judge-note" /> : '',
-        room.status === 'judging_question' ? '“请换个问法”不计有效问题' : '判定后自动换人']),
-      row(['公开提示', room.publicHints.length ? room.publicHints.join('；') : '尚未使用', `${room.hintsUsed}/2`, '', isHost ? <button disabled={busy || !['investigating', 'limit_reached'].includes(room.status) || room.hintsUsed >= 2} onClick={() => void apply('use_soup_hint')} key="hint">给一点提示</button> : '', '', '提示公开后不能撤回']),
-      row(['问题上限', `${room.effectiveQuestionCount}/${room.maxQuestions}`, room.status === 'limit_reached' ? '等待汤主处理' : '—', '', isHost ? <button disabled={busy || room.status !== 'limit_reached' || room.extended} onClick={() => void apply('extend_soup_limit')} key="extend">延长 5 问</button> : '', isHost ? <button disabled={busy || !['investigating', 'limit_reached', 'judging_question', 'judging_solution'].includes(room.status)} onClick={() => setConfirmation('reveal_soup_bottom')} key="reveal">公布汤底</button> : '', '每题只可延长一次']),
-      row(['最新记录', room.records.at(-1)?.content ?? '尚无', room.records.at(-1)?.playerName ?? '—', soupVerdictLabel(room.records.at(-1)?.verdict ?? null), '', '', '完整记录见“问答记录”工作表']),
-      row(['题后处理', room.revealedBottom ?? '成功还原或汤主公布后显示', `${room.feedbackCount}/${activeCount} 已反馈`, room.status === 'feedback' ? <button onClick={() => setActiveSheet('feedback')} key="go-feedback">填写反馈</button> : '', isOwner ? <button className="sheet-action" disabled={busy || room.status !== 'feedback' || !feedbackComplete} onClick={() => void apply('next_soup_round')} key="next">下一碗</button> : '', isOwner ? <button disabled={busy || room.status === 'lobby' || room.status === 'finished'} onClick={() => setConfirmation('end_soup_game')} key="end">结束本局</button> : '', feedbackComplete ? '反馈已收齐' : room.status === 'feedback' ? '请完成题后反馈' : '']),
+      row(['猜题区', '内容', '玩家／顺序', '状态', '操作', '图片', '说明']),
+      row(['当前汤面', room.surface ?? '等待汤主录入题目', room.hostName ? `汤主：${room.hostName}` : '尚未指定', statusLabels[room.status], '', imageCell(room.surfaceImageUrl, '汤面图片'), '手动出题']),
+      row(['现在该谁做', flowText, '', '', '', '', '']),
+      row(['我的问题', isHost ? '汤主负责回答' : <textarea value={questionDraft} maxLength={240} disabled={!draftEditable} placeholder="写一道能用“是／否”判断的问题" onChange={(e) => draftController.current?.update(e.target.value)} key="question" />, myQueuePosition ? `已排第 ${myQueuePosition} 位` : cooldownSeconds ? `冷却 ${cooldownSeconds}s` : canQueue ? '可提交' : '暂不可提交', `${draftState === 'saved' ? '草稿已保存' : draftState === 'saving' ? '正在保存' : draftState === 'error' ? '保存失败，本地保留' : '草稿'}`, <button className="sheet-action" disabled={busy || !canQueue || !questionDraft.trim()} onClick={() => void submitQueue('question')} key="submit-question">提交问题到待回答区</button>, '', '每人最多排一条']),
+      row(['待回答队列', `${queue.length} 条`, head ? `队首：${head.playerName}` : '当前为空', head ? '汤主正在处理队首' : '可以提交', '', '', '回答后该玩家仍需满足 10 秒冷却']),
+      ...queue.map((item, index) => row([index === 0 ? '正在回答' : `等待 ${index}`, item.content, item.playerName, item.type === 'question' ? '问题' : '故事还原', index === 0 && isHost ? '请到“玩家与汤主”回答' : '', '', item.playerId === playerId ? '我的排队内容' : ''])),
+      ...room.records.filter((record) => record.type === 'question').slice(-8).reverse().map((record) => row([`已回答 ${record.sequence}`, record.content, record.playerName, soupVerdictLabel(record.verdict), '', '', record.note ?? '—'])),
     ];
   })();
 
-  const formula = !room ? 'A5：创建或加入调查房间' : activeSheet === 'home'
-    ? `${statusLabels[room.status]} · ${room.currentDetectiveName ? `当前：${room.currentDetectiveName}` : '等待开始'} · ${room.effectiveQuestionCount}/${room.maxQuestions} 问`
-    : `${soupSheets.find(([id]) => id === activeSheet)?.[1]} · 房间 ${room.code} · 第 ${room.round} 题`;
+  const formula = !room ? 'A5 · 手动出题房间' : `${statusLabels[room.status]} · ${flowText} · 队列 ${queue.length}`;
+  const openGuide = () => { if (activeSheet !== 'guide') returnSheet.current = activeSheet; setActiveSheet('guide'); };
+  const leaveView = () => { window.localStorage.removeItem('soup-active-remote'); setRoom(null); setPlayerId(''); setPrivateRound(null); setActiveSheet('play'); setNotice('已返回 A5 首页。'); };
+  const copyInvite = async () => { if (!room) return; const invite = new URL(window.location.href); invite.search = ''; invite.searchParams.set('room', room.code); try { await navigator.clipboard.writeText(invite.toString()); setNotice('邀请链接已复制。'); } catch { setNotice('请复制地址栏链接并附上房间编号。', 'error'); } };
 
   return <main data-soup-sheet={activeSheet} className={`sheet-app workbook-unified soup-sheet${activeSheet === 'guide' ? ' sheet-app--guide' : ''}`}>
-    <header className="sheet-titlebar">
-      <span className="sheet-filemark" aria-hidden="true">表</span>
-      <div><strong>协作工作簿 · A5</strong><span>{room ? `编号 ${room.code} · ${statusLabels[room.status]}` : '调查记录模板'}</span></div>
-      <div className="sheet-title-actions"><a className="sheet-room-action" href="../">目录</a>{room && <button onClick={copyInvite}>复制链接</button>}<ReleaseNotificationButton open={notificationOpen} onToggle={() => setNotificationOpen((open) => !open)} /></div>
-    </header>
-    <nav className="sheet-ribbon"><button className={activeSheet === 'home' ? 'is-current' : ''} onClick={() => setActiveSheet('home')}>开始</button><button className={activeSheet === 'guide' ? 'is-current' : ''} onClick={openGuide}>帮助</button>{activeSheet === 'guide' && <button onClick={() => setActiveSheet(returnSheet.current)}>返回原工作表</button>}<button disabled={!secretVisible} onClick={() => privacy.current?.mask('escape')}>隐藏敏感内容</button><span /></nav>
+    <header className="sheet-titlebar"><span className="sheet-filemark" aria-hidden="true">表</span><div><strong>协作工作簿 · A5</strong><span>{room ? `编号 ${room.code} · ${statusLabels[room.status]}` : '手动出题模板'}</span></div><div className="sheet-title-actions"><a className="sheet-room-action" href="../">目录</a>{room && <button onClick={copyInvite}>复制链接</button>}<ReleaseNotificationButton open={notificationOpen} onToggle={() => setNotificationOpen((v) => !v)} /></div></header>
+    <nav className="sheet-ribbon"><button className={activeSheet === 'play' ? 'is-current' : ''} onClick={() => setActiveSheet('play')}>猜题</button><button className={activeSheet === 'guide' ? 'is-current' : ''} onClick={openGuide}>流程</button>{activeSheet === 'guide' && <button onClick={() => setActiveSheet(returnSheet.current)}>返回原工作表</button>}<button disabled={!secretVisible} onClick={() => privacy.current?.mask('escape')}>隐藏汤底</button><span /></nav>
     <div className="sheet-formula"><span className="sheet-namebox">{activeCell}</span><span className="sheet-fx">fx</span><output>{formula}</output></div>
-    {room && <div className="sheet-commandbar">
-      {isOwner && room.status === 'lobby' && <button className="sheet-primary-action" disabled={busy || activeCount < SOUP_MIN_PLAYERS} onClick={() => void apply('start_soup_game')}>开始煲汤</button>}
-      {isHost && room.status === 'host_reading' && <button className="sheet-primary-action" disabled={busy || !privateRound} onClick={() => void apply('acknowledge_soup_host')}>我已看懂</button>}
-      {isHost && activeSheet !== 'host' && <button onClick={() => setActiveSheet('host')}>汤主资料</button>}
-      {activeSheet === 'host' && <button onClick={() => setActiveSheet('home')}>返回当前汤面</button>}
-      {!privateRound && room.round > 0 && <button disabled={busy} onClick={() => setPrivateReload((value) => value + 1)}>重新读取</button>}
-      {isCurrentDetective && room.status === 'investigating' && <strong>轮到你：在草稿格填写后，选择问题、还原或跳过。</strong>}
-      {awaitingHost && <strong>{isHost ? '请判定当前提交。' : `等待汤主 ${room.hostName ?? ''} 判定。`}</strong>}
-      <button className="workbook-note-trigger" onClick={() => setNote({ title: '行动与保存说明', text: '等待时可以修改自己的草稿。“已保存”只代表草稿同步，不是正式提交。轮到你时，在提交问题、提交还原、跳过本轮中选一个；汤主判定后自动换下一人。完整问答在“问答记录”，不会截断正文。' })}>操作说明</button>
-    </div>}
-    {confirmation && <div className="sheet-commandbar soup-confirm" role="group" aria-label="操作确认"><strong>{confirmation === 'end_soup_game' ? '结束本局将停止所有行动，并公开本题汤底。' : '公布后将结束本题，所有人都能看到汤底。'}</strong><button disabled={busy} onClick={() => { void apply(confirmation); setConfirmation(null); }}>确认{confirmation === 'end_soup_game' ? '结束' : '公布'}</button><button onClick={() => setConfirmation(null)}>取消</button></div>}
-    {draftEditable && !isHost && draftState === 'error' && <div className="sheet-commandbar"><span>草稿暂未同步，当前文字仍保留。</span><button onClick={() => void draftController.current?.flush()}>重试保存</button></div>}
-    {draftEditable && !isHost && draftState === 'conflict' && <div className="sheet-commandbar"><span>本地草稿与云端不同，请选择保留哪一份。</span><button onClick={() => draftController.current?.resolveConflict(true)}>保存当前文字</button><button onClick={() => draftController.current?.resolveConflict(false)}>采用云端草稿</button></div>}
-    <div className="sheet-workspace">
-      <div className="sheet-canvas">
-        {!room && <section className="hub-intro"><div><span>使用说明</span><strong>创建或加入</strong><p>3–10 人；填写称呼创建房间，或凭六位编号加入。流程见“玩法说明”。</p></div></section>}
-        <div className="sheet-grid-scroll"><table className="sheet-grid" aria-label={soupSheets.find(([id]) => id === activeSheet)?.[1]}><WorkbookColumns count={7} /><thead><tr><th />{columns.map((column) => <th key={column}>{column}</th>)}</tr></thead><tbody>{rows.map((values, rowIndex) => <tr key={rowIndex}><th>{rowIndex + 1}</th>{columns.map((column, columnIndex) => { const coordinate = `${column}${rowIndex + 1}`; return <td className={coordinate === activeCell ? 'is-active-cell' : ''} onClick={() => setActiveCell(coordinate)} key={column}>{(activeSheet === 'guide' || activeSheet === 'records' || (activeSheet === 'home' && ['当前汤面', '待汤主判定', '公开提示', '最新记录', '题后处理'].includes(String(values[0])) && columnIndex === 1)) && typeof values[columnIndex] === 'string' && String(values[columnIndex]).length > 16 ? <WorkbookText text={String(values[columnIndex])} title={`${coordinate} 完整内容`} onOpen={setNote} /> : values[columnIndex] ?? ''}</td>; })}</tr>)}</tbody></table></div>
-      </div>
+    {room && <div className="sheet-commandbar soup-flowbar"><strong>{flowText}</strong><span>队列规则：每人最多 1 条；汤主只回答队首；已回答且提交满 10 秒后可再次提问。</span>{isOwner && room.status === 'lobby' && <button className="sheet-primary-action" disabled={busy || activeCount < SOUP_MIN_PLAYERS} onClick={() => void apply('start_soup_game')}>随机汤主并开始</button>}<button className="workbook-note-trigger" onClick={() => setNote({ title: '当前流程与队列', text: `${flowText}\n\n每名侦探最多保留一条未回答内容。汤主按提交顺序只处理队首；回答完成后，该玩家还需满足本次提交后的 10 秒冷却才能再次入队。` })}>看说明</button></div>}
+    {confirmation && <div className="sheet-commandbar soup-confirm"><strong>{confirmation === 'end_soup_game' ? '结束本局后不能继续提问。' : '公布汤底后，本题立即结束并清空队列。'}</strong><button disabled={busy} onClick={() => { void apply(confirmation); setConfirmation(null); }}>确认</button><button onClick={() => setConfirmation(null)}>取消</button></div>}
+    {draftEditable && draftState === 'error' && <div className="sheet-commandbar"><span>草稿暂未同步，文字仍保留。</span><button onClick={() => void draftController.current?.flush()}>重试保存</button></div>}
+    {draftEditable && draftState === 'conflict' && <div className="sheet-commandbar"><span>另一窗口保存过草稿，请选择保留哪一份。</span><button onClick={() => draftController.current?.resolveConflict(true)}>保留当前文字</button><button onClick={() => draftController.current?.resolveConflict(false)}>采用云端草稿</button></div>}
+    <div className="sheet-workspace"><div className="sheet-canvas">{!room && <section className="hub-intro"><div><strong>手动出题 · 随机汤主</strong><p>每个人开局前准备一道题；系统随机指定本题汤主。侦探可各自提前排一条，汤主按队首回答。</p></div></section>}<div className="sheet-grid-scroll"><table className="sheet-grid" aria-label={sheets.find(([id]) => id === activeSheet)?.[1]}><WorkbookColumns count={7} /><thead><tr><th />{columns.map((column) => <th key={column}>{column}</th>)}</tr></thead><tbody>{rows.map((values, rowIndex) => <tr key={rowIndex}><th>{rowIndex + 1}</th>{columns.map((column, columnIndex) => { const coordinate = `${column}${rowIndex + 1}`; const value = values[columnIndex]; return <td className={coordinate === activeCell ? 'is-active-cell' : ''} onClick={() => setActiveCell(coordinate)} key={column}>{activeSheet !== 'people' && typeof value === 'string' && value.length > 28 ? <WorkbookText text={value} title={`${coordinate} 完整内容`} onOpen={setNote} /> : value ?? ''}</td>; })}</tr>)}</tbody></table></div></div>
+      {imageView && <aside className="soup-image-panel"><header><strong>{imageView.title}</strong><button onClick={() => setImageView(null)}>关闭</button></header><Image unoptimized src={imageView.url} alt={imageView.title} width={800} height={600} /><a href={imageView.url} target="_blank" rel="noreferrer">在新标签页打开</a></aside>}
       <ReleaseNotificationPanel open={notificationOpen} onClose={() => setNotificationOpen(false)} />
     </div>
     <WorkbookFeedback note={note} onClose={() => setNote(null)} status={notice} kind={noticeKind} />
-    <footer className="sheet-tabs">{soupSheets.map(([id, label]) => <button disabled={!room && id !== 'home' && id !== 'guide'} className={activeSheet === id ? 'is-current' : ''} onClick={() => id === 'guide' ? openGuide() : setActiveSheet(id)} key={id}>{label}</button>)}<a href="../">目录</a><span /><small>汤底仅本题汤主可见</small></footer>
+    <footer className="sheet-tabs">{sheets.map(([id, label]) => <button disabled={!room && id !== 'play' && id !== 'guide'} className={activeSheet === id ? 'is-current' : ''} onClick={() => id === 'guide' ? openGuide() : setActiveSheet(id)} key={id}>{label}</button>)}{room && <button onClick={leaveView}>离开页面</button>}<a href="../">目录</a><span /><small>图片仅在点击后加载</small></footer>
   </main>;
 }

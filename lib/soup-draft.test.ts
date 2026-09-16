@@ -59,7 +59,7 @@ test('offline draft survives save failure and can be retried', async () => {
   let state: SoupDraftSnapshot | undefined;
   const controller = createSoupDraftController({ save: async (text) => { if (!online) throw new Error('offline'); return { accepted: true, privateRound: packet(text, 1) }; }, onChange: (v) => { state = v; }, cache: (v) => { cached = v; } });
   controller.hydrate(packet()); controller.update('保留'); await controller.flush();
-  assert.equal(state?.status, 'error'); assert.equal(cached, '保留');
+  assert.equal(state?.status, 'error'); assert.equal(cached, JSON.stringify({ question: '保留', solution: '' }));
   online = true; await controller.flush();
   assert.equal(state?.status, 'saved'); assert.equal(cached, null);
 });
