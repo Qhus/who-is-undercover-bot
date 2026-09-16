@@ -47,9 +47,9 @@
 - 目录和四个游戏页的标题栏均提供当前版本号通知入口；更新说明在工作簿右侧展开，不使用弹窗、不记录已读状态且不发送推送。
 - 离谱法堂当前使用 V6 简易流程：案件、首次陈词、证据突袭、当庭补述和双项评选；陈词与补述各 5 分钟、投票 2 分钟，不包含辩护招式或玩家质询。
 - 提示大王支持 2–8 人，可选自由、公共规则或角色扮演模式以及四档题目难度；角色每题重新分配。关联词填写 120 秒，判断阶段 60 秒内最多尝试 3 次；无论是否猜中都会公布答案并为匿名关联词评 1–4 分，4 分会标记“本轮最独特”。三人及以上时，提示者还可给其他一条提示送出不计入总分的同行点赞，最终生成双榜单、最独特次数和“同行最爱”称号。
-- 汤底侦探支持 3–10 人，随机选出首位汤主并在全员担任前不重复；当前采用手动出题，汤主私下填写汤面、汤底及可选图片，开始前请每名玩家准备一个问题。
+- 汤底侦探支持 2–10 人，随机选出首位汤主并在全员担任前不重复；双人局每题交换汤主与侦探。当前采用手动出题，汤主私下填写汤面、汤底及可选图片，开始前请每名玩家准备一个问题。
 - 每名侦探拥有独立的问题与还原草稿，可以提前提交一条内容到待回答区；每人最多保留一条未处理内容，汤主严格按队首回答。提交后该玩家冷却 10 秒，汤主答完且冷却结束后才能再次提交。
-- 公共提示、证据和最终汤底支持文字与可选图片链接；图片默认不加载，点击“查看图片”后才在工作表内显示。默认 20 个有效问题，可延长 5 问一次。
+- 公共提示、证据和最终汤底支持文字与图片；可直接上传 PNG/JPG/WebP/GIF，也可粘贴已有链接。图片默认不加载，点击“查看图片”后才在工作表内显示。默认 20 个有效问题，可延长 5 问一次。
 - 原有 20 道候选题仍保留为未审核的历史试题数据，但当前手动出题流程不自动抽取。候选题完成真实盲测与质量复核前不得标为 `approved`。
 
 ## 本地运行
@@ -77,8 +77,10 @@ npm run dev -- --hostname localhost --port 43210
 12. A5 升级 V1.10.1：在已完成 V10 的环境中，仅增量执行 [`cloudbase/concurrency-v10-1-soup-reliability.sql`](cloudbase/concurrency-v10-1-soup-reliability.sql)，再运行 [`cloudbase/verify-v10-1-soup-reliability.sql`](cloudbase/verify-v10-1-soup-reliability.sql)，确认每行 `ok=true` 后部署前端。无需重跑 V10 或题库种子。新前端使用 V1.1 RPC，漏迁移会明确提示；旧入口保留。
 13. A2 升级 V1.11.0 前，仅增量执行 [`cloudbase/concurrency-v11-undercover-manual-host.sql`](cloudbase/concurrency-v11-undercover-manual-host.sql)，再运行 [`cloudbase/verify-v11-undercover-manual-host.sql`](cloudbase/verify-v11-undercover-manual-host.sql)，确认每行 `ok=true` 后部署前端。新函数不覆盖旧 RPC，无需重跑旧迁移。
 14. A5 升级 V1.12.0：在已完成 V10 与 V10.1 的环境中，仅增量执行 [`cloudbase/concurrency-v12-soup-manual-queue.sql`](cloudbase/concurrency-v12-soup-manual-queue.sql)，再运行 [`cloudbase/verify-v12-soup-manual-queue.sql`](cloudbase/verify-v12-soup-manual-queue.sql)，确认每行 `ok=true` 后部署前端。旧房间不会被原地升级，请新建房间测试手动出题与排队流程。
-15. 复制 `.env.example` 为 `.env.local`，填写环境 ID、上海地域和 Publishable Key。
-16. 安全来源中加入本地地址和实际 CloudBase/GitHub Pages 域名。
+15. A5 升级 V1.12.1：已完成 V1.12.0 的环境仅执行 [`cloudbase/concurrency-v12-1-soup-two-players.sql`](cloudbase/concurrency-v12-1-soup-two-players.sql)，再运行 [`cloudbase/verify-v12-1-soup-two-players.sql`](cloudbase/verify-v12-1-soup-two-players.sql)。它只新增双人开始/换题操作 RPC，其他 V1.12 队列和私密数据接口保持不变。
+16. A5 升级 V1.12.2：执行 [`cloudbase/storage-v12-2-soup-images.sql`](cloudbase/storage-v12-2-soup-images.sql)，再运行 [`cloudbase/verify-v12-2-soup-images.sql`](cloudbase/verify-v12-2-soup-images.sql)。脚本创建 5 MB 的私有 `soup-images` Bucket 与所有者 RLS；前端上传后使用 24 小时签名链接。
+17. 复制 `.env.example` 为 `.env.local`，填写环境 ID、上海地域和 Publishable Key。
+18. 安全来源中加入本地地址和实际 CloudBase/GitHub Pages 域名。
 
 只允许将 Publishable Key 暴露到浏览器。不要把 CloudBase API Key、SecretId 或 SecretKey 写入环境文件或 GitHub。
 

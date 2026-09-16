@@ -16,6 +16,8 @@ before(async () => {
   await db.exec(sql('concurrency-v10-1-soup-reliability.sql'));
   await db.exec(sql('concurrency-v12-soup-manual-queue.sql'));
   await db.exec(sql('concurrency-v12-soup-manual-queue.sql'));
+  await db.exec(sql('concurrency-v12-1-soup-two-players.sql'));
+  await db.exec(sql('concurrency-v12-1-soup-two-players.sql'));
 });
 after(async () => { await db.close(); });
 
@@ -29,7 +31,7 @@ async function rpc<T>(actor: string, name: string, args: unknown[]): Promise<T> 
 }
 let actionNo = 0;
 const act = async (room: SoupRoom, actor: string, type: string, payload: unknown = {}) => {
-  const result = await rpc<{ state: SoupRoom; outcome: string }>(actor, 'apply_soup_action_v12', [room.code, `manual-${++actionNo}`, type, room.status, room.round, room.sessionNo, room.version, JSON.stringify(payload)]);
+  const result = await rpc<{ state: SoupRoom; outcome: string }>(actor, 'apply_soup_action_v121', [room.code, `manual-${++actionNo}`, type, room.status, room.round, room.sessionNo, room.version, JSON.stringify(payload)]);
   assert.equal(result.outcome, 'applied'); return result.state;
 };
 
@@ -83,5 +85,28 @@ test('SQL: manual host prepares a private case and detectives share a one-item-e
 
 test('SQL: V1.2 read-only verification is executable and every check passes', async () => {
   const results = await db.query<{ expected_check: string; ok: boolean }>(sql('verify-v12-soup-manual-queue.sql'));
+  for (const result of results.rows) assert.equal(result.ok, true, result.expected_check);
+});
+
+test('SQL: two players can solve a bowl and swap host on the next bowl', async () => {
+  let room = await rpc<SoupRoom>('u4', 'create_soup_game_v12', ['TWOQAZ', 'p4', '双人甲']);
+  room = (await rpc<{ state: SoupRoom }>('u5', 'join_soup_game_v12', [room.code, 'p5', '双人乙'])).state;
+  room = await act(room, 'u4', 'start_soup_game');
+  assert.equal(room.status, 'host_preparing');
+  assert.ok(room.hostId === 'p4' || room.hostId === 'p5');
+  const uidByPlayer: Record<string, string> = { p4: 'u4', p5: 'u5' };
+  const firstHost = room.hostId!;
+  const detective = firstHost === 'p4' ? 'p5' : 'p4';
+  room = await act(room, uidByPlayer[firstHost], 'prepare_soup_case', { surface: '灯亮了，他却开始找开关。', bottom: '亮的是电脑屏幕，不是房间灯。' });
+  room = await act(room, uidByPlayer[detective], 'submit_soup_solution', { content: '亮的是屏幕，他在找房间灯的开关。' });
+  room = await act(room, uidByPlayer[firstHost], 'judge_soup_solution', { verdict: 'success' });
+  assert.equal(room.status, 'round_result');
+  room = await act(room, 'u4', 'next_soup_round');
+  assert.equal(room.status, 'host_preparing');
+  assert.equal(room.hostId, detective);
+});
+
+test('SQL: V1.12.1 read-only verification is executable and every check passes', async () => {
+  const results = await db.query<{ expected_check: string; ok: boolean }>(sql('verify-v12-1-soup-two-players.sql'));
   for (const result of results.rows) assert.equal(result.ok, true, result.expected_check);
 });

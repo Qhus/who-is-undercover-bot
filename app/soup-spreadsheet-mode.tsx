@@ -52,6 +52,7 @@ export default function SoupSpreadsheetMode() {
   const [publicKind, setPublicKind] = useState<'hint' | 'evidence'>('hint');
   const [publicText, setPublicText] = useState('');
   const [publicImageUrl, setPublicImageUrl] = useState('');
+  const [uploadingImage, setUploadingImage] = useState<'surface' | 'bottom' | 'note' | null>(null);
   const [caseForm, setCaseForm] = useState({ surface: '', surfaceImageUrl: '', bottom: '', bottomImageUrl: '', keyFacts: '', boundary: '' });
   const [activeSheet, setActiveSheet] = useState<SheetId>('play');
   const [activeCell, setActiveCell] = useState('A1');
@@ -181,6 +182,21 @@ export default function SoupSpreadsheetMode() {
   const judge = (event: MouseEvent<HTMLButtonElement>) => { const verdict = event.currentTarget.dataset.verdict; void apply(head?.type === 'question' ? 'judge_soup_question' : 'judge_soup_solution', { verdict, note: judgeNote }).then((next) => { if (next) setJudgeNote(''); }); };
   const submitCase = async () => { if (!caseForm.surface.trim() || !caseForm.bottom.trim()) return setNotice('汤面和完整汤底都必须填写。', 'error'); const next = await apply('prepare_soup_case', caseForm); if (next) { setPrivateReload((value) => value + 1); setActiveSheet('play'); } };
   const publishPost = async () => { if (!publicText.trim() && !publicImageUrl.trim()) return setNotice('提示或证据至少需要文字或图片链接。'); const next = await apply('publish_soup_note', { kind: publicKind, text: publicText, imageUrl: publicImageUrl }); if (next) { setPublicText(''); setPublicImageUrl(''); } };
+  const uploadImage = async (file: File | undefined, kind: 'surface' | 'bottom' | 'note') => {
+    if (!file || !room) return;
+    setUploadingImage(kind);
+    try {
+      const url = await getCloudStore().uploadSoupImage(room, file, kind);
+      if (kind === 'surface') setCaseForm((value) => ({ ...value, surfaceImageUrl: url }));
+      else if (kind === 'bottom') setCaseForm((value) => ({ ...value, bottomImageUrl: url }));
+      else setPublicImageUrl(url);
+      setNotice('图片上传完成；其他玩家仍需点击“查看图片”才会加载。');
+    } catch (error) {
+      setNotice(`图片上传失败：${error instanceof Error ? error.message : String(error)}`, 'error');
+    } finally {
+      setUploadingImage(null);
+    }
+  };
 
   const flowText = !room ? '创建或加入房间' : room.status === 'lobby'
     ? isOwner ? `等待至少 ${SOUP_MIN_PLAYERS} 人到齐，然后点击“随机汤主并开始”` : '等待负责人开始；请先准备一道海龟汤题目'
@@ -194,8 +210,8 @@ export default function SoupSpreadsheetMode() {
   const guideRows = [
     row(['手动出题模式', '开始前每个人都准备一题；系统随机指定汤主，本题不使用内置题库。', '', '', '', '', '']),
     row(['步骤', '谁操作', '要做什么', '完成标志', '队列规则', '图片规则', '']),
-    row(['01 随机汤主', '负责人', '3–10 人到齐后开始', '系统随机指定汤主', '所有人担任过前不重复', '题目需要提前准备', '']),
-    row(['02 录入题目', '汤主', '填写汤面、完整汤底和可选补充资料', '点击“提交并开放提问”', '只有汤主能看到汤底', '只填链接；其他人点击后才加载图片', '']),
+    row(['01 随机汤主', '负责人', '2–10 人到齐后开始', '系统随机指定汤主', '所有人担任过前不重复', '题目需要提前准备', '']),
+    row(['02 录入题目', '汤主', '填写汤面、完整汤底和可选补充资料', '点击“提交并开放提问”', '只有汤主能看到汤底', '可上传图片或粘贴链接；其他人点击后才加载', '']),
     row(['03 排队提问', '所有侦探', '每人最多提前提交一条问题或还原', '队列显示自己的顺序', '汤主按队首回答；未回答前不能重复入队', '问题正文不自动展开图片', '']),
     row(['04 回答与冷却', '汤主／侦探', '汤主回答队首；该玩家提交满 10 秒且已回答后可再次提问', '队首自动移除', '其他人的排队内容继续保留', '提示、证据、结局图片均需点击查看', '']),
     row(['05 提示与还原', '汤主／侦探', '汤主可贴提示或证据；侦探在“故事还原区”提交完整还原', '还原成功后公开汤底', '问题最多 20 个，可延长 5 个一次', '文字和图片可任选或同时使用', '']),
@@ -207,12 +223,12 @@ export default function SoupSpreadsheetMode() {
       row(['入口', '称呼', '房间编号', '模式说明', '操作', '状态', '']),
       row(['新建', <input value={ownerName} maxLength={24} placeholder="填写称呼" onChange={(e) => setOwnerName(e.target.value)} key="owner" />, '自动生成', '手动出题；每个人需提前准备题目', <button className="sheet-action" disabled={busy} onClick={createRemote} key="create">创建联机房间</button>, cloudReady ? '可用' : '缺少环境参数', '']),
       row(['加入', <input value={joinName} maxLength={24} placeholder="填写称呼" onChange={(e) => setJoinName(e.target.value)} key="join-name" />, <input value={joinCode} maxLength={6} placeholder="六位编号" onChange={(e) => setJoinCode(e.target.value.toUpperCase().replace(/[^A-Z2-9]/g, ''))} key="join-code" />, '汤主由系统随机指定', <button className="sheet-action" disabled={busy} onClick={joinRemote} key="join">加入房间</button>, '等待输入', '']),
-      row(['开局前', '每人准备：汤面＋完整汤底', '可选准备图片链接', '至少 3 人', '流程见“流程说明”', '', '']),
+      row(['开局前', '每人准备：汤面＋完整汤底', '可选准备图片链接', '至少 2 人', '双人局每题交换汤主', '流程见“流程说明”', '']),
     ];
     if (activeSheet === 'public') return [
       row(['公共提示区', '内容', '图片', '发布人', '操作', '状态', '']),
       ...(publicPosts.length ? publicPosts.map((post: SoupPublicPost, index) => row([`${post.kind === 'hint' ? '提示' : '证据'} ${index + 1}`, post.text || '仅图片', imageCell(post.imageUrl, `${post.kind === 'hint' ? '提示' : '证据'} ${index + 1}`), room.hostName ?? '汤主', '', '已公开', ''])) : [row(['—', '尚无公开提示或证据', '—', '—', '', '等待汤主按需发布', ''])]),
-      row(['汤主发布', isHost ? <textarea value={publicText} maxLength={600} placeholder="填写提示或证据；可只发图片" onChange={(e) => setPublicText(e.target.value)} key="public-text" /> : '仅汤主可操作', isHost ? <input value={publicImageUrl} placeholder="可选：https:// 图片链接" onChange={(e) => setPublicImageUrl(e.target.value)} key="public-image" /> : '—', isHost ? <select value={publicKind} onChange={(e) => setPublicKind(e.target.value as 'hint' | 'evidence')} key="public-kind"><option value="hint">提示</option><option value="evidence">证据</option></select> : '—', isHost ? <button className="sheet-action" disabled={busy || !['investigating', 'limit_reached'].includes(room.status)} onClick={publishPost} key="publish">公开贴出</button> : '', '', '公开后不能撤回']),
+      row(['汤主发布', isHost ? <textarea value={publicText} maxLength={600} placeholder="填写提示或证据；可只发图片" onChange={(e) => setPublicText(e.target.value)} key="public-text" /> : '仅汤主可操作', isHost ? <div className="sheet-inline" key="public-image"><input value={publicImageUrl} placeholder="粘贴链接，或直接上传" onChange={(e) => setPublicImageUrl(e.target.value)} /><label className="sheet-action soup-file-picker">{uploadingImage === 'note' ? '上传中…' : '上传图片'}<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" disabled={Boolean(uploadingImage)} onChange={(e) => { void uploadImage(e.target.files?.[0], 'note'); e.currentTarget.value = ''; }} /></label></div> : '—', isHost ? <select value={publicKind} onChange={(e) => setPublicKind(e.target.value as 'hint' | 'evidence')} key="public-kind"><option value="hint">提示</option><option value="evidence">证据</option></select> : '—', isHost ? <button className="sheet-action" disabled={busy || Boolean(uploadingImage) || !['investigating', 'limit_reached'].includes(room.status)} onClick={publishPost} key="publish">公开贴出</button> : '', '', '公开后不能撤回']),
     ];
     if (activeSheet === 'solution') return [
       row(['故事还原区', '内容', '排队状态', '操作', '判定', '图片', '']),
@@ -224,9 +240,9 @@ export default function SoupSpreadsheetMode() {
       row(['玩家与汤主操作区', '内容', '状态', '操作一', '操作二', '操作三', '']),
       ...room.players.map((player) => row([player.seat, player.name, player.id === room.hostId ? '本题汤主' : player.id === room.ownerId ? '负责人／侦探' : '侦探', room.servedHostIds.includes(player.id) ? '已当过汤主' : '尚未当过', queuePosition(queue, player.id) ? `排队第 ${queuePosition(queue, player.id)} 位` : '未排队', '', ''])),
       ...(room.status === 'host_preparing' ? [
-        row(['汤面', isHost ? <textarea value={caseForm.surface} maxLength={600} placeholder="所有人首先看到的谜面" onChange={(e) => setCaseForm((v) => ({ ...v, surface: e.target.value }))} key="surface" /> : `等待汤主 ${room.hostName} 录入`, isHost ? <input value={caseForm.surfaceImageUrl} placeholder="可选：https:// 汤面图片" onChange={(e) => setCaseForm((v) => ({ ...v, surfaceImageUrl: e.target.value }))} key="surface-image" /> : '', '', '', '', '']),
-        row(['完整汤底', isHost ? <textarea value={caseForm.bottom} maxLength={2000} placeholder="完整事实、因果和反转" onChange={(e) => setCaseForm((v) => ({ ...v, bottom: e.target.value }))} key="bottom" /> : '仅汤主可见', isHost ? <input value={caseForm.bottomImageUrl} placeholder="可选：https:// 结局图片" onChange={(e) => setCaseForm((v) => ({ ...v, bottomImageUrl: e.target.value }))} key="bottom-image" /> : '', '', '', '', '']),
-        row(['补充资料', isHost ? <textarea value={caseForm.keyFacts} maxLength={1000} placeholder="可选：关键事实，帮助自己判定" onChange={(e) => setCaseForm((v) => ({ ...v, keyFacts: e.target.value }))} key="facts" /> : '隐藏', isHost ? <textarea value={caseForm.boundary} maxLength={1000} placeholder="可选：判定边界或可接受答案" onChange={(e) => setCaseForm((v) => ({ ...v, boundary: e.target.value }))} key="boundary" /> : '', isHost ? <button className="sheet-action" disabled={busy} onClick={submitCase} key="prepare">提交并开放提问</button> : '', '', '', '题目需要提前准备']),
+        row(['汤面', isHost ? <textarea value={caseForm.surface} maxLength={600} placeholder="所有人首先看到的谜面" onChange={(e) => setCaseForm((v) => ({ ...v, surface: e.target.value }))} key="surface" /> : `等待汤主 ${room.hostName} 录入`, isHost ? <div className="sheet-inline" key="surface-image"><input value={caseForm.surfaceImageUrl} placeholder="粘贴链接，或直接上传" onChange={(e) => setCaseForm((v) => ({ ...v, surfaceImageUrl: e.target.value }))} /><label className="sheet-action soup-file-picker">{uploadingImage === 'surface' ? '上传中…' : '上传图片'}<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" disabled={Boolean(uploadingImage)} onChange={(e) => { void uploadImage(e.target.files?.[0], 'surface'); e.currentTarget.value = ''; }} /></label></div> : '', '', '', '', '']),
+        row(['完整汤底', isHost ? <textarea value={caseForm.bottom} maxLength={2000} placeholder="完整事实、因果和反转" onChange={(e) => setCaseForm((v) => ({ ...v, bottom: e.target.value }))} key="bottom" /> : '仅汤主可见', isHost ? <div className="sheet-inline" key="bottom-image"><input value={caseForm.bottomImageUrl} placeholder="粘贴链接，或直接上传" onChange={(e) => setCaseForm((v) => ({ ...v, bottomImageUrl: e.target.value }))} /><label className="sheet-action soup-file-picker">{uploadingImage === 'bottom' ? '上传中…' : '上传图片'}<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" disabled={Boolean(uploadingImage)} onChange={(e) => { void uploadImage(e.target.files?.[0], 'bottom'); e.currentTarget.value = ''; }} /></label></div> : '', '', '', '', '']),
+        row(['补充资料', isHost ? <textarea value={caseForm.keyFacts} maxLength={1000} placeholder="可选：关键事实，帮助自己判定" onChange={(e) => setCaseForm((v) => ({ ...v, keyFacts: e.target.value }))} key="facts" /> : '隐藏', isHost ? <textarea value={caseForm.boundary} maxLength={1000} placeholder="可选：判定边界或可接受答案" onChange={(e) => setCaseForm((v) => ({ ...v, boundary: e.target.value }))} key="boundary" /> : '', isHost ? <button className="sheet-action" disabled={busy || Boolean(uploadingImage)} onClick={submitCase} key="prepare">提交并开放提问</button> : '', '', '', '图片支持 PNG/JPG/WebP/GIF，单张 5MB 内']),
       ] : []),
       ...(isHost && room.status !== 'host_preparing' && room.status !== 'lobby' ? [
         row(['汤主资料', <button aria-expanded={secretVisible} disabled={!privateRound} onClick={() => secretVisible ? privacy.current?.mask() : privacy.current?.reveal()} key="secret-toggle">{secretVisible ? '收起汤底' : '复看汤底'}</button>, secretVisible ? privateRound?.bottom ?? '正在读取' : '已隐藏', secretVisible ? (privateRound?.keyFacts.join('；') || '未填写关键事实') : '', secretVisible ? privateRound?.boundary ?? '未填写判定边界' : '', secretVisible ? imageCell(privateRound?.bottomImageUrl, '汤底参考图片') : '', 'Esc 或切换页面会隐藏']),

@@ -75,6 +75,7 @@ function publicConfig() {
 }
 
 export class CloudBaseRoomStore {
+  private application: ReturnType<typeof cloudbase.init> | null = null;
   private database: PgClient | null = null;
   private connectionPromise: Promise<void> | null = null;
 
@@ -90,12 +91,34 @@ export class CloudBaseRoomStore {
     const app = cloudbase.init({ ...publicConfig(), auth: { detectSessionInUrl: true } });
     const { error } = await app.auth.signInAnonymously();
     if (error) throw error;
+    this.application = app;
     this.database = app.rdb() as unknown as PgClient;
   }
 
   private db(): PgClient {
     if (!this.database) throw new Error('CloudBase 尚未连接');
     return this.database;
+  }
+
+  private app(): ReturnType<typeof cloudbase.init> {
+    if (!this.application) throw new Error('CloudBase 尚未连接');
+    return this.application;
+  }
+
+  async uploadSoupImage(room: Pick<SoupRoom, 'code' | 'sessionNo' | 'round'>, file: File, kind: 'surface' | 'bottom' | 'note'): Promise<string> {
+    const extensions: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif' };
+    const extension = extensions[file.type];
+    if (!extension) throw new Error('仅支持 PNG、JPG、WebP 或 GIF 图片');
+    if (file.size <= 0 || file.size > 5 * 1024 * 1024) throw new Error('图片大小须在 5 MB 以内');
+    await this.connect();
+    const token = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const path = `${room.code}/${room.sessionNo}/${room.round}/${kind}/${token}.${extension}`;
+    const bucket = this.app().storage.from('soup-images');
+    const uploaded = await bucket.upload(path, file, { contentType: file.type, upsert: false });
+    if (uploaded.error) throw uploaded.error;
+    const signed = await bucket.createSignedUrl(path, 24 * 60 * 60);
+    if (signed.error) throw signed.error;
+    return signed.data.fullSignedURL;
   }
 
   async createRoom(room: GameRoom): Promise<void> {
@@ -227,7 +250,7 @@ export class CloudBaseRoomStore {
 
   async applySoupAction(input: { room: SoupRoom; actionId: string; actionType: SoupActionType; payload?: Record<string, unknown> }): Promise<SoupActionResult> {
     await this.connect();
-    const { data, error } = await this.db().rpc('apply_soup_action_v12', {
+    const { data, error } = await this.db().rpc('apply_soup_action_v121', {
       p_code: input.room.code,
       p_action_id: input.actionId,
       p_action_type: input.actionType,

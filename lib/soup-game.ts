@@ -137,7 +137,7 @@ export interface SoupManualCaseInput {
 export interface SoupRoundStart { room: SoupRoom; secret: SoupRoundSecret; }
 export interface SoupFeedbackInput { difficulty: 'too_easy' | 'just_right' | 'too_hard'; ambiguous: boolean; unsuitable: boolean; note?: string; }
 
-export const SOUP_MIN_PLAYERS = 3;
+export const SOUP_MIN_PLAYERS = 2;
 export const SOUP_MAX_PLAYERS = 10;
 export const SOUP_DEFAULT_QUESTION_LIMIT = 20;
 export const SOUP_EXTENSION_QUESTIONS = 5;

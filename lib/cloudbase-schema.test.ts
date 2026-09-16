@@ -47,6 +47,10 @@ const soupV1Migration = readFileSync(new URL('../cloudbase/concurrency-v10-soup-
 const soupV1Verification = readFileSync(new URL('../cloudbase/verify-v10-soup-detective.sql', import.meta.url), 'utf8');
 const soupV12Migration = readFileSync(new URL('../cloudbase/concurrency-v12-soup-manual-queue.sql', import.meta.url), 'utf8');
 const soupV12Verification = readFileSync(new URL('../cloudbase/verify-v12-soup-manual-queue.sql', import.meta.url), 'utf8');
+const soupV121Migration = readFileSync(new URL('../cloudbase/concurrency-v12-1-soup-two-players.sql', import.meta.url), 'utf8');
+const soupV121Verification = readFileSync(new URL('../cloudbase/verify-v12-1-soup-two-players.sql', import.meta.url), 'utf8');
+const soupImageStorage = readFileSync(new URL('../cloudbase/storage-v12-2-soup-images.sql', import.meta.url), 'utf8');
+const soupImageVerification = readFileSync(new URL('../cloudbase/verify-v12-2-soup-images.sql', import.meta.url), 'utf8');
 const concurrencySource = `${concurrencyBase}\n${concurrencyMigration}\n${concurrencyHotfix}\n${versionedRpcMigration}`;
 const storeSource = readFileSync(new URL('./cloudbase-store.ts', import.meta.url), 'utf8');
 const appSource = readFileSync(new URL('../app/game-app.tsx', import.meta.url), 'utf8');
@@ -396,14 +400,40 @@ test('A5 V1.2 使用手动题目、多人等待队列、十秒冷却与点击图
   assert.match(soupV12Migration, /surfaceImageUrl/);
   assert.match(soupV12Migration, /bottomImageUrl/);
   assert.doesNotMatch(soupV12Migration, /drop\s+(?:table|function)|truncate\s+/i);
-  for (const rpc of ['create_soup_game_v12', 'join_soup_game_v12', 'get_my_soup_round_v12', 'save_soup_draft_v12', 'apply_soup_action_v12']) {
+  for (const rpc of ['create_soup_game_v12', 'join_soup_game_v12', 'get_my_soup_round_v12', 'save_soup_draft_v12']) {
     assert.match(soupV12Migration, new RegExp(rpc));
     assert.match(storeSource, new RegExp(`rpc\\('${rpc}'`));
   }
+  assert.match(soupV12Migration, /apply_soup_action_v12/);
   for (const expected of ['manual secret table exists with RLS', 'queue enforces one unresolved item per player', 'questions use ten second cooldown', 'host is randomly selected', 'manual mode supports text and clickable image links']) {
     assert.match(soupV12Verification, new RegExp(expected));
   }
   for (const copy of ['猜题区', '公共提示区', '故事还原区', '玩家与汤主', '每人最多 1 条', '随机汤主并开始', '查看图片']) {
     assert.match(soupAppSource, new RegExp(copy));
   }
+});
+
+test('A5 V1.12.1 允许双人开始并在下一碗交换汤主', () => {
+  assert.match(soupV121Migration, /active_count<2/);
+  assert.match(soupV121Migration, /jsonb_array_length\(active_ids\)<2/);
+  assert.match(soupV121Migration, /soup_v121_begin_round/);
+  assert.match(soupV121Migration, /apply_soup_action_v121/);
+  assert.match(storeSource, /rpc\('apply_soup_action_v121'/);
+  assert.doesNotMatch(soupV121Migration, /drop\s+(?:table|function)|truncate\s+/i);
+  for (const expected of ['V1.12.1 action RPC exists', 'anon can execute V1.12.1 action RPC', 'round helper accepts two active players', 'start action accepts two active players', 'next bowl uses the two player round helper']) {
+    assert.match(soupV121Verification, new RegExp(expected.replace(/[.]/g, '\\$&')));
+  }
+});
+
+test('A5 V1.12.2 使用私有图片桶直接上传常见图片', () => {
+  assert.match(soupImageStorage, /insert into storage\.buckets/i);
+  assert.match(soupImageStorage, /'soup-images'/);
+  assert.match(soupImageStorage, /5\*1024\*1024/);
+  for (const mime of ['image/png', 'image/jpeg', 'image/webp', 'image/gif']) assert.match(soupImageStorage, new RegExp(mime));
+  assert.match(soupImageStorage, /owner_id=auth\.uid\(\)/);
+  assert.match(storeSource, /storage\.from\('soup-images'\)/);
+  assert.match(storeSource, /createSignedUrl\(path, 24 \* 60 \* 60\)/);
+  assert.match(soupAppSource, /type="file"/);
+  assert.match(soupAppSource, /accept="image\/png,image\/jpeg,image\/webp,image\/gif"/);
+  for (const expected of ['private soup image bucket exists', 'bucket limits images to five MB', 'bucket accepts four image MIME types', 'upload and signed URL policies exist']) assert.match(soupImageVerification, new RegExp(expected));
 });

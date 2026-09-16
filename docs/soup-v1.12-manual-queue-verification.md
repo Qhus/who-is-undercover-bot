@@ -14,6 +14,10 @@
 3. 执行 `cloudbase/verify-v12-soup-manual-queue.sql`，确认每行 `ok=true`。
 4. 部署前端并新建 A5 房间；不要继续使用旧 A5 房间判断升级是否成功。
 
+如需双人支持，在上述 V1.12.0 核验完成后继续执行 `cloudbase/concurrency-v12-1-soup-two-players.sql` 与 `cloudbase/verify-v12-1-soup-two-players.sql`。双人版只新增操作 RPC，不要求重跑 V1.12.0。
+
+如需图片直传，继续执行 `cloudbase/storage-v12-2-soup-images.sql` 与 `cloudbase/verify-v12-2-soup-images.sql`。在浏览器分别上传 PNG/JPG/WebP/GIF，并检查超过 5 MB 或非图片文件会在客户端或 Bucket 层被拒绝；签名图片在点击“查看图片”后才能加载。
+
 ## 多浏览器验收
 
 使用至少三个独立浏览器身份：
