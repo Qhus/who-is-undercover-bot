@@ -168,10 +168,10 @@ test('四项游戏使用独立页面和独立入口', () => {
   assert.match(clueApp, /最多尝试 3 次/);
   assert.match(soupPage, /SoupSpreadsheetMode/);
   assert.match(soupApp, /提交问题/);
-  assert.match(soupApp, /提交完整还原/);
+  assert.match(soupApp, /提交说明/);
   assert.match(soupApp, /每人最多 1 条/);
-  assert.match(soupApp, /先选一位汤主/);
-  assert.match(soupApp, /手动出题/);
+  assert.match(soupApp, /指定录入人/);
+  assert.match(soupApp, /手动填写/);
 });
 
 test('四个游戏都支持返回目录和带房间编号的邀请链接', () => {

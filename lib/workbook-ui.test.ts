@@ -54,14 +54,16 @@ test('five actual UI components render neutral headings, usable content and in-f
     const html = render(path, props);
     assert.match(html, new RegExp('协作工作簿 · ' + id));
     if (id === 'A5') {
-      assert.match(html, /先和朋友进同一个房间/);
-      assert.match(html, /我有房间编号/);
-      assert.match(html, /我来组织一局/);
-      assert.doesNotMatch(html, /sheet-grid|随机汤主|公共提示区|玩家与汤主/);
+      assert.match(html, /加入协作表/);
+      assert.match(html, /新建协作表/);
+      assert.match(html, /soup-record-grid/);
+      assert.match(html, /<colgroup>/);
+      assert.match(html, /下一步：/);
+      assert.doesNotMatch(html, /soup-card|soup-eyebrow|<h1|汤主|侦探|海龟汤/);
     } else assert.match(html, /<colgroup>/);
     assert.match(html, /class="workbook-status workbook-status--info" role="status"/);
     assert.doesNotMatch(html, /sheet-toast|sheet-detail-popover|sheet-toolbar/);
-    assert.match(html, /玩法说明/);
+    assert.match(html, id === 'A5' ? /操作说明/ : /玩法说明/);
   }
 });
 

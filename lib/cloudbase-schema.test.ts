@@ -408,7 +408,7 @@ test('A5 V1.2 使用手动题目、多人等待队列、十秒冷却与点击图
   for (const expected of ['manual secret table exists with RLS', 'queue enforces one unresolved item per player', 'questions use ten second cooldown', 'host is randomly selected', 'manual mode supports text and clickable image links']) {
     assert.match(soupV12Verification, new RegExp(expected));
   }
-  for (const copy of ['当前题目', '公开线索', '问答记录', '指定汤主', '每人最多 1 条', '发布谜面，开始提问', '查看图片']) {
+  for (const copy of ['当前记录', '补充资料', '处理记录', '指定录入人', '每人最多 1 条', '发布内容', '查看图片']) {
     assert.match(soupAppSource, new RegExp(copy));
   }
 });
