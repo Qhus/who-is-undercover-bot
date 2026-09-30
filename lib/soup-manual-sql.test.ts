@@ -18,6 +18,8 @@ before(async () => {
   await db.exec(sql('concurrency-v12-soup-manual-queue.sql'));
   await db.exec(sql('concurrency-v12-1-soup-two-players.sql'));
   await db.exec(sql('concurrency-v12-1-soup-two-players.sql'));
+  await db.exec(sql('concurrency-v13-soup-designated-host.sql'));
+  await db.exec(sql('concurrency-v13-soup-designated-host.sql'));
 });
 after(async () => { await db.close(); });
 
@@ -108,5 +110,67 @@ test('SQL: two players can solve a bowl and swap host on the next bowl', async (
 
 test('SQL: V1.12.1 read-only verification is executable and every check passes', async () => {
   const results = await db.query<{ expected_check: string; ok: boolean }>(sql('verify-v12-1-soup-two-players.sql'));
+  for (const result of results.rows) assert.equal(result.ok, true, result.expected_check);
+});
+
+const act13 = async (room: SoupRoom, actor: string, type: string, payload: unknown = {}) => {
+  const result = await rpc<{ state: SoupRoom; outcome: string }>(actor, 'apply_soup_action_v13', [room.code, `designated-${++actionNo}`, type, room.status, room.round, room.sessionNo, room.version, JSON.stringify(payload)]);
+  assert.equal(result.outcome, 'applied'); return result.state;
+};
+
+test('SQL V13: owner explicitly chooses host, may repeat or change host next round, and secrets stay private', async () => {
+  let room = await rpc<SoupRoom>('u11', 'create_soup_game_v12', ['DESQAZ', 'p11', '负责人']);
+  room = (await rpc<{ state: SoupRoom }>('u12', 'join_soup_game_v12', [room.code, 'p12', '指定汤主'])).state;
+  room = (await rpc<{ state: SoupRoom }>('u13', 'join_soup_game_v12', [room.code, 'p13', '另一位'])).state;
+  room = await act13(room, 'u11', 'start_soup_game', { hostId: 'p12' });
+  assert.equal(room.hostId, 'p12'); assert.equal(room.hostName, '指定汤主');
+  await assert.rejects(act13(room, 'u11', 'prepare_soup_case', { surface: '谜面', bottom: '秘密' }), /仅本题汤主/);
+  room = await act13(room, 'u12', 'prepare_soup_case', { surface: '五个人怎么拍出六个人影？', bottom: 'V13_PRIVATE_全景拍摄' });
+  assert.equal((await rpc<SoupPrivateRound>('u11', 'get_my_soup_round_v12', [room.code])).bottom, null);
+  assert.match((await rpc<SoupPrivateRound>('u12', 'get_my_soup_round_v12', [room.code])).bottom ?? '', /V13_PRIVATE/);
+  await assert.rejects(act13(room, 'u11', 'next_soup_round', { hostId: 'p13' }), /当前阶段/);
+  room = await act13(room, 'u12', 'reveal_soup_bottom');
+  room = await act13(room, 'u11', 'next_soup_round', { hostId: 'p12' });
+  assert.equal(room.hostId, 'p12'); assert.equal(room.round, 2);
+  assert.equal((await rpc<SoupPrivateRound>('u12', 'get_my_soup_round_v12', [room.code])).bottom, null);
+  assert.ok(!JSON.stringify(room).includes('V13_PRIVATE'));
+  room = await act13(room, 'u12', 'prepare_soup_case', { surface: '第二题', bottom: '第二题答案' });
+  room = await act13(room, 'u12', 'reveal_soup_bottom');
+  room = await act13(room, 'u11', 'next_soup_round', { hostId: 'p13' });
+  assert.equal(room.hostId, 'p13'); assert.equal(room.round, 3);
+});
+
+test('SQL V13: reject empty, invalid, unavailable and unauthorized host choices without starting a round', async () => {
+  let room = await rpc<SoupRoom>('u21', 'create_soup_game_v12', ['REJQAZ', 'p21', '负责人']);
+  await assert.rejects(act13(room, 'u21', 'start_soup_game', { hostId: 'p21' }), /至少需要 2 人/);
+  room = (await rpc<{ state: SoupRoom }>('u22', 'join_soup_game_v12', [room.code, 'p22', '成员'])).state;
+  for (const payload of [{}, { hostId: '' }, { hostId: 22 }]) await assert.rejects(act13(room, 'u21', 'start_soup_game', payload), /请先指定/);
+  await assert.rejects(act13(room, 'u21', 'start_soup_game', { hostId: 'not-a-member' }), /不在当前可参与成员/);
+  await assert.rejects(act13(room, 'u22', 'start_soup_game', { hostId: 'p22' }), /仅负责人/);
+  room = (await rpc<{ state: SoupRoom }>('u23', 'join_soup_game_v12', [room.code, 'p23', '暂离成员'])).state;
+  room.players[2].away = true;
+  await db.query('update games set state=$2::jsonb where code=$1', [room.code, JSON.stringify(room)]);
+  await assert.rejects(act13(room, 'u21', 'start_soup_game', { hostId: 'p23' }), /不在当前可参与成员/);
+  const saved = (await db.query<{ state: SoupRoom }>('select state from games where code=$1', [room.code])).rows[0].state;
+  assert.equal(saved.status, 'lobby'); assert.equal(saved.round, 0);
+});
+
+test('SQL V13: stale selection and request replay cannot change the designated host twice', async () => {
+  let room = await rpc<SoupRoom>('u31', 'create_soup_game_v12', ['IDMQAZ', 'p31', '负责人']);
+  room = (await rpc<{ state: SoupRoom }>('u32', 'join_soup_game_v12', [room.code, 'p32', '汤主'])).state;
+  const args = [room.code, 'host-request', 'start_soup_game', room.status, room.round, room.sessionNo, room.version, JSON.stringify({ hostId: 'p32' })];
+  const stale = await rpc<{ outcome: string; state: SoupRoom }>('u31', 'apply_soup_action_v13', [...args.slice(0, 6), room.version - 1, args[7]]);
+  assert.equal(stale.outcome, 'stale'); assert.equal(stale.state.status, 'lobby');
+  const first = await rpc<{ outcome: string; state: SoupRoom }>('u31', 'apply_soup_action_v13', args);
+  const again = await rpc<{ outcome: string; state: SoupRoom }>('u31', 'apply_soup_action_v13', args);
+  assert.equal(first.outcome, 'applied'); assert.equal(again.outcome, 'duplicate');
+  assert.equal(again.state.hostId, 'p32'); assert.equal(again.state.round, 1); assert.equal(again.state.version, first.state.version);
+  await assert.rejects(rpc('u31', 'apply_soup_action_v13', [...args.slice(0,7), JSON.stringify({ hostId: 'p31' })]), /操作编号已被使用/);
+  await assert.rejects(rpc('u32', 'apply_soup_action_v13', args), /操作编号已被使用/);
+});
+
+test('SQL V13: every read-only migration verification passes', async () => {
+  const results = await db.query<{ expected_check: string; ok: boolean }>(sql('verify-v13-soup-designated-host.sql'));
+  assert.equal(results.rows.length, 7);
   for (const result of results.rows) assert.equal(result.ok, true, result.expected_check);
 });

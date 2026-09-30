@@ -54,7 +54,7 @@ export default function GameHub() {
       ['01 选择项目', '在“目录”查看人数、时长和摘要，点击对应行的打开按钮', '所有人', '打开对应页面', 'A2、A3、A4、A5 相互独立', ''],
       ['02 创建房间', '一名玩家填写称呼并创建联机房间', '房主', '得到六位房间编号', '把邀请链接发到群里', ''],
       ['03 加入房间', '其他人打开邀请链接，填写自己的称呼后加入', '其他玩家', '成员出现在房间名单', '不要多人共用一个浏览器标签', ''],
-      ['04 按表格提示操作', '优先查看绿色按钮、操作说明和高亮单元格', '所有人', '系统自动进入下一阶段', '页面异常时先刷新恢复', ''],
+      ['04 按页面提示操作', '优先查看当前阶段和绿色按钮；A5 先由负责人指定汤主', '所有人', '系统自动进入下一阶段', '页面异常时先刷新恢复', ''],
       ['05 返回目录', '标题栏点击“目录”；房间记录仍保留在本机', '所有人', '回到目录工作表', '永久退出请在对应页面操作', ''],
       ['', '', '', '', '', ''],
       ['链接规则', '总入口 /', 'A2 /undercover/', 'A3 /clue/', 'A4 /court/', 'A5 /soup/'],
@@ -72,7 +72,7 @@ export default function GameHub() {
       ['A2', '3–10 人', '10–20 分钟', '查看私密词语、轮流描述、匿名投票找出特殊成员', <a className="sheet-action hub-launch" href="./undercover/" key="undercover" aria-label="打开 A2">{undercoverRoom ? '继续 / 打开' : '打开'}</a>, undercoverRoom ? `可恢复编号 ${undercoverRoom}` : '可创建或加入'],
       ['A3', '2–8 人', '8–15 分钟', '轮流猜答案；可选自由、公共规则或角色扮演，比较提示质量与判断速度', <a className="sheet-action hub-launch" href="./clue/" key="clue" aria-label="打开 A3">{clueRoom ? '继续 / 打开' : '打开'}</a>, clueRoom ? `可恢复编号 ${clueRoom}` : '可创建或加入'],
       ['A4', '2–8 人', '15–25 分钟', '围绕同一离谱案件匿名陈词，评选最会狡辩和最像真的答案', <a className="sheet-action hub-launch" href="./court/" key="court" aria-label="打开 A4">{courtRoom ? '继续 / 打开' : '打开'}</a>, courtRoom ? `可恢复编号 ${courtRoom}` : '可创建或加入'],
-      ['A5', '2–10 人', '15–35 分钟', '一人掌握完整资料，其余成员排队提问、还原并共同解开汤面', <a className="sheet-action hub-launch" href="./soup/" key="soup" aria-label="打开 A5">{soupRoom ? '继续 / 打开' : '打开'}</a>, soupRoom ? `可恢复编号 ${soupRoom}` : '开发测试候选'],
+      ['A5', '2–10 人', '15–35 分钟', '先指定汤主准备题目，其他成员看谜面、排队提问，一起还原故事', <a className="sheet-action hub-launch" href="./soup/" key="soup" aria-label="打开 A5">{soupRoom ? '继续 / 打开' : '打开'}</a>, soupRoom ? `可恢复编号 ${soupRoom}` : '可创建或加入'],
       ['', '', '', '', '', ''],
     ];
   }, [clueRoom, courtRoom, soupRoom, tab, undercoverRoom]);

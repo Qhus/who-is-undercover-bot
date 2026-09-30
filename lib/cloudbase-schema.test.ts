@@ -408,7 +408,7 @@ test('A5 V1.2 使用手动题目、多人等待队列、十秒冷却与点击图
   for (const expected of ['manual secret table exists with RLS', 'queue enforces one unresolved item per player', 'questions use ten second cooldown', 'host is randomly selected', 'manual mode supports text and clickable image links']) {
     assert.match(soupV12Verification, new RegExp(expected));
   }
-  for (const copy of ['猜题区', '公共提示区', '故事还原区', '玩家与汤主', '每人最多 1 条', '随机汤主并开始', '查看图片']) {
+  for (const copy of ['当前题目', '公开线索', '问答记录', '指定汤主', '每人最多 1 条', '发布谜面，开始提问', '查看图片']) {
     assert.match(soupAppSource, new RegExp(copy));
   }
 });
@@ -418,11 +418,18 @@ test('A5 V1.12.1 允许双人开始并在下一碗交换汤主', () => {
   assert.match(soupV121Migration, /jsonb_array_length\(active_ids\)<2/);
   assert.match(soupV121Migration, /soup_v121_begin_round/);
   assert.match(soupV121Migration, /apply_soup_action_v121/);
-  assert.match(storeSource, /rpc\('apply_soup_action_v121'/);
   assert.doesNotMatch(soupV121Migration, /drop\s+(?:table|function)|truncate\s+/i);
   for (const expected of ['V1.12.1 action RPC exists', 'anon can execute V1.12.1 action RPC', 'round helper accepts two active players', 'start action accepts two active players', 'next bowl uses the two player round helper']) {
     assert.match(soupV121Verification, new RegExp(expected.replace(/[.]/g, '\\$&')));
   }
+});
+
+test('A5 当前客户端使用指定汤主 RPC，不回退到随机分配', () => {
+  assert.match(storeSource, /rpc\('apply_soup_action_v13'/);
+  assert.doesNotMatch(storeSource, /rpc\('apply_soup_action_v121'/);
+  assert.match(soupAppSource, /onStart\(host.id\)/);
+  assert.match(soupAppSource, /请选择一位成员/);
+  assert.doesNotMatch(soupAppSource, /随机汤主并开始/);
 });
 
 test('A5 V1.12.2 使用私有图片桶直接上传常见图片', () => {

@@ -168,9 +168,9 @@ test('四项游戏使用独立页面和独立入口', () => {
   assert.match(clueApp, /最多尝试 3 次/);
   assert.match(soupPage, /SoupSpreadsheetMode/);
   assert.match(soupApp, /提交问题/);
-  assert.match(soupApp, /提交还原/);
+  assert.match(soupApp, /提交完整还原/);
   assert.match(soupApp, /每人最多 1 条/);
-  assert.match(soupApp, /随机汤主并开始/);
+  assert.match(soupApp, /先选一位汤主/);
   assert.match(soupApp, /手动出题/);
 });
 

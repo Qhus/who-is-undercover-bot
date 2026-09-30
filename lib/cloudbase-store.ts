@@ -250,7 +250,7 @@ export class CloudBaseRoomStore {
 
   async applySoupAction(input: { room: SoupRoom; actionId: string; actionType: SoupActionType; payload?: Record<string, unknown> }): Promise<SoupActionResult> {
     await this.connect();
-    const { data, error } = await this.db().rpc('apply_soup_action_v121', {
+    const { data, error } = await this.db().rpc('apply_soup_action_v13', {
       p_code: input.room.code,
       p_action_id: input.actionId,
       p_action_type: input.actionType,

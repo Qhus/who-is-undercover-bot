@@ -1,0 +1,22 @@
+{
+  "checks": [
+    "Entry offers join/create and a short guide that returns to the entry",
+    "No default host; owner explicitly selects another member and waits for their preparation",
+    "Other members wait without host preparation controls",
+    "Designated host imports all three images and reviews the public mystery",
+    "Host directly answers the front question without switching pages",
+    "Refresh retains staged clues and skips the already published clue",
+    "Escape and window blur both remove private clue content and images",
+    "Detective gets one composer and cannot see host materials or future clues",
+    "Switching question and reconstruction preserves two independent drafts",
+    "Stale server response preserves the unsubmitted reconstruction",
+    "Submitted content shows queue position and prevents double submission",
+    "390px detective layout has no horizontal overflow",
+    "Correct reconstruction immediately shows story and optional final image",
+    "Owner must select next host and may explicitly keep the same host",
+    "Manual text-only preparation works and previous round clues do not carry over",
+    "Mobile host layout has no overflow and browser reports no runtime errors"
+  ],
+  "errors": [],
+  "scope": "Actual React component with local fake CloudBase; separate PGlite tests verify actual SQL; no cloud operations"
+}

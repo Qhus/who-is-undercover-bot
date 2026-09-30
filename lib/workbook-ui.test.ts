@@ -49,11 +49,16 @@ const pages = [
   ['app/soup-spreadsheet-mode.tsx', 'A5', {}],
 ] as const;
 
-test('five actual UI components render neutral headings, a grid and in-flow status', () => {
+test('five actual UI components render neutral headings, usable content and in-flow status', () => {
   for (const [path, id, props] of pages) {
     const html = render(path, props);
     assert.match(html, new RegExp('协作工作簿 · ' + id));
-    assert.match(html, /<colgroup>/);
+    if (id === 'A5') {
+      assert.match(html, /先和朋友进同一个房间/);
+      assert.match(html, /我有房间编号/);
+      assert.match(html, /我来组织一局/);
+      assert.doesNotMatch(html, /sheet-grid|随机汤主|公共提示区|玩家与汤主/);
+    } else assert.match(html, /<colgroup>/);
     assert.match(html, /class="workbook-status workbook-status--info" role="status"/);
     assert.doesNotMatch(html, /sheet-toast|sheet-detail-popover|sheet-toolbar/);
     assert.match(html, /玩法说明/);
@@ -102,7 +107,7 @@ test('each toolbar button has a handler or is explicitly disabled', () => {
 test('help navigation remembers the originating worksheet on every page', () => {
   for (const path of ['app/game-hub.tsx', 'app/clue-spreadsheet-mode.tsx', 'app/court-spreadsheet-mode.tsx', 'app/soup-spreadsheet-mode.tsx']) {
     assert.match(read(path), /return(?:Tab|Sheet)/);
-    assert.match(read(path), /返回原工作表/);
+    assert.match(read(path), path.includes('soup-') ? /返回刚才的页面/ : /返回原工作表/);
   }
   assert.match(read('app/spreadsheet-mode.tsx'), /setSheetTab\(returnSheetTab === 'guide' \? 'members' : returnSheetTab\)/);
 });
@@ -117,7 +122,8 @@ test('private cells and drafts are not automatic annotation sources', () => {
   assert.match(a2, /onNote=\{sheetTab === 'guide' \|\| sheetTab === 'rules' \|\| props.screen !== 'game' \? setDetailHint : undefined\}/);
   assert.match(a2, /round < room.round \|\| isRoundContentVisible\(room, player.id, props.currentPlayerId\)/);
   const soup = read('app/soup-spreadsheet-mode.tsx');
-  assert.match(soup, /activeSheet !== 'people'.*WorkbookText/);
+  assert.match(soup, /WorkbookFeedback note=\{null\}/);
+  assert.match(soup, /!secretVisible \?/);
   assert.match(soup, /privateRound\?\.bottom/);
   assert.match(soup, /图片仅在点击后加载/);
 });
