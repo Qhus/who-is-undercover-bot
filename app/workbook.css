@@ -104,3 +104,20 @@
 .workbook-unified .sheet-secret--review.is-revealed { position:static; width:auto; max-width:100%; box-shadow:none; }
 .workbook-unified .sheet-grid input[type="checkbox"] { width:auto; min-height:0; flex-shrink:0; }
 .workbook-unified .sheet-grid .soup-choice-line { align-items:start; }
+.soup-host-desk,.soup-kit-import { padding:16px; border-bottom:1px solid #b8c8bd; background:#f6faf7; font-size:14px; line-height:1.6; }
+.soup-host-desk header { display:flex; flex-wrap:wrap; align-items:center; gap:8px 16px; }
+.soup-host-desk button,.soup-kit-import button { min-height:32px; padding:4px 10px; border:1px solid #9eafa4; background:#fff; color:#174c32; }
+.soup-host-desk p,.soup-kit-import p { margin:8px 0; white-space:pre-wrap; overflow-wrap:anywhere; }
+.soup-desk-columns { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:24px; margin-top:12px; }
+.soup-desk-judge input { width:100%; padding:6px; margin-bottom:8px; border:1px solid #a7b8ad; font:inherit; }
+.soup-private-preview { padding:12px; margin-top:12px; border:1px dashed #7d9684; background:#fff; }
+.soup-private-preview button { margin:4px 8px 0 0; }
+.soup-sheet .sheet-workspace:has(>.soup-image-panel.is-wide) { flex-direction:column-reverse; }
+.soup-image-panel.is-wide { width:100%; min-width:0; max-height:62vh; border-left:0; border-bottom:1px solid #b8c8bd; }
+.soup-image-panel.is-wide img { max-height:52vh; }
+.soup-image-panel img { height:auto; }
+@media(max-width:1100px) {
+  .soup-desk-columns { grid-template-columns:minmax(0,1fr); gap:12px; }
+  .soup-sheet .sheet-workspace:has(>.soup-image-panel) { flex-direction:column-reverse; }
+  .soup-image-panel,.soup-image-panel.is-wide { width:100%; min-width:0; max-height:50vh; border-left:0; border-bottom:1px solid #b8c8bd; }
+}
