@@ -60,6 +60,8 @@ test('five actual UI components render neutral headings, usable content and in-f
       assert.match(html, /<colgroup>/);
       assert.match(html, /下一步：/);
       assert.doesNotMatch(html, /soup-card|soup-eyebrow|<h1|汤主|侦探|海龟汤/);
+      assert.match(html, /data-text-mode="discreet"/);
+      assert.match(html, /文字选项…/); // Neutral static shell avoids flashing clear terms before reading a saved preference.
     } else assert.match(html, /<colgroup>/);
     assert.match(html, /class="workbook-status workbook-status--info" role="status"/);
     assert.doesNotMatch(html, /sheet-toast|sheet-detail-popover|sheet-toolbar/);
